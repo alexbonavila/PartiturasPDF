@@ -55,12 +55,25 @@ The exact build-tool versions are defined by the files in this repository. Do no
 .\gradlew.bat :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
 ```
 
-These commands cover only currently available build, lint, and JVM tests. Emulator/instrumentation tests and additional quality gates are governed by the project testing policy as the CI infrastructure is prepared.
+On Unix, the current wrapper lacks its executable bit; use `bash ./gradlew` until
+an approved foundation change corrects that permission. CI preserves the wrapper
+and invokes it through Bash with JDK 25 and Android SDK 37.
+
+The Phase 0A workflow defines build, lint, JVM tests, actual API 26 emulator tests,
+localization, PDF fixture verification and an aggregate quality gate. Weekly and
+requested compatibility runs also execute API 27 and API 36 tests. See
+[`docs/CI.md`](docs/CI.md) for commands and limitations. Missing Catalan/Spanish
+resources currently fail localization; application resource work is reserved for
+Phase 0B. A defined workflow is not evidence that all checks have passed.
 
 ## Documentation and project rules
 
 - [`docs/PROJECT_SPECIFICATION.md`](docs/PROJECT_SPECIFICATION.md): product requirements, UI and architecture decisions, file handling, security, testing, and implementation boundaries.
 - [`AGENTS.md`](AGENTS.md): mandatory instructions for automated coding agents and contributors.
+- [`docs/TESTING_POLICY.md`](docs/TESTING_POLICY.md): mandatory checks, coverage, compatibility, fixtures and evidence.
+- [`docs/CHANGE_CONTROL.md`](docs/CHANGE_CONTROL.md): approval workflow and manual GitHub Ruleset instructions.
+- [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md): automated, manual and final human acceptance.
+- [`docs/PHASE_0A_REPORT.md`](docs/PHASE_0A_REPORT.md): audit, actual verification and unresolved gates.
 - [`LICENSE`](LICENSE): the repository's restrictive Creative Commons license text.
 
 Development is controlled through feature branches, pull requests, automated checks, and **explicit approval by the project owner**. Automated agents may propose changes but must never merge them into `main` without authorization.
@@ -72,14 +85,21 @@ PartiturasPDF/
 ├── app/                         Android app (starter project)
 ├── gradle/                      Gradle wrapper and dependency catalog
 ├── docs/
-│   └── PROJECT_SPECIFICATION.md Product and engineering specification
-├── test-fixtures/               Planned/maintained PDF test dataset (when added)
+│   ├── PROJECT_SPECIFICATION.md Product and engineering specification
+│   └── *.md                     Quality policies, CI guide and verification evidence
+├── .github/                     CI workflow, setup action and PR template
+├── scripts/                     Quality validators and their infrastructure tests
+├── test-fixtures/               15 committed synthetic PDF fixtures (separate CC0)
 ├── AGENTS.md                    Instructions for Codex and other agents
 ├── LICENSE                      CC BY-NC-ND 4.0 legal text
 └── README.md                    This document
 ```
 
-The PDF test dataset and CI files may not yet be present in the repository. Their requirements are specified in the project documentation.
+The PDF dataset is present and immutable. Install its declared Python dependencies
+and run `python test-fixtures/scripts/verify_fixtures.py`; never regenerate it in
+CI. No product features are implemented. Phase 0B starts only after the owner
+explicitly approves and merges Phase 0A and development resumes from updated
+`main`; failed mandatory checks still block integration.
 
 ## License and reuse
 

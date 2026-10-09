@@ -48,23 +48,31 @@ Use [CONTRACTS.md](CONTRACTS.md) as the authoritative design catalog, selecting
 the smallest consumed slice needed for independent components. Do not implement
 the whole catalog in anticipation of eventual features.
 
-Likely initial shared prerequisites are document identity/reference/revision,
-typed errors/cancellation, page indices and basic geometry, read/snapshot
-ownership, minimal renderer/session and metadata/preferences boundaries. The
-exact subset, constructor validation, coroutine/dependency requirements,
+Likely initial shared prerequisites are persistent `DocumentId`, logical
+`DocumentRef`, provider-backed `StorageDocumentRef` and exact snapshot revisions,
+typed errors/cancellation, page indices and basic geometry, ordinary seekable
+read ownership distinct from immutable snapshots, minimal renderer/session and
+metadata/preferences boundaries. The exact subset, constructor validation,
+coroutine/dependency requirements,
 serialization rules, public signatures and test cases need explicit A1 approval.
 Annotation writing, composition and replacement contracts can wait until there
 is an approved consumer and validated engine/provider behavior.
 
 For the first parallel batch, A1 must establish enough public API for storage
-read/snapshot access, renderer input/output lifetimes, registry/metadata and
-typed preferences. Pure coordinate invariants are shared once, not reimplemented
+direct SAF read/bounded copy access, `PdfReadSource`/session lifetimes,
+registry logical-to-storage resolution, metadata and typed preferences.
+Pure coordinate invariants are shared once, not reimplemented
 by renderer and UI agents. Private drafts/recovery/publication interfaces are
 included only if an approved adapter task actually needs them; otherwise no
 stub implementations or speculative recovery infrastructure are permitted.
+Ordinary rendering must not depend on a full immutable snapshot contract being
+implemented. When an approved task needs exact-revision annotation/editing input,
+use `WorkingSnapshot`/`PdfSourceSnapshot` and render from that same snapshot;
+session generations or provider observations cannot substitute for its revision.
 
-A1 defines and tests real invariants (invalid indices/geometry, exact revisions,
-typed errors, cancellation propagation and lease ownership as applicable).
+A1 defines and tests real invariants (invalid indices/geometry, logical versus
+storage references, ordinary read session/generation binding versus exact
+snapshot revisions, typed errors, cancellation and handle/lease ownership).
 Publish an owner-reviewed contract/version baseline and test-double behavior
 before the parallel branches begin. Select an AGP-compatible coverage approach
 before new testable business logic; no A0 dependency decision installs a tool.
@@ -97,15 +105,16 @@ root files are owned by the contract/integration tasks, not any parallel branch.
 
 | Task | Exclusive production file ownership | Interfaces/prerequisites | Test doubles | Acceptance evidence |
 | --- | --- | --- | --- | --- |
-| Codex A — Storage / SAF | `storage/saf/**`, approved `storage/transaction/**` subset; own storage tests | `DocumentCatalog`, `DocumentReadAccess`, `ReadHandle`, `WorkingSnapshot`; publication/recovery only if separately included | Deterministic provider/stream/fault doubles, temp directories; actual API 26 provider tests | Seekable/non-seekable reads, grants/revocation, identity observations, bounded copies, cancellation/disk-full/cleanup; originals unchanged |
-| Codex B — Android PDF reading adapter | `pdf/android/**`; own renderer tests | `PdfReadEngine`, `PdfReadSession`, display/render models and agreed storage leases | Contract-conforming snapshot/lease source, deterministic requests and lifecycle probes | Actual API 26 rendering on test-only fixtures, page-count/error/resource closure, one-open-page concurrency, stale requests, pixel/memory bounds; no editing dependency |
-| Codex C — Metadata / preferences | `data/metadata/**`, `data/preferences/**`; own persistence tests | `DocumentRegistry`, `DocumentMetadataRepository`, `PreferencesRepository`, typed domain values; private drafts only if approved | Registry/catalog observations and private-storage fault doubles if needed; real test databases/preferences stores | Persistence/restart/migrations, identity/reference rebinding, inaccessible versus deleted state, reading-position revision handling, no authoritative PDF or token storage |
+| Codex A — Storage / SAF | `storage/saf/**`, approved `storage/transaction/**` subset; own storage tests | `StorageDocumentRef`, `DocumentCatalog`, `DocumentReadAccess`, `ReadHandle`; exact `WorkingSnapshot`/publication/recovery only if separately included | Provider/stream/fault doubles distinguish direct seekable input, temporary read copies and exact snapshots; actual API 26 provider tests | Direct SAF seekable reads without mandatory copying, bounded non-seekable fallback, grants/revocation, identity observations/unregistered entries, cancellation/disk-full/cleanup; originals unchanged |
+| Codex B — Android PDF reading adapter | `pdf/android/**`; own renderer tests | `PdfReadSource`, `PdfReadEngine`, `PdfReadSession`, `ReadPageRef`, display/render models and agreed owned seekable handles | Direct provider/read-copy sources, snapshot leases when approved, deterministic requests and lifecycle probes | Actual API 26 rendering on test-only fixtures, page-count/error/resource closure, descriptor transfer, one-open-page concurrency, session/generation cache invalidation and external-change limits, stale requests and pixel/memory bounds; no mandatory snapshot/editing dependency |
+| Codex C — Metadata / preferences | `data/metadata/**`, `data/preferences/**`; own persistence tests | `DocumentRegistry`, logical `DocumentRef` to `StorageDocumentRef` associations, `DocumentMetadataRepository`, `PreferencesRepository`; private drafts only if approved | Registry/catalog observations and private-storage fault doubles if needed; real test databases/preferences stores | Persistence/restart/migrations, location rebinding while retaining identity, inaccessible versus deleted, unknown direct-read revision versus verified snapshot revision, no authoritative PDF/token storage |
 | Codex D — Reusable UI | `ui/components/**`; `ui/theme/**` only with explicit task scope; own Compose tests | Pure approved presentation inputs, existing theme/resources | Sample immutable state/actions, no real storage/engine/feature ViewModel | Only components required by approved consumers; accessibility, contrast, touch targets, sizing, light/dark/portrait/landscape/en/ca/es; no feature navigation or fake functionality |
 
 Each task's test ownership mirrors its production package under `src/test` or
 `src/androidTest`. Shared fakes are assigned in the A1/integration task only if
 multiple actual consumers require them; keep specific fakes with their tests.
-Fakes reproduce documented failure, revision, cancellation and closure semantics,
+Fakes reproduce documented failure, read generation/exact revision distinctions,
+logical/storage identity, cancellation and closure semantics,
 not merely happy-path output. Real adapter tests are still needed: a fake provider
 cannot prove SAF capability or real renderer behavior.
 
@@ -159,8 +168,8 @@ guarantee cannot be established.
 
 | Checkpoint | Required investigation before acceptance |
 | --- | --- |
-| Storage access and snapshots | Persisted grant flags, revocation/offline providers, non-seekable inputs, resource/disk limits, snapshot fingerprinting and external-writer limitations on API 26/27 |
-| Renderer lifecycle and performance | API 26 descriptor ownership/one-page-at-a-time behavior, unsupported/encrypted/corrupt inputs, bounds/cancellation/rapid navigation; approve numerical first-page/page-turn/cache/peak-memory budgets on the physical Android 8.1 tablet |
+| Storage access and snapshots | Persisted grant flags, revocation/offline providers, direct seekable access versus bounded non-seekable read copies, resource/disk limits, separate exact snapshot fingerprinting and external-writer limitations on API 26/27 |
+| Renderer lifecycle and performance | API 26 handle transfer/closure and one-page-at-a-time behavior on both reading paths, session/generation invalidation without false snapshot claims, unsupported/encrypted/corrupt input, bounds/cancellation/rapid navigation; approve numerical first-page/page-turn/cache/peak-memory budgets on the physical Android 8.1 tablet |
 | Exact geometry | MediaBox/CropBox origins, rotations/UserUnit, renderer agreement and round-trip tolerance; do not enable annotations from approximate display dimensions |
 | Editing dependency | PDFBox-Android candidate maintenance/security/license/transitives/API 26 footprint; preservation of fonts, transparency, links/forms/annotations/protection; reject unsupported destructive cases |
 | SaveAs and recovery | Exact validated-artifact handoff, readback checks, partial outputs, full disks, permissions/provider failure, cancellation/process death, idempotent reconciliation and journal durability |

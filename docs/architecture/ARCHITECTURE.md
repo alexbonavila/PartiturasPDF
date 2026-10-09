@@ -43,7 +43,7 @@ boundaries are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md).
   analytics, a backend or a global EventBus.
 - PDF-first: user-accessible PDFs are authoritative content. Metadata and private
   working copies support them; neither becomes a proprietary replacement library.
-- Data safety: immutable input snapshots, private working copies, validated
+- Modification data safety: immutable input snapshots, private working copies, validated
   complete output and controlled publication. Start with safe SaveAs.
 - API 26 remains mandatory. Keep `com.abdev.partituraspdf`, Kotlin, Compose,
   Material 3, brand colors `#A5D6A7`/`#90CAF9`, accessible light/dark tablet UI and
@@ -66,7 +66,7 @@ boundaries are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md).
 | `settings` | Preference presentation and future language/appearance selection | DataStore implementation or platform-only locale assumptions |
 | `drive` | Optional consent-based import/export and remote transfer adapters | Mandatory local storage, automatic synchronization or authorization secrets in preferences |
 | `core` | Android-free domain models, identifiers, contracts, typed errors and PDF coordinate mathematics | Compose, Android handles, SAF implementations, PDF engines, Room or DataStore |
-| `storage` | SAF adapters, permission/access handling, snapshot materialization, temporary files, recovery artifacts and safe publication | Metadata database, PDF parsing or feature state |
+| `storage` | SAF adapters, permissions/access, direct seekable reads, bounded temporary read copies, immutable snapshots, recovery artifacts and safe publication | Metadata database, PDF parsing or feature state |
 | `pdf` | Public PDF operations, rendering/editing adapters, exact geometry inspection, output validation and modification workflow | SAF provider internals, UI or durable metadata implementation |
 | `data` | Implementations of document registry, metadata/preferences repositories and private draft persistence | Authoritative PDF content, rendering or direct feature interactions |
 | `ui` | Shared theme and reusable Compose visual primitives | Individual feature state, navigation, repositories or engines |
@@ -148,7 +148,13 @@ still require approved dependency introduction.
 Repository interfaces (`DocumentRegistry`, `DocumentMetadataRepository`,
 `PreferencesRepository`, `AnnotationDraftStore`) live in `core`; features do not
 import `data` to consume them. `DocumentCatalog` is a core contract implemented
-by storage; it describes physical browsing independently of registry persistence.
+by storage; it describes provider browsing independently of registry persistence.
+`DocumentId` is persistent logical identity; `DocumentRef` is its logical reference.
+`StorageDocumentRef` is an opaque provider-backed location, including unregistered
+entries. All three models have one Android-free owner, `core.document`; only
+storage adapters interpret provider URI/access details. Registry resolution maps
+logical references to storage locations; catalog access never requires inventing
+a persistent identity for an unregistered file.
 Storage never imports data. Data can use the storage contract for private draft
 files without creating the reverse edge. PDF workflow receives core repository
 interfaces and engine/storage contracts through constructors, without instantiating
@@ -164,7 +170,7 @@ flowchart TD
     App --> StorageImpl[storage.saf / storage.transaction]
     App --> PdfImpl[pdf.android / pdf.editing / pdf.geometry / pdf.workflow]
     Features --> UI[ui]
-    Features --> Core[core]
+    Features --> Core[core logical identities and opaque storage references]
     Features --> StorageAPI[storage.api where permitted]
     Features --> PdfAPI[pdf.api where permitted]
     UI --> Core
@@ -196,7 +202,9 @@ internals without establishing a production cross-component dependency.
 `app` constructs implementations and injects contracts with explicit lifetime
 ownership. It assembles a navigation graph only when approved, passes
 `DocumentId` and small reconstructible parameters across destinations, and
-resolves current access via `DocumentRegistry`. It never passes a live PDF
+resolves a logical `DocumentRef` to current `StorageDocumentRef` access through
+`DocumentRegistry`. Unregistered provider-entry reads can use `StorageDocumentRef`
+without becoming registered navigation identities. It never passes a live PDF
 session, bitmap, Room entity or PDFBox object as a navigation argument.
 
 Each feature owns its Compose route, ViewModel and immutable UI state. Actions
@@ -224,13 +232,19 @@ flowchart LR
     Host --> Annot[annotations public entry point]
     Reader --> Geometry[core geometry and revision-bound page models]
     Annot --> Geometry
-    Reader --> ReadAPI[pdf.api reading contracts]
+    Reader --> ReadAPI[pdf.api PdfReadSource and sessions]
     Annot --> EditAPI[pdf.api annotation and modification contracts]
 ```
 
-Both presentations consume the same revision-consistent transform, including
+During annotation integration, both presentations consume the same exact-revision
+snapshot and coordinate transform, including
 crop origin, page rotation, UserUnit, fit scale, zoom and pan. Unknown exact
 geometry may permit safe read-only viewing but disables annotation editing.
+Ordinary reading uses `PdfReadSource` with a suitable owned SAF descriptor
+directly, or a bounded temporary read copy for non-seekable input. Entering a
+revision-sensitive annotation operation acquires `PdfSourceSnapshot` and reopens
+rendering from an independent lease of that exact snapshot before sharing geometry
+with Annotations. A direct provider session is not an immutable verified revision.
 Pointer arbitration disables page-turn gestures while drawing/selecting;
 scroll/zoom/tool priorities require tablet tests. Persisted annotations, draft
 overlays and renderer-baked appearances are reconciled by a declared rendering
@@ -242,12 +256,13 @@ appearance behavior is reported explicitly, rather than silently flattened.
 | Data | Authority and lifetime |
 | --- | --- |
 | PDF bytes and persisted standard annotations | User document/provider; source remains untouched during processing |
-| Logical document identity and access associations | `DocumentRegistry` implemented by data; URI/location can change without necessarily changing identity |
+| Logical document identity and access associations | `DocumentRegistry` implemented by data; persistent `DocumentId`/logical `DocumentRef` resolve to a separately changeable `StorageDocumentRef` |
 | Display/provider information | `DocumentCatalog`; observations may be stale and are not content-revision proof |
 | Favorites, reading position and library index | `DocumentMetadataRepository`/Room; reconciled with the current document revision |
 | Typed application/reader preferences | `PreferencesRepository`/DataStore; never authorization tokens |
 | Exact PDF geometry | Inspection of the exact snapshot revision; shared pure models and mathematics in core |
 | Rendered pages | Reader's bounded cache plus explicitly owned render leases; transient, never durable PDF content |
+| Ordinary rendering input | Session-owned seekable provider handle or bounded private read copy; session/generation-bound observations, no asserted exact revision |
 | Unsaved annotation work | Annotations owns intent/history; `AnnotationDraftStore` persists revision-bound recoverable drafts in private storage |
 | Working snapshots, validated output and recovery copies | Operation-owned private storage; recoverable transaction records retained when publication/reconciliation is uncertain |
 | Remote Drive files and grants | Explicit remote IDs/consent in drive; no filename-based identity or mandatory synchronization |
@@ -274,7 +289,7 @@ from writing concurrently.
 | --- | --- |
 | Single module with packages | Simple builds and incremental development; package rules need review/checks |
 | Pure domain with narrow adapter contracts | JVM-testable invariants; Android URI/descriptor/bitmap handles remain in controlled technical boundaries |
-| Android `PdfRenderer` initial reading adapter | API 26 platform support; not an editing engine or complete geometry/annotation inspection API |
+| Android `PdfRenderer` initial reading adapter | API 26 owned seekable SAF input without mandatory full copying; bounded copy fallback for non-seekable input; not an editing engine or complete geometry/annotation inspection API |
 | Editing adapter behind public PDF contracts | Engine can be replaced; PDFBox-Android remains a candidate pending fidelity/security/license evaluation |
 | Explicit composition, Flow and ViewModels | Local lifetimes and test doubles; no obligatory DI framework or global message bus |
 | Snapshot-based modification and SaveAs first | Protects originals and permits exact-artifact validation; costs disk space and does not eliminate provider failures |

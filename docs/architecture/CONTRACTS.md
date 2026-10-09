@@ -27,7 +27,7 @@ not additional shared contracts.
 
 | Public model / contract | Declaration owner | Implementation / state owner |
 | --- | --- | --- |
-| `DocumentId`, `DocumentRef`, `FolderRef`, `DocumentInfo`, `DocumentEntry`, `DocumentRevision`, `PageIndex`, `RevisionPageRef` | `core.document` | Immutable domain values; adapters supply observations |
+| `DocumentId`, `DocumentRef`, `StorageDocumentRef`, `FolderRef`, `DocumentInfo`, `DocumentEntry`, `DocumentRevision`, `PageIndex`, `RevisionPageRef` | `core.document` | Immutable domain values; adapters supply observations |
 | `DocumentRegistry`, `DocumentMetadataRepository` | `core.document` | `data.metadata` |
 | `DocumentCatalog` | `core.document` | `storage.saf` |
 | `PdfPoint`, `PdfRect`, `PdfRotation`, `PdfPageGeometry`, `PageViewport`, `PageCoordinateTransform` | `core.geometry` | Pure mathematics in core; adapters supply inspected geometry |
@@ -35,7 +35,7 @@ not additional shared contracts.
 | `AppPreferences`, `ReaderPreferences`, `PreferencesRepository` | `core.preferences` | `data.preferences` |
 | `Outcome<T>`, `AppError` | `core.result` | Producers report errors; presentation localizes them |
 | `DocumentReadAccess`, `ReadHandle`, `WorkingSnapshot`, `SnapshotId`, `DocumentPublisher`, `PublicationMode`, `PublicationReceipt`, `PublicationResult`, `OperationId`, `RecoveryArtifactStore`, `RecoveryRecord` | `storage.api` | `storage.saf` / `storage.transaction` |
-| `PdfSourceSnapshot`, `PdfReadEngine`, `PdfReadSession`, `PageDisplayInfo`, `RenderRequest`, `RenderedPage`, `RenderRequestId`, `PdfGeometryInspector` | `pdf.api` | `pdf.android` reads; `pdf.geometry` inspects |
+| `PdfReadSource`, `ReadSessionId`, `ReadPageRef`, `PdfSourceSnapshot`, `PdfReadEngine`, `PdfReadSession`, `PageDisplayInfo`, `RenderRequest`, `RenderedPage`, `RenderRequestId`, `PdfGeometryInspector` | `pdf.api` | `pdf.android` reads; `pdf.geometry` inspects |
 | `PagePlacement`, `PageCompositionPlan`, `PdfPageComposer`, `PdfAnnotationWriter` | `pdf.api` | `pdf.editing`; candidate engine not yet adopted |
 | `PdfOutputValidator`, `ValidationExpectation`, `ValidationReport`, `ValidatedPdfArtifact`, `PdfModificationRequest`, `PdfModificationService`, `ModificationReceipt` | `pdf.api` | `pdf.geometry` / `pdf.editing` supply validation; `pdf.workflow` coordinates |
 
@@ -52,17 +52,19 @@ ownership or couples core to an engine.
 
 | Model | Required meaning / fields |
 | --- | --- |
-| `DocumentId` | Stable app-issued logical identifier; independent of location, display name and hash |
-| `DocumentRef` | Opaque provider/location reference represented by Android-free values; may be unregistered; adapter alone interprets URI syntax and permission behavior |
+| `DocumentId` | Persistent app-issued logical identity; independent of location, display name and hash |
+| `DocumentRef` | Logical document reference built around `DocumentId`; contains no URI/provider location and resolves through the registry |
+| `StorageDocumentRef` | Opaque provider-backed location/access reference represented by Android-free values, including unregistered SAF documents; adapter alone interprets URI syntax and permission behavior |
 | `FolderRef` | Provider-scoped folder/tree reference; not a raw filesystem path or a document identity |
 | `DocumentInfo` | Observed name, MIME type, byte size/time when available and explicit availability/access state; unknown fields stay unknown |
-| `DocumentEntry` | One catalog result: reference, observed info, folder association and optional registered `DocumentId`; catalog membership is not registration |
+| `DocumentEntry` | One provider catalog entry: `StorageDocumentRef`, observed info and folder association; confirmed optional `DocumentRef` association is added by registry/catalog coordination, not inferred from catalog membership |
 | `DocumentRevision` | App-observed content version bound to a specific logical document; exact snapshot digest/byte length identifies the bytes used by an operation; provider size/time are hints only |
 | `PageIndex` | Nonnegative zero-based internal index, also checked against session page count; UI formats index + 1 |
 | `RevisionPageRef` | `DocumentId` + exact `DocumentRevision` + `PageIndex`; never a cross-revision stable page identifier |
 
-Renames or verified moves can retain `DocumentId`; they update the associated
-`DocumentRef`. Copies normally acquire a new ID. Equal filenames or digests
+Renames or verified moves can retain `DocumentId` and its logical `DocumentRef`;
+they update the registry's associated `StorageDocumentRef`. Copies normally
+acquire a new ID. Equal filenames or digests
 alone do not justify identity merging. Registry reassociation requires evidence
 or explicit user confirmation, not a guess from a failed provider query.
 
@@ -77,41 +79,70 @@ provider bytes. Unknown/changed source state blocks unsafe replacement.
 
 ### Core contracts
 
-- `DocumentRegistry`: resolve a `DocumentId` to its registered reference and
-  last-known revision/access state; register a newly selected document; rebind a
-  confirmed relocation; record observations/publication and unresolved recovery.
+- `DocumentRegistry`: resolve a `DocumentId` or its logical `DocumentRef` to a
+  registered `StorageDocumentRef` and last-known revision/access state. Register a
+  selected provider entry by assigning/confirming persistent identity, or rebind
+  that identity to a confirmed relocated storage reference; record observations,
+  publication and unresolved recovery. Both logical lookup forms use the same
+  registry and identity; neither treats a logical reference as a URI.
   Missing registration, revoked permission, unavailable provider and confirmed
   deletion are distinct results. The registry does not open PDFs or acquire
   permissions. Data implements persistence; storage does not call it.
-- `DocumentCatalog`: list a `FolderRef` and inspect a `DocumentRef`, returning
+- `DocumentCatalog`: list a `FolderRef` and inspect a `StorageDocumentRef`, returning
   `Outcome` of immutable entries/info. Queries are cancellable/background work,
   can fail or return partial observations explicitly, and do not mutate the
-  registry. Library/application coordination joins catalog observations with
-  registry state. Mutation capabilities for future rename/move/delete require
+  registry. Storage returns provider entries, including unregistered files;
+  library/application coordination joins them with confirmed registry associations
+  to logical `DocumentRef`s. Reading an unregistered entry need not create a
+  persistent library identity. Mutation capabilities for rename/move/delete require
   their own approved minimal contracts; A0 does not invent their implementation.
 - `DocumentMetadataRepository`: observe and update registered metadata such as
-  favorite state and last successfully visible page, bound to a known revision.
+  favorite state and last successfully visible page using logical identity.
+  Record an exact revision when known; ordinary direct-read position can carry an
+  unknown revision and observed page count, never a fabricated verified revision.
   Reading position is validated/clamped after a page-count change only under an
   explicit reconciliation rule; annotations are never remapped by index alone.
   Durable writes and migrations must preserve identity and report failures.
 
-### Technical access and snapshots
+### Technical access: ordinary reads versus exact snapshots
 
-`DocumentReadAccess` owns acquiring read access to a reference and materializing
-an immutable `WorkingSnapshot`. Its operations return `Outcome<ReadHandle>` or
-`Outcome<WorkingSnapshot>`; callers provide the registered identity/observation
-needed for revision binding. It does not silently copy authoritative documents
-into the permanent library. Persist permission grants only when supported by
-the selected SAF grant flags; handle revoked grants, unavailable volumes,
-security exceptions, cancellation, size limits and disk-full copying.
+`DocumentReadAccess` takes a `StorageDocumentRef`, not a logical reference used
+as a URI. Registered callers first resolve `DocumentRef` through the registry;
+unregistered provider entries can be read directly. Storage does not import or
+call the registry. Its distinct operation shapes are:
 
-`ReadHandle` is a closeable, exclusively owned technical input. State its
-seekability and descriptor/stream ownership. It may wrap a platform descriptor
-inside the storage adapter boundary, never inside a core document model. Opening
-a stream is not proof of a complete valid PDF. A non-seekable provider stream
-must be materialized into a bounded private copy before `PdfRenderer` opens it.
+- `openRead`: acquire an exclusive `ReadHandle` with declared seekability.
+- `openSeekable`: return an owned seekable descriptor suitable for API 26
+  rendering. Use suitable SAF input directly, without a full private copy. For
+  non-seekable input or incompatible descriptor access, materialize a complete
+  bounded temporary private read copy and return its owned descriptor.
+- `snapshot`: deliberately materialize and seal an immutable `WorkingSnapshot`
+  with a logical `DocumentRef`, exact digest/length revision and operation limits,
+  for editing, publication or revision-sensitive annotation work. An unregistered
+  entry must first receive an explicitly established logical identity in the
+  approved operation/registration flow; a URI is never its `DocumentId`.
 
-`WorkingSnapshot` has `SnapshotId`, document identity, exact revision, byte count
+Opening a handle is not proof of a valid PDF or an immutable source. A direct
+provider descriptor is **not a cryptographically verified snapshot**, even if
+seekable or reporting stable size/time. A completed temporary read copy is stable
+for its owned lifetime, but does not assert an exact `DocumentRevision` unless
+the explicit snapshot path computes/seals that evidence. Neither path imports
+authoritative documents into the permanent private library. Persist permission
+grants only when supported by the selected SAF grant flags; handle revoked
+grants, unavailable volumes, security exceptions, cancellation, resource limits
+and disk-full copying.
+
+`ReadHandle` is closeable and exclusively owned; it declares provider-backed,
+temporary-read-copy or immutable-snapshot-lease provenance and seekability.
+Descriptors/streams remain in technical adapter contracts, never core models.
+Do not share one descriptor between concurrent sessions. The acquiring caller
+owns closure until explicit engine transfer; if unused, it closes the handle.
+Temporary copies are session/operation-owned and deleted after their readers
+close. Cancellation/copy failure closes provider handles and deletes or tracks
+incomplete files; an incomplete copy cannot reach the renderer. Test copy limits
+and seekable-descriptor paths on API 26 without depending on newer platform APIs.
+
+`WorkingSnapshot` has `SnapshotId`, logical `DocumentRef`, exact revision, byte count
 and immutable private bytes. It offers independently owned seekable read leases;
 its owner cannot mutate or delete it while any lease is active. One descriptor
 must not be shared concurrently between sessions/adapters. `PdfSourceSnapshot`
@@ -121,6 +152,15 @@ Acquisition either finishes and seals a complete snapshot or leaves a clearly
 incomplete private artifact for cleanup/recovery; incomplete bytes cannot be
 used as a valid source. The operation owns the snapshot; sessions own acquired
 leases; closing sessions does not destroy another operation's snapshot.
+
+`PdfReadSource` is the `pdf.api` reading input around one owned seekable
+`ReadHandle`, its storage provenance and optional logical association. It accepts
+direct provider input or a completed temporary read copy without requiring a
+`WorkingSnapshot`. A `PdfSourceSnapshot` can also supply a fresh independent
+lease as a `PdfReadSource`; only that verified path carries its exact revision.
+Conversion never duplicates the snapshot bytes or changes their ownership.
+The engine consumes a source handle exactly once under the transfer rules below.
+This separates ordinary rendering access from immutable modification inputs.
 
 For produced output, the service reserves the intended output identity (a new
 ID for SaveAs, the existing ID for an approved replacement) before sealing its
@@ -137,11 +177,12 @@ are suspending `Outcome` operations unless noted. Cancellation always propagates
 
 | Contract | Input → output design |
 | --- | --- |
-| `DocumentRegistry` | Resolve ID → registered reference/observation or typed failure; register/rebind/record a confirmed identity + reference/revision → acknowledged durable update |
-| `DocumentCatalog` | Folder → entries; reference → info; partial listing is explicitly marked incomplete and is not proof that omitted documents were deleted |
-| `DocumentMetadataRepository` | ID/revision → observable immutable metadata; ID/expected revision + changed metadata → acknowledged update or stale-revision/storage failure |
-| `DocumentReadAccess` | Reference → exclusive `ReadHandle`; ID/reference + operation limits → sealed `WorkingSnapshot` or access/copy/resource failure |
-| `PdfReadSession` | Revision-bound page → `Outcome<PageDisplayInfo>`; `RenderRequest` → `Outcome<RenderedPage>`; close → release/wait for owned resources |
+| `DocumentRegistry` | ID/logical `DocumentRef` → registered `StorageDocumentRef` + observations or typed failure; confirmed logical identity + storage location/revision → acknowledged register/rebind/update |
+| `DocumentCatalog` | `FolderRef` → provider entries; `StorageDocumentRef` → info; partial listing is explicitly incomplete and is not proof that omitted documents were deleted |
+| `DocumentMetadataRepository` | Logical `DocumentRef` → observable immutable metadata; identity + observations/known expected revision + changed metadata → acknowledged update or stale-revision/storage failure |
+| `DocumentReadAccess` | `openRead`/`openSeekable` with `StorageDocumentRef` → exclusive `ReadHandle` (bounded read-copy fallback for seekability); `snapshot` with logical identity/storage location + limits → sealed exact `WorkingSnapshot` |
+| `PdfReadEngine` | `PdfReadSource` → `Outcome<PdfReadSession>`; consumes its owned seekable handle on entry, including failure/cancellation |
+| `PdfReadSession` | Session-bound `ReadPageRef` → `Outcome<PageDisplayInfo>`; `RenderRequest` → `Outcome<RenderedPage>`; close → release/wait for owned resources |
 | `PdfGeometryInspector` | `PdfSourceSnapshot` + revision-bound page → `Outcome<PdfPageGeometry>` |
 | `PdfPageComposer` | `PageCompositionPlan` + operation-owned output target/identity → `Outcome<WorkingSnapshot>` of complete, unvalidated output |
 | `PdfAnnotationWriter` | `PdfSourceSnapshot` + `AnnotationChangeSet` + operation-owned output target/identity → `Outcome<WorkingSnapshot>` of complete, unvalidated output |
@@ -162,25 +203,46 @@ maps or dummy return values in place of the consumed typed model.
 
 | Contract / model | Inputs, outputs and responsibilities |
 | --- | --- |
-| `PdfReadEngine` | Open one `PdfSourceSnapshot` and return `Outcome<PdfReadSession>`; validate readability/resource limits and acquire its own read lease |
-| `PdfReadSession` | Fixed revision and page count; query `PageDisplayInfo`, render `RenderRequest`, close deterministically; no editing or publication |
-| `PageDisplayInfo` | Revision-bound page, renderer display dimensions/orientation and declared annotation-rendering capability; not a substitute for exact raw page geometry |
-| `RenderRequest` | `RenderRequestId`, revision-bound page, target pixel dimensions/clip and viewport generation; strictly bounded dimensions/allocation |
-| `RenderedPage` | Request ID, revision/page/viewport generation, display metadata and a closeable render-buffer lease; bitmap is confined to the technical presentation boundary |
+| `PdfReadSource` | Owned seekable `ReadHandle`, provider/copy/snapshot provenance, optional logical `DocumentRef` and exact revision only for a verified snapshot lease |
+| `PdfReadEngine` | Open `PdfReadSource` and return `Outcome<PdfReadSession>`; validate readability/resource limits without forcing snapshot acquisition |
+| `ReadSessionId` | Unique transient identity of one open session; never a persistent document identity or verified content revision |
+| `ReadPageRef` | `ReadSessionId` + source generation + `PageIndex`; optional exact revision for snapshot sessions, not a substitute for `RevisionPageRef` |
+| `PdfReadSession` | Owns source handle, session ID/generation and observed page count; exact revision only when snapshot-backed; query/display/render/close, no editing/publication |
+| `PageDisplayInfo` | Session-bound page, observed renderer dimensions/orientation and declared annotation-rendering capability; not proof of exact raw geometry or source immutability |
+| `RenderRequest` | `RenderRequestId`, `ReadPageRef`, target pixel dimensions/clip and viewport generation; strictly bounded dimensions/allocation |
+| `RenderedPage` | Request ID, session/source generation/page/viewport generation, optional verified revision, display metadata and closeable render-buffer lease; bitmap confined to technical presentation boundary |
 
 The initial adapter is Android `PdfRenderer`. On API 26, serialize session access
 and permit only one native page open at a time; close the page in `finally`
 before the next operation. Do not assume parallel page rendering or editing
 support. A session rejects calls after close; shutdown waits for in-flight native
-work to release the page/renderer/input in the correct order. Define descriptor
-ownership transfer explicitly in the adapter so neither double-close nor leaks
-occur. Open failure closes every resource it acquired.
+work to release the page/renderer/input in the correct order. On entry to engine
+open, ownership transfers to the engine: failure/cancellation closes the input;
+successful open transfers it to the session. The caller must not reuse or close
+a transferred handle. The adapter honors the native renderer's descriptor
+ownership semantics to prevent double-close/leaks; closing a session releases
+its read-copy owner or independent snapshot lease after native resources close.
 
-Reader owns a session for one reading route/revision and closes it when that
-route/session ends. Render off the main thread. The session may serialize
+Reader owns a session for one reading route/source generation and closes it when
+that route/session ends. Snapshot sessions have a fixed exact revision; direct
+provider sessions have only observed content and page count. External writes can
+alter bytes behind an open descriptor, causing inconsistent renders or failure;
+session ID/generation is an app cache boundary, not a content hash. Notifications
+and metadata are hints, not guaranteed change detection. On observed/suspected
+change, access revocation or explicit refresh, reject old pending results,
+invalidate render/page/geometry state, close safely and reopen with a new source
+generation and observed page count. Undetected external writes remain a documented
+limitation of direct reading. App-level modifications invalidate affected direct
+sessions too. Revision-sensitive annotation operations acquire an exact immutable
+snapshot and reopen rendering from that same snapshot before enabling geometry,
+drafts or writes; a direct session cannot authorize those operations.
+
+Render off the main thread. The session may serialize
 requests; reader limits queued work, prioritizes current/adjacent pages and
-discards outdated requests after rapid navigation, zoom or revision changes.
-Cache keys include revision, page and render/viewport parameters. An old completed
+discards outdated requests after navigation, zoom, session/source generation or
+known revision changes. Cache keys include session ID, source generation, page
+and render/viewport parameters, plus verified revision when available. Provider
+URI/size/time never substitutes for exact revision identity. An old completed
 render cannot overwrite the new viewport. Cancellation of a non-interruptible
 native call discards its eventual result and releases the buffer; it does not
 promise immediate native interruption.
@@ -195,8 +257,11 @@ ephemeral and are never logged or stored in ordinary preferences.
 
 ## Exact geometry and coordinate transforms
 
-`PdfGeometryInspector` inspects the same `PdfSourceSnapshot` revision used for
-reading/editing and returns `Outcome<PdfPageGeometry>` per `RevisionPageRef`.
+`PdfGeometryInspector` inspects the exact `PdfSourceSnapshot` used for editing
+or revision-sensitive annotations and returns `Outcome<PdfPageGeometry>` per
+`RevisionPageRef`. Annotation rendering opens an independent read lease of that
+same snapshot. Ordinary direct reading does not require this inspector/snapshot
+path; its display information cannot certify a revision.
 `pdf.geometry` owns parsing/extraction; a selected editing/parser engine remains
 subject to validation. Android `PdfRenderer` display widths/heights alone cannot
 recover arbitrary MediaBox/CropBox origins or UserUnit. Exact geometry unavailable
@@ -327,11 +392,11 @@ integration; newer system-only locale APIs are insufficient.
 | External observation | Required response |
 | --- | --- |
 | Content changes or exact revision mismatch | Invalidate geometry/renders; refresh known content; preserve incompatible drafts separately; reconcile reading position/favorites without pretending content is unchanged |
-| Verified rename/move | Update reference while retaining logical identity and metadata; close obsolete access and reopen as needed |
+| Verified rename/move | Rebind `StorageDocumentRef` while retaining `DocumentId`/logical `DocumentRef` and metadata; close obsolete access and reopen as needed |
 | Permission revoked / provider unavailable | Mark access unavailable with typed error; preserve metadata/drafts and offer future reauthorization; do not infer deletion |
 | Confirmed deletion | Mark the confirmed absence; retain recovery/user metadata according to an approved retention rule, rather than cascading an accidental destructive delete |
-| SaveAs success | Register new logical identity/reference/revision; associate only metadata intentionally copied under approved rules; original remains unchanged |
-| Replacement success | Retain identity, record new revision/reference if necessary, reconcile page provenance and draft base |
+| SaveAs success | Register new `DocumentId`/logical `DocumentRef` with published `StorageDocumentRef`/exact revision; associate only intentionally copied metadata; original unchanged |
+| Replacement success | Retain logical identity/reference, record new exact revision/storage reference if needed, reconcile page provenance and draft base |
 | Publication complete but metadata update fails | Keep publication receipt/recovery record, report reconciliation pending and repair idempotently; never blindly repeat publication |
 
 Recovery artifacts and drafts must be excluded from unintended backup/export,
@@ -430,15 +495,16 @@ and cleanup/recovery of partial destination files.
 
 `PublicationResult` distinguishes verified completion (`PublicationReceipt`),
 known failure with recovery state, and uncertain/partial publication requiring
-recovery. The receipt contains `OperationId`, resulting reference, exact verified
+recovery. The receipt contains `OperationId`, resulting `StorageDocumentRef`, exact verified
 byte identity and actual durability/readback evidence. Provider completion signals
 alone are not universal power-loss durability guarantees. If re-reading or
 provider-supported equivalent integrity verification is unavailable, the result
 remains unverified rather than ordinary success. Report supported guarantees
 per provider; do not invent them.
 
-`ModificationReceipt` identifies verified published output, page provenance/new
-revision and reconciliation status. Service returns ordinary success only after
+`ModificationReceipt` identifies verified published output with logical
+`DocumentRef` and resulting `StorageDocumentRef`, page provenance/new revision
+and reconciliation status. Service returns ordinary success only after
 required publication and reconciliation criteria pass. Reconciliation-pending
 or publication-uncertain outcomes preserve receipts in recovery state, with typed
 errors/status so the UI does not claim full success or automatically retry a save.
@@ -466,7 +532,7 @@ such limitations must block unsafe replacement rather than weaken acceptance.
 | Invariant to test in future approved implementation | Pending technical validation |
 | --- | --- |
 | Logical identity is independent of URI/name; unavailable is not deleted | Provider identity/relocation evidence and unreliable metadata semantics |
-| Every edit/render/geometry/draft is revision-bound; stale results are rejected | Snapshot capture under external writes, fingerprint costs and cache invalidation |
+| Edits/exact geometry/drafts require snapshot revisions; ordinary renders require session/generation binding and reject stale results without claiming immutable source bytes | Direct-provider external writes, snapshot capture, fingerprint costs and cache invalidation |
 | Sessions/pages/leases close once, including failures/cancellation | API 26 renderer descriptor transfer, blocking-call cancellation and concurrency |
 | Transform round trips preserve PDF coordinates across rotations/boxes/UserUnit | Exact geometry inspector, renderer visible bounds and numerical tolerances |
 | Plans are nonempty/in-range and output provenance/order is explicit | Engine retention of PDF properties, encrypted/signed input policies |

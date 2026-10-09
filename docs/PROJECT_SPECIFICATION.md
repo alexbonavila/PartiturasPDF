@@ -236,7 +236,7 @@ test-fixtures/
   README.md
 ```
 
-Target suite includes single-page, 2-page, 10-page, 50-page, 100-page, A3 landscape, A5 portrait, mixed sizes, rotated pages, image/scanned scores, vector text/music, standard annotations, complex fonts/transparency, password-protected, and deliberately corrupt PDFs.
+The committed suite contains 15 synthetic, separately CC0-licensed fixtures: single-page, 2-page, 10-page, 50-page, 100-page, A3 landscape, A5 portrait, mixed sizes, rotated pages, image/scanned scores, vector text/music, standard annotations, complex fonts/transparency, password-protected, and deliberately corrupt PDFs. See [the fixture README](../test-fixtures/README.md) and the authoritative manifest.
 
 - Fixtures are immutable inputs. Test code must use temporary copies for edits.
 - Each fixture's checksum, page count, size/rotation features and expected validity are declared in `manifest.json`.
@@ -294,7 +294,7 @@ No phase is complete without requirement fulfillment, applicable passing tests, 
 
 ### 13.5 Verification and evidence
 
-Store testing policies in `docs/TESTING_POLICY.md`, change control in `docs/CHANGE_CONTROL.md`, completion criteria in `docs/DEFINITION_OF_DONE.md` and the PR template at `.github/PULL_REQUEST_TEMPLATE.md` during Phase 0. Such files are **planned outputs** and may not exist when this document is first committed.
+Phase 0A establishes [testing policy](TESTING_POLICY.md), [change control](CHANGE_CONTROL.md), [completion criteria](DEFINITION_OF_DONE.md), the [PR template](../.github/PULL_REQUEST_TEMPLATE.md) and [CI infrastructure](CI.md). Their existence is not a claim that all gates pass or GitHub protection is active. Phase 0B application foundation work starts only after explicit owner approval and merge of Phase 0A, from updated `main`; this sequencing does not waive mandatory acceptance requirements.
 
 ## 14. Roadmap and milestone constraints
 

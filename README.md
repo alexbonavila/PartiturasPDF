@@ -55,16 +55,16 @@ The exact build-tool versions are defined by the files in this repository. Do no
 .\gradlew.bat :app:assembleDebug :app:lintDebug :app:testDebugUnitTest
 ```
 
-On Unix, the current wrapper lacks its executable bit; use `bash ./gradlew` until
-an approved foundation change corrects that permission. CI preserves the wrapper
-and invokes it through Bash with JDK 25 and Android SDK 37.
+The Unix wrapper is executable; CI also invokes it through Bash. Use JDK 25
+and Android SDK 37; Java source/target compatibility remains 11.
 
 The Phase 0A workflow defines build, lint, JVM tests, actual API 26 emulator tests,
 localization, PDF fixture verification and an aggregate quality gate. Weekly and
 requested compatibility runs also execute API 27 and API 36 tests. See
-[`docs/CI.md`](docs/CI.md) for commands and limitations. Missing Catalan/Spanish
-resources currently fail localization; application resource work is reserved for
-Phase 0B. A defined workflow is not evidence that all checks have passed.
+[`docs/CI.md`](docs/CI.md) for commands and limitations. The starter now uses a
+fixed brand light/dark theme and complete English/Catalan/Spanish resources.
+A defined workflow is not evidence that all checks have passed; the Phase 0B PR
+records the actual results and remaining human acceptance.
 
 ## Documentation and project rules
 
@@ -74,6 +74,8 @@ Phase 0B. A defined workflow is not evidence that all checks have passed.
 - [`docs/CHANGE_CONTROL.md`](docs/CHANGE_CONTROL.md): approval workflow and manual GitHub Ruleset instructions.
 - [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md): automated, manual and final human acceptance.
 - [`docs/PHASE_0A_REPORT.md`](docs/PHASE_0A_REPORT.md): audit, actual verification and unresolved gates.
+- [`docs/TECH_STACK.md`](docs/TECH_STACK.md): current toolchain, theme/locales and candidate dependency risks.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): Phase 0 status and future scope requiring separate approval.
 - [`LICENSE`](LICENSE): the repository's restrictive Creative Commons license text.
 
 Development is controlled through feature branches, pull requests, automated checks, and **explicit approval by the project owner**. Automated agents may propose changes but must never merge them into `main` without authorization.
@@ -97,9 +99,9 @@ PartiturasPDF/
 
 The PDF dataset is present and immutable. Install its declared Python dependencies
 and run `python test-fixtures/scripts/verify_fixtures.py`; never regenerate it in
-CI. No product features are implemented. Phase 0B starts only after the owner
-explicitly approves and merges Phase 0A and development resumes from updated
-`main`; failed mandatory checks still block integration.
+CI. No product features are implemented. The owner merged Phase 0A and authorized
+Phase 0B, developed from updated `main`. Phase 0B awaits human review; failed
+mandatory checks still block integration. Future phases require separate approval.
 
 ## License and reuse
 

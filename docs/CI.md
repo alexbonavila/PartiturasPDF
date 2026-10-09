@@ -56,7 +56,9 @@ have `/dev/kvm`; absence fails instead of substituting test-source compilation.
 The script verifies the device API, runs connected tests, and verifies the
 existing `ExampleInstrumentedTest.useAppContext` appears in successful JUnit XML.
 The JVM job similarly requires the retained existing starter test to execute.
-Real emulator success remains unverified until GitHub runs this workflow.
+Phase 0A demonstrated real API 26 smoke-test execution. Phase 0B additionally
+executes foundation Compose/localization/contrast tests; its PR records results
+for the latest revision rather than relying on earlier runs.
 
 Weekly runs execute API 27 and API 36. Before phase acceptance, the owner uses
 **Actions → CI → Run workflow**, selects the final development revision and
@@ -100,13 +102,10 @@ See [PHASE_0A_REPORT.md](PHASE_0A_REPORT.md) for actual local/remote results.
 
 ## Known blockers and corrective actions
 
-- Missing `values-ca/strings.xml` and `values-es/strings.xml` cause localization
-  and aggregate-gate failure. Application resource corrections belong to Phase
-  0B. The authorized split creates an integration sequencing blocker; no check
-  exemption or failing-check bypass is permitted. The owner must resolve it
-  through explicit change control before PR 1 can be merge-ready.
-- The Unix wrapper is non-executable; Bash runs the preserved wrapper. A tracked
-  permission correction is deferred to the separately approved foundation PR.
+- Phase 0B adds the previously missing Catalan/Spanish resources and corrects
+  the Unix wrapper executable permission. The existing validators and gate are
+  unchanged; new missing translations still fail CI. See TECH_STACK.md and the
+  Phase 0B PR for current execution evidence; Phase 0A's report is historical.
 - SDK/JDK/artifact download or proxy failures: record the exact endpoint/error,
   restore the supported environment access, and retry. Never change project
   versions or bypass TLS/network controls just to pass.

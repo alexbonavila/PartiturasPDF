@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Partituras PDF</string>
     <string name="starter_recipient">Android</string>
-    <string name="starter_greeting">Hello %1$s!</string>
+    <string name="starter_greeting">Hola, %1$s!</string>
 </resources>

@@ -66,6 +66,48 @@ enables **compatibility**. Record both matrix results and the exact SHA in the
 PR/phase evidence. If the workflow is not yet on `main`, the manual UI may not
 offer dispatch; use the PR run for initial verification and record the limitation.
 
+### API 27 system-image availability
+
+Compatibility keeps `google_apis` for both APIs, using **x86 for API 27** and
+**x86_64 for API 36**. API 26 remains `google_apis` x86_64. The architecture
+expression changes only API 27; job names, triggers, device API assertions,
+connected tests, XML smoke-test verification and aggregate-gate requirements
+are unchanged.
+
+[Run 37969432746](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37969432746)
+failed before API 27 boot because `system-images;android-27;google_apis;x86_64`
+does not exist in the official repository. No API 27 test ran. Its API 26 and
+API 36 instrumentation passed, but the requested compatibility failure correctly
+failed `quality-gate`.
+
+Official metadata checked on 2026-10-09 lists:
+
+| API 27 target | x86 | x86_64 |
+| --- | --- | --- |
+| `google_apis` | Available, revision 11 | Not listed |
+| `default` | Available, revision 1 | Available, revision 1 |
+
+Sources: Google's
+[Google APIs image index](https://dl.google.com/android/repository/sys-img/google_apis/sys-img2-3.xml)
+and [default image index](https://dl.google.com/android/repository/sys-img/android/sys-img2-3.xml).
+The Google APIs version-4 index agrees. The selected stable package is
+`system-images;android-27;google_apis;x86`; its
+[x86-27_r11.zip](https://dl.google.com/android/repository/sys-img/google_apis/x86-27_r11.zip)
+archive HEAD request returned HTTP 200 and Content-Length 807,298,593. Selecting
+x86 retains the existing target instead of changing the installed Android services. Package
+availability is provisioning evidence, **not a passing instrumentation result**.
+
+The correction PR records workflow syntax checks, official SDK package listing
+and the seven PR checks at its final revision. API 27 remains **NOT RUN / BLOCKED**
+until the corrected emulator actually executes the tests. When dispatch is
+available, select `fix/ci-android-api27-emulator` with compatibility enabled to
+verify before merging. If dispatch cannot run from the branch, the owner must
+run **Actions → CI → Run workflow → main → compatibility enabled** after merging.
+Record that run's exact SHA, API 27 and API 36 results and successful JUnit XML
+containing `ExampleInstrumentedTest.useAppContext`. Phase 0 acceptance stays
+unresolved until both compatibility jobs and their fail-closed gate pass; image
+availability or the ordinary seven PR checks cannot substitute for that evidence.
+
 Failure reports include Gradle problem/manifest logs, Lint reports, JVM XML/HTML
 and instrumentation XML/HTML, retained for 14 days. The job log remains available
 when setup fails before reports exist. Missing artifacts never count as passing

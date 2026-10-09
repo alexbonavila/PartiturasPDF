@@ -4,7 +4,7 @@
 
 Partituras PDF is a tablet-first project designed to turn an Android device into a practical digital music stand and a manageable library of musical scores. Its goal is to keep scores in ordinary PDF files, provide distraction-free reading with simple page turns, and make common changes without requiring a desktop PDF editor.
 
-> **Project status: foundation / pre-implementation.** The repository currently contains the initial Android Studio/Jetpack Compose starter project. The capabilities described below are **planned**, not yet available. Development will take place in separately approved phases.
+> **Project status: Phase 0 completed, merged and accepted by the project owner.** The repository contains the Android starter with its Material 3 theme, English/Catalan/Spanish resources and established quality infrastructure. No product features are implemented; the capabilities below remain **planned**. Future work requires separate owner approval.
 
 ## Planned capabilities
 
@@ -63,8 +63,10 @@ localization, PDF fixture verification and an aggregate quality gate. Weekly and
 requested compatibility runs also execute API 27 and API 36 tests. See
 [`docs/CI.md`](docs/CI.md) for commands and limitations. The starter now uses a
 fixed brand light/dark theme and complete English/Catalan/Spanish resources.
-A defined workflow is not evidence that all checks have passed; the Phase 0B PR
-records the actual results and remaining human acceptance.
+The final [Phase 0 compatibility run](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539)
+passed on `main` at `e87fdf9f82d79ce6d0ee0b8d65a7dbe452674a37`, including
+actual API 26, API 27 and API 36 instrumentation and the aggregate quality gate.
+See the CI guide for the exact evidence; passing CI does not authorize future work.
 
 ## Documentation and project rules
 
@@ -73,7 +75,7 @@ records the actual results and remaining human acceptance.
 - [`docs/TESTING_POLICY.md`](docs/TESTING_POLICY.md): mandatory checks, coverage, compatibility, fixtures and evidence.
 - [`docs/CHANGE_CONTROL.md`](docs/CHANGE_CONTROL.md): approval workflow and manual GitHub Ruleset instructions.
 - [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md): automated, manual and final human acceptance.
-- [`docs/PHASE_0A_REPORT.md`](docs/PHASE_0A_REPORT.md): audit, actual verification and unresolved gates.
+- [`docs/PHASE_0A_REPORT.md`](docs/PHASE_0A_REPORT.md): historical audit, initial verification and then-unresolved gates.
 - [`docs/TECH_STACK.md`](docs/TECH_STACK.md): current toolchain, theme/locales and candidate dependency risks.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): Phase 0 status and future scope requiring separate approval.
 - [`LICENSE`](LICENSE): the repository's restrictive Creative Commons license text.
@@ -99,9 +101,11 @@ PartiturasPDF/
 
 The PDF dataset is present and immutable. Install its declared Python dependencies
 and run `python test-fixtures/scripts/verify_fixtures.py`; never regenerate it in
-CI. No product features are implemented. The owner merged Phase 0A and authorized
-Phase 0B, developed from updated `main`. Phase 0B awaits human review; failed
-mandatory checks still block integration. Future phases require separate approval.
+CI. The owner merged Phase 0A, Phase 0B and the API 27 correction (PRs #1, #2 and
+#3) and accepted Phase 0. No product features are implemented. Architectural
+design and shared contract definition are the next planned activities; neither
+is implemented or authorized by this documentation. They require separate owner
+approval. Failed mandatory checks still block integration.
 
 ## License and reuse
 

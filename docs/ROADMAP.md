@@ -1,20 +1,28 @@
 # Roadmap and approval boundaries
 
-Current phase: **Phase 0 — Project Foundation**. This roadmap records approved
-foundation scope and product direction from
+**Phase 0 — Project Foundation is completed, merged and accepted by the project
+owner.** This roadmap records foundation status and product direction from
 [PROJECT_SPECIFICATION.md](PROJECT_SPECIFICATION.md); it does not authorize any
 functional development phase.
 
 | Work | State and boundary |
 | --- | --- |
-| Phase 0A — Policies and Quality Gates | Owner merged PR #1 into `main`; policies, validators, PR template and CI exist. Historical execution evidence is in PHASE_0A_REPORT.md. |
-| Phase 0B — Project Foundation | Owner authorized this work after the merge. Brand light/dark themes, en/ca/es starter resources, preserved toolchain and technical documentation are submitted for review. Acceptance depends on current automated evidence, applicable manual review and explicit human approval. |
+| Phase 0A — Policies and Quality Gates | Merged in [PR #1](https://github.com/alexbonavila/PartiturasPDF/pull/1); policies, validators, PR template and CI are established. PHASE_0A_REPORT.md preserves historical evidence. |
+| Phase 0B — Project Foundation | Merged in [PR #2](https://github.com/alexbonavila/PartiturasPDF/pull/2); brand light/dark themes, en/ca/es starter resources, preserved toolchain and technical documentation are established. |
+| API 27 emulator correction | Merged in [PR #3](https://github.com/alexbonavila/PartiturasPDF/pull/3); final main compatibility [run 37972414539](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539) passed API 26/27/36 and the quality gate at `e87fdf9f82d79ce6d0ee0b8d65a7dbe452674a37`. |
 
 The app remains a starter greeting screen. Foundation code and a passing workflow
 do not imply the product capabilities below are implemented. No Phase 1 is
 defined or authorized here. See [TECH_STACK.md](TECH_STACK.md) for installed
 technology versus candidates, and [DEFINITION_OF_DONE.md](DEFINITION_OF_DONE.md)
 for acceptance conditions.
+
+## Next planned activities (not authorized)
+
+Architectural design and shared contract definition are the next planned
+activities. Neither has been implemented, and this status update does not
+authorize their design or implementation. The owner must approve a separate
+scope and acceptance criteria before work begins; no new phase is defined here.
 
 ## Future functional areas (not approved phases)
 
@@ -44,5 +52,6 @@ localization and compatibility evidence. Start from updated `main` on a dedicate
 branch and submit a PR; agents never merge. API 26 checks, API 27 phase-close
 verification and applicable physical Android 8.1 tablet acceptance remain
 mandatory. Resolve every unmet acceptance criterion before declaring the phase
-complete, regardless of severity label. Stop after Phase 0B delivery for human
-review; nothing in this roadmap grants permission to proceed.
+complete, regardless of severity label. Phase 0 acceptance does not authorize
+architectural design, shared contract definition or subsequent development;
+nothing in this roadmap grants permission to proceed.

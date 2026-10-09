@@ -97,16 +97,25 @@ archive HEAD request returned HTTP 200 and Content-Length 807,298,593. Selecting
 x86 retains the existing target instead of changing the installed Android services. Package
 availability is provisioning evidence, **not a passing instrumentation result**.
 
-The correction PR records workflow syntax checks, official SDK package listing
-and the seven PR checks at its final revision. API 27 remains **NOT RUN / BLOCKED**
-until the corrected emulator actually executes the tests. When dispatch is
-available, select `fix/ci-android-api27-emulator` with compatibility enabled to
-verify before merging. If dispatch cannot run from the branch, the owner must
-run **Actions → CI → Run workflow → main → compatibility enabled** after merging.
-Record that run's exact SHA, API 27 and API 36 results and successful JUnit XML
-containing `ExampleInstrumentedTest.useAppContext`. Phase 0 acceptance stays
-unresolved until both compatibility jobs and their fail-closed gate pass; image
-availability or the ordinary seven PR checks cannot substitute for that evidence.
+The correction was merged in [PR #3](https://github.com/alexbonavila/PartiturasPDF/pull/3).
+The owner then ran compatibility on `main`; the earlier API 27 execution blocker
+is resolved. Phase 0 is merged and accepted by the owner. Its final compatibility
+evidence is [run 37972414539](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539),
+at `e87fdf9f82d79ce6d0ee0b8d65a7dbe452674a37` on 2026-10-09:
+
+| Check | Actual result and evidence |
+| --- | --- |
+| API 26, `google_apis` x86_64 | PASS: 4 executed tests, no failures/skips; [job 113962134021](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539/job/113962134021) |
+| API 27, `google_apis` x86 | PASS: 4 executed tests, no failures/skips; [job 113962133941](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539/job/113962133941) |
+| API 36, `google_apis` x86_64 | PASS: 4 executed tests, no failures/skips; [job 113962133780](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539/job/113962133780) |
+| Aggregate quality gate | PASS, including required compatibility; [job 113963783178](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539/job/113963783178) |
+
+Build, Lint, JVM tests, localization and all 15 fixture checks also passed in
+that run. These are actual emulator results, not image-availability or
+compilation-only claims. Historical failed runs remain evidence of earlier
+failures rather than the current Phase 0 status. Future phase-close runs must
+still record the exact revision, API 27/36 results and passing JUnit XML with
+`ExampleInstrumentedTest.useAppContext`; all existing gates remain mandatory.
 
 Failure reports include Gradle problem/manifest logs, Lint reports, JVM XML/HTML
 and instrumentation XML/HTML, retained for 14 days. The job log remains available

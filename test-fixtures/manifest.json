@@ -1,0 +1,1558 @@
+{
+  "schema_version": 1,
+  "project": "PartiturasPDF",
+  "fixture_set": "Synthetic QA scores",
+  "license": "CC0-1.0 (all synthetic content)",
+  "authoring_note": "Generated files are synthetic musical-notation test documents, not arrangements of an existing composition.",
+  "source_reference": "https://www.mutopiaproject.org/ftp/MuellerAE/muller-siciliano/muller-siciliano-a4.pdf",
+  "known_passwords": {
+    "14-password.pdf": {
+      "user": "test1234",
+      "purpose": "test-only, nonsecret"
+    }
+  },
+  "files": [
+    {
+      "id": "01",
+      "path": "pdf/basic/01-single-a4.pdf",
+      "description": "Single-page A4 vector score",
+      "bytes": 42384,
+      "sha256": "301340714954d3821e94558c524a44ab92b08b3e3db91e463b38c3985506c642",
+      "expected_pages": 1,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0
+      ],
+      "annotation_counts": [
+        0
+      ],
+      "searchable_text": [
+        true
+      ]
+    },
+    {
+      "id": "02",
+      "path": "pdf/basic/02-two-pages.pdf",
+      "description": "Two-page A4 score; previous/next navigation",
+      "bytes": 46034,
+      "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512",
+      "expected_pages": 2,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true
+      ]
+    },
+    {
+      "id": "03",
+      "path": "pdf/basic/03-ten-pages.pdf",
+      "description": "Ten pages with unique labels; sorting and thumbnails",
+      "bytes": 75209,
+      "sha256": "87c4355d93f662680db02444a37479ff99af404f77861fa96779e60aa8df0b00",
+      "expected_pages": 10,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "04",
+      "path": "pdf/basic/04-fifty-pages.pdf",
+      "description": "Fifty pages; pagination and cache checks",
+      "bytes": 251659,
+      "sha256": "d5d80942b106122b69b5a08e425a1e3add4a732c59d1e780e36005b9802c32e2",
+      "expected_pages": 50,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "05",
+      "path": "pdf/basic/05-hundred-pages.pdf",
+      "description": "One hundred pages; memory and navigation",
+      "bytes": 464958,
+      "sha256": "115ec89967f33149e22fc28e9b155bafd73dd6380c147e0d1c66b6133c0077b7",
+      "expected_pages": 100,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "06",
+      "path": "pdf/page-sizes/06-a3-landscape.pdf",
+      "description": "Landscape A3 page",
+      "bytes": 42352,
+      "sha256": "62624ece1e2238018d875da97dcc549acda3563e4afd3af091a49eef3c5ad2bd",
+      "expected_pages": 1,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          1190.6,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0
+      ],
+      "annotation_counts": [
+        0
+      ],
+      "searchable_text": [
+        true
+      ]
+    },
+    {
+      "id": "07",
+      "path": "pdf/page-sizes/07-a5-portrait.pdf",
+      "description": "Portrait A5 page",
+      "bytes": 42835,
+      "sha256": "cff081f77bf40b223a9af4c9cf84bd6fabe4ab4e6ddd365ba97af52df3b116b2",
+      "expected_pages": 1,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          419.5,
+          595.3
+        ]
+      ],
+      "page_rotations_degrees": [
+        0
+      ],
+      "annotation_counts": [
+        0
+      ],
+      "searchable_text": [
+        true
+      ]
+    },
+    {
+      "id": "08",
+      "path": "pdf/page-sizes/08-mixed-sizes.pdf",
+      "description": "A4, landscape A3, A5, Letter and square pages",
+      "bytes": 58505,
+      "sha256": "1e04cdf19cefc7fa04388a1998822607b69229e4d8dff0421adedfbe70be3b61",
+      "expected_pages": 5,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          1190.6,
+          841.9
+        ],
+        [
+          419.5,
+          595.3
+        ],
+        [
+          612.0,
+          792.0
+        ],
+        [
+          600.0,
+          600.0
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "09",
+      "path": "pdf/page-sizes/09-rotated-pages.pdf",
+      "description": "Per-page rotation 0, 90, 180 and 270 degrees",
+      "bytes": 53269,
+      "sha256": "4d2717100d9ede0e229b37c6effc4944a118dad33d437e6cbf29c7d3410e8cee",
+      "expected_pages": 4,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          841.9,
+          595.3
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          841.9,
+          595.3
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        90,
+        180,
+        270
+      ],
+      "annotation_counts": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "10",
+      "path": "pdf/complex/10-scanned-score.pdf",
+      "description": "Two image-only scanned-style pages",
+      "bytes": 221317,
+      "sha256": "c049743af7075819d49550342bcc4a55b4f5dc29b504d1236b22102a24700dd0",
+      "expected_pages": 2,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0
+      ],
+      "searchable_text": [
+        false,
+        false
+      ]
+    },
+    {
+      "id": "11",
+      "path": "pdf/complex/11-vector-score.pdf",
+      "description": "Vector score and embedded music font",
+      "bytes": 47215,
+      "sha256": "2ce44d7c54cfa6c494a4757dba695d03a11565468477b3f248a12ed0e2cc4b91",
+      "expected_pages": 2,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true
+      ]
+    },
+    {
+      "id": "12",
+      "path": "pdf/annotations/12-annotated.pdf",
+      "description": "PDF Ink, Highlight, Underline and FreeText annotations",
+      "bytes": 49336,
+      "sha256": "0e17b834d7177b9b098b6086c6024e2c1a47f8501a578b31e82b69f5c85f86e3",
+      "expected_pages": 2,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0
+      ],
+      "annotation_counts": [
+        4,
+        1
+      ],
+      "searchable_text": [
+        true,
+        true
+      ]
+    },
+    {
+      "id": "13",
+      "path": "pdf/complex/13-complex.pdf",
+      "description": "Embedded fonts, vector drawing and transparency",
+      "bytes": 53226,
+      "sha256": "e16a9f825137d75783c03ea84ae933cd36fea00cea1f712dd4725dbe18391c2c",
+      "expected_pages": 3,
+      "expected_status": "valid",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "id": "14",
+      "path": "pdf/complex/14-password.pdf",
+      "description": "AES-256 protected score; test user password: test1234",
+      "bytes": 47030,
+      "sha256": "20dfebe3069f7d673cf26a271f9162d9f9ea3111fe74d21a5115ac739581a291",
+      "expected_pages": 2,
+      "expected_status": "password_required",
+      "page_sizes_pt": [
+        [
+          595.3,
+          841.9
+        ],
+        [
+          595.3,
+          841.9
+        ]
+      ],
+      "page_rotations_degrees": [
+        0,
+        0
+      ],
+      "annotation_counts": [
+        0,
+        0
+      ],
+      "searchable_text": [
+        true,
+        true
+      ]
+    },
+    {
+      "id": "15",
+      "path": "pdf/invalid/15-corrupted.pdf",
+      "description": "Intentionally truncated and unopenable test file",
+      "bytes": 86,
+      "sha256": "261d1676ac3fa026957c9569de8bd9c037d6c69c5694df0976614944c8adf7d4",
+      "expected_pages": null,
+      "expected_status": "corrupted"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Fixture generation / Python-only verification. Not Android dependencies.
+PyMuPDF>=1.24,<2
+reportlab>=4,<5
+Pillow>=10,<13
+pypdf>=5,<7

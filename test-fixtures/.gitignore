@@ -1,0 +1,5 @@
+# No generated temporary files or local caches in source control.
+scripts/.build/
+__pycache__/
+*.pyc
+.DS_Store

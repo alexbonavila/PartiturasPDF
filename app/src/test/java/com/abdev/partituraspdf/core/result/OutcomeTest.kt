@@ -6,6 +6,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OutcomeTest {
+    @Test fun providerIoFailureIsDistinctFromAvailabilityPermissionsAndStorage() {
+        // Lookup also makes this regression fail at runtime when the contract entry is missing.
+        val providerIo: AppError = AppError.Access.valueOf("PROVIDER_IO_FAILURE")
+        val failure = Outcome.Failure(providerIo)
+        assertSame(providerIo, failure.error)
+        assertSame(providerIo, Observation.Failed(providerIo).error)
+        for (other in listOf<AppError>(
+            AppError.Access.PROVIDER_UNAVAILABLE,
+            AppError.Access.PERMISSION_DENIED,
+            AppError.Access.PERMISSION_REVOKED,
+            AppError.Access.DOCUMENT_DELETED,
+            AppError.Access.PRIVATE_STORAGE_UNAVAILABLE,
+            AppError.Resource.INSUFFICIENT_STORAGE,
+        )) {
+            assertNotEquals(other, providerIo)
+            assertNotEquals(Outcome.Failure(other), failure)
+        }
+    }
+
     @Test fun successAndFailureRemainTypedAndCovariant() {
         val success: Outcome<Number> = Outcome.Success(7)
         assertEquals(7, (success as Outcome.Success).value)

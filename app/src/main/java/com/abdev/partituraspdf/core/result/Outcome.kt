@@ -11,6 +11,8 @@ sealed interface AppError {
     enum class Access : AppError {
         NOT_REGISTERED, PERMISSION_DENIED, PERMISSION_REVOKED, PROVIDER_UNAVAILABLE, DOCUMENT_DELETED,
         PRIVATE_STORAGE_UNAVAILABLE,
+        /** Provider I/O failed; does not establish unavailability, lost permission or disk exhaustion. */
+        PROVIDER_IO_FAILURE,
     }
     enum class Validation : AppError { INVALID_DOCUMENT, INVALID_PAGE, INVALID_RENDER_REQUEST }
     enum class Unsupported : AppError { DOCUMENT_FORMAT, PASSWORD_PROTECTED, OPERATION }

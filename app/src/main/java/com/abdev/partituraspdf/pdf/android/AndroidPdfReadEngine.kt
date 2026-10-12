@@ -62,8 +62,18 @@ class AndroidPdfReadEngine internal constructor(
                     // The provider gave a descriptor the native renderer cannot use.
                     return@withContext Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
                 }
+                // The renderer now belongs to the engine, even when metadata access fails.
                 document = native
-                if (native.pageCount <= 0) {
+                val count = try {
+                    native.pageCount
+                } catch (_: IOException) {
+                    return@withContext Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+                } catch (_: SecurityException) {
+                    return@withContext Outcome.Failure(AppError.Access.PERMISSION_REVOKED)
+                } catch (_: IllegalStateException) {
+                    return@withContext Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+                }
+                if (count <= 0) {
                     Outcome.Failure(AppError.Validation.INVALID_DOCUMENT)
                 } else {
                     currentCoroutineContext().ensureActive()
@@ -71,7 +81,7 @@ class AndroidPdfReadEngine internal constructor(
                     val info = ReadSessionInfo(
                         id = ReadSessionId(UUID.randomUUID().toString()),
                         sourceGeneration = 0L,
-                        pageCount = native.pageCount,
+                        pageCount = count,
                         revision = revision,
                     )
                     Outcome.Success(AndroidPdfReadSession(native, owner, info, limits, worker, allocateBuffer))
@@ -188,13 +198,13 @@ internal class AndroidPdfReadSession(
                             // Do not publish a result for a session already being retired.
                             if (closing) Outcome.Failure(AppError.Conflict.SESSION_CLOSED) else observed
                         } catch (_: IOException) {
-                            Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+                            retire(AppError.Access.PROVIDER_IO_FAILURE)
                         } catch (_: SecurityException) {
-                            Outcome.Failure(AppError.Access.PERMISSION_REVOKED)
+                            retire(AppError.Access.PERMISSION_REVOKED)
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
                             throw cancelled
                         } catch (_: IllegalStateException) {
-                            Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+                            retire(AppError.Access.PROVIDER_IO_FAILURE)
                         }
                     }
                 }
@@ -241,6 +251,8 @@ internal class AndroidPdfReadSession(
                                             }
                                         }
                                         when (observed) {
+                                            // Invalid page geometry is a typed failure; keep the
+                                            // close/error path outside this try/catch.
                                             is Outcome.Failure -> observed
                                             is Outcome.Success -> {
                                                 job.ensureActive()
@@ -259,9 +271,9 @@ internal class AndroidPdfReadSession(
                                         when (failure) {
                                             is kotlinx.coroutines.CancellationException -> throw failure
                                             is IOException, is IllegalStateException ->
-                                                Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+                                                retire(AppError.Access.PROVIDER_IO_FAILURE)
                                             is SecurityException ->
-                                                Outcome.Failure(AppError.Access.PERMISSION_REVOKED)
+                                                retire(AppError.Access.PERMISSION_REVOKED)
                                             else -> throw failure // Includes coroutine cancellation.
                                         }
                                     } finally {
@@ -299,6 +311,17 @@ internal class AndroidPdfReadSession(
                 }
             }
         }
+    }
+
+    /** A native read failure makes subsequent use of this renderer unsafe. */
+    private fun retire(error: AppError): Outcome.Failure {
+        // Called only with nativeLock held, after the native page has been closed.
+        closing = true
+        if (!closed) {
+            closed = true
+            closeOwners(native, owner)
+        }
+        return Outcome.Failure(error)
     }
 
     override fun close() {

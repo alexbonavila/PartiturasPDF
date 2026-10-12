@@ -493,4 +493,148 @@ class AndroidPdfReadEngineTest {
             assertEquals(1, buffers[1].closes)
         } finally { session.close() }
     }
+    @Test fun pageCountReadFailureIsTypedAndClosesBothOwners() = runBlocking {
+        val cases = listOf(
+            IOException("page-count IO") to AppError.Access.PROVIDER_IO_FAILURE,
+            SecurityException("permission revoked") to AppError.Access.PERMISSION_REVOKED,
+            IllegalStateException("native renderer invalid") to AppError.Access.PROVIDER_IO_FAILURE,
+        )
+        for ((failure, expected) in cases) {
+            val (source, resource) = source()
+            var nativeCloses = 0
+            val native = object : NativePdfDocument {
+                override val pageCount: Int get() = throw failure
+                override fun openPage(index: Int): NativePdfPage = error("never reached")
+                override fun close() { nativeCloses++ }
+            }
+            assertEquals(Outcome.Failure(expected), engine { native }.open(source))
+            assertEquals(1, nativeCloses)
+            assertEquals(1, resource.closes)
+        }
+    }
+
+    @Test fun pageInfoIoFailureRetiresSessionAndFreshOpenRecovers() = runBlocking {
+        val (brokenSource, brokenResource) = source()
+        var nativeCloses = 0
+        val brokenNative = object : NativePdfDocument {
+            override val pageCount = 1
+            override fun openPage(index: Int): NativePdfPage = throw IOException("read failed")
+            override fun close() { nativeCloses++ }
+        }
+        val brokenSession = (engine { brokenNative }.open(brokenSource) as Outcome.Success).value
+        val oldPage = ReadPageRef(brokenSession.info.id, 0L, PageIndex(0))
+        assertEquals(
+            Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE),
+            brokenSession.displayInfo(oldPage),
+        )
+        assertEquals(1, nativeCloses)
+        assertEquals(1, brokenResource.closes)
+        assertEquals(
+            Outcome.Failure(AppError.Conflict.SESSION_CLOSED),
+            brokenSession.displayInfo(oldPage),
+        )
+        brokenSession.close()
+
+        // Recovery means opening a NEW session, not reusing compromised native state.
+        val (freshSource, freshResource) = source()
+        val fresh = (engine { Document(pageCount = 1) }.open(freshSource) as Outcome.Success).value
+        try {
+            assertNotEquals(brokenSession.info.id, fresh.info.id)
+            val newPage = ReadPageRef(fresh.info.id, 0L, PageIndex(0))
+            assertTrue(fresh.displayInfo(newPage) is Outcome.Success)
+        } finally {
+            fresh.close()
+        }
+        assertEquals(1, freshResource.closes)
+    }
+
+    @Test fun pageInfoPermissionFailureRetiresSession() = runBlocking {
+        val (source, resource) = source()
+        var nativeCloses = 0
+        val native = object : NativePdfDocument {
+            override val pageCount = 1
+            override fun openPage(index: Int): NativePdfPage = throw SecurityException("revoked")
+            override fun close() { nativeCloses++ }
+        }
+        val session = (engine { native }.open(source) as Outcome.Success).value
+        val page = ReadPageRef(session.info.id, 0L, PageIndex(0))
+        assertEquals(
+            Outcome.Failure(AppError.Access.PERMISSION_REVOKED),
+            session.displayInfo(page),
+        )
+        assertEquals(1, nativeCloses)
+        assertEquals(1, resource.closes)
+        assertEquals(
+            Outcome.Failure(AppError.Conflict.SESSION_CLOSED),
+            session.displayInfo(page),
+        )
+    }
+
+    @Test fun renderIoFailureRetiresSessionAndReleasesBitmap() = runBlocking {
+        val (source, resource) = source()
+        val buffers = mutableListOf<FakeBuffer>()
+        var nativeCloses = 0
+        var pageCloses = 0
+        val native = object : NativePdfDocument {
+            override val pageCount = 1
+            override fun openPage(index: Int): NativePdfPage = object : NativePdfPage {
+                override val width = 600
+                override val height = 800
+                override fun renderInto(buffer: RenderBuffer) { throw IOException("render IO") }
+                override fun close() { pageCloses++ }
+            }
+            override fun close() { nativeCloses++ }
+        }
+        val subject = AndroidPdfReadEngine(limits, Dispatchers.Unconfined, { native }) { _, _ ->
+            FakeBuffer().also { buffers += it }
+        }
+        val session = (subject.open(source) as Outcome.Success).value
+        val page = ReadPageRef(session.info.id, 0L, PageIndex(0))
+        val request = RenderRequest(RenderRequestId("io"), page, 64, 64, 0L)
+        assertEquals(
+            Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE),
+            session.render(request),
+        )
+        assertEquals(1, pageCloses)
+        assertEquals(1, nativeCloses)
+        assertEquals(1, resource.closes)
+        assertEquals(1, buffers.single().closes)
+        assertEquals(
+            Outcome.Failure(AppError.Conflict.SESSION_CLOSED),
+            session.render(request),
+        )
+        session.close()
+    }
+
+    @Test fun unexpectedPageCountDefectPreservesPrimaryWhenBothClosersFail() = runBlocking {
+        var ownerCloses = 0
+        val resource = object : ReadResource {
+            override val descriptor: ParcelFileDescriptor
+                get() = error("native fake does not require a descriptor")
+            override fun close() {
+                ownerCloses++
+                throw IOException("owner close failed")
+            }
+        }
+        val handle = ReadHandle(
+            resource,
+            ReadProvenance.Provider(StorageDocumentRef("test", "test:static")),
+            seekable = true,
+        )
+        val native = object : NativePdfDocument {
+            override val pageCount: Int get() = throw IllegalArgumentException("programmer failure")
+            override fun openPage(index: Int): NativePdfPage = error("never reached")
+            override fun close() { throw IOException("native close failed") }
+        }
+        try {
+            engine { native }.open(PdfReadSource(handle))
+            fail("Expected unhandled programming error")
+        } catch (expected: IllegalArgumentException) {
+            assertEquals("programmer failure", expected.message)
+            assertEquals(1, expected.suppressed.size)
+            assertEquals("native close failed", expected.suppressed.single().message)
+            assertEquals("owner close failed", expected.suppressed.single().suppressed.single().message)
+            assertEquals(1, ownerCloses)
+        }
+    }
 }

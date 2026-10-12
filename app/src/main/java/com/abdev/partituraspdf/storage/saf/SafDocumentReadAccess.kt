@@ -80,6 +80,7 @@ internal class SafDocumentReadAccess(
             incomplete = file
             var total = 0L
             val buffer = ByteArray(BUFFER_SIZE)
+            val inputFd = providerHandle.descriptor.fileDescriptor
 
             // Closing this stream closes the original provider descriptor. The owning
             // ReadHandle is closed by the caller's use block after this method returns.
@@ -88,6 +89,7 @@ internal class SafDocumentReadAccess(
                     while (true) {
                         currentCoroutineContext().ensureActive()
                         val count = try {
+                            SafReadiness.awaitReadable(inputFd)
                             input.read(buffer)
                         } catch (failed: IOException) {
                             return Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)

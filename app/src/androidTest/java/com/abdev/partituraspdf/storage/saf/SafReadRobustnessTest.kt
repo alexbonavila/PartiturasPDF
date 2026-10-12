@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -122,12 +123,12 @@ class SafReadRobustnessTest {
             val reader = access(dir, {
                 source(byteArrayOf(1, 2, 3)).also { descriptor = it }
             }, {
-                // Closing the input fd makes the next read fail with EBADF.
+                // Closing the input descriptor must report provider I/O failure.
                 descriptor!!.close()
             })
             assertEquals(
                 Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE),
-                runBlocking { reader.openSeekable(doc, ReadAccessLimits(64)) },
+                runBlocking { withTimeout(3_000L) { reader.openSeekable(doc, ReadAccessLimits(64)) } },
             )
             assertTrue(cached(dir).isEmpty())
             assertThrows(IllegalStateException::class.java) { descriptor!!.fd }

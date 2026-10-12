@@ -64,6 +64,21 @@ internal class SafTreeGrantAccess(
         }
     }
 
+    /**
+     * Use ONLY for a folder previously confirmed to have a persisted READ grant.
+     * Disappearance of that known grant establishes revocation, not deletion.
+     * Never call for first-time folders or transient one-off document URI grants.
+     */
+    fun requirePreviouslyPersistedReadGrant(folder: FolderRef): Outcome<Unit> =
+        when (val current = hasPersistedReadGrant(folder)) {
+            is Outcome.Failure -> current
+            is Outcome.Success -> if (current.value) {
+                Outcome.Success(Unit)
+            } else {
+                Outcome.Failure(AppError.Access.PERMISSION_REVOKED)
+            }
+        }
+
     /** Release only this app's persisted READ grant, never a WRITE grant. */
     fun releasePersistedReadGrant(folder: FolderRef): Outcome<Unit> {
         val root = grantRoot(folder)

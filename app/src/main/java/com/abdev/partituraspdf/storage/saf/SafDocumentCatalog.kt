@@ -3,6 +3,7 @@ package com.abdev.partituraspdf.storage.saf
 import android.content.ContentResolver
 import android.database.Cursor
 import android.net.Uri
+import android.os.DeadObjectException
 import android.provider.DocumentsContract
 import com.abdev.partituraspdf.core.document.DocumentAvailability
 import com.abdev.partituraspdf.core.document.DocumentCatalog
@@ -74,6 +75,8 @@ internal class SafDocumentCatalog(
                 throw cancelled
             } catch (denied: SecurityException) {
                 Outcome.Failure(AppError.Access.PERMISSION_DENIED)
+            } catch (dead: DeadObjectException) {
+                Outcome.Failure(AppError.Access.PROVIDER_UNAVAILABLE)
             } catch (failed: IOException) {
                 Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
             } catch (failed: IllegalArgumentException) {
@@ -106,6 +109,8 @@ internal class SafDocumentCatalog(
                 throw cancelled
             } catch (denied: SecurityException) {
                 Outcome.Failure(AppError.Access.PERMISSION_DENIED)
+            } catch (dead: DeadObjectException) {
+                Outcome.Failure(AppError.Access.PROVIDER_UNAVAILABLE)
             } catch (failed: IOException) {
                 Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
             } catch (failed: IllegalArgumentException) {

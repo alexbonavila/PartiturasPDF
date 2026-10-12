@@ -2,6 +2,7 @@ package com.abdev.partituraspdf.storage.saf
 
 import android.content.ContentResolver
 import android.net.Uri
+import android.os.DeadObjectException
 import android.os.ParcelFileDescriptor
 import android.system.ErrnoException
 import android.system.Os
@@ -56,6 +57,9 @@ internal class SafProviderRead(
                 throw cancelled
             } catch (denied: SecurityException) {
                 Outcome.Failure(AppError.Access.PERMISSION_DENIED)
+            } catch (dead: DeadObjectException) {
+                // Explicit Binder death is evidence of current provider unavailability.
+                Outcome.Failure(AppError.Access.PROVIDER_UNAVAILABLE)
             } catch (missing: FileNotFoundException) {
                 // Missing/revoked/unavailable are not distinguishable from this alone.
                 Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)

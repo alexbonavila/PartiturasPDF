@@ -26,6 +26,8 @@ import kotlinx.coroutines.withContext
 internal class SafDocumentReadAccess(
     private val providerRead: SafProviderRead,
     private val privateReadDir: File,
+    /** Optional copy-progress observer; exceptions still trigger the normal cleanup path. */
+    private val onBytesCopied: (Long) -> Unit = {},
 ) : DocumentReadAccess {
 
     constructor(resolver: ContentResolver, context: Context) : this(
@@ -101,6 +103,7 @@ internal class SafDocumentReadAccess(
                             return Outcome.Failure(privateError(failed))
                         }
                         total += count
+                        onBytesCopied(total)
                     }
                     currentCoroutineContext().ensureActive()
                 }

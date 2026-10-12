@@ -184,7 +184,9 @@ internal class AndroidPdfReadSession(
                                 }
                             }
                             job.ensureActive()
-                            observed
+                            // close() can be requested while native page inspection is running.
+                            // Do not publish a result for a session already being retired.
+                            if (closing) Outcome.Failure(AppError.Conflict.SESSION_CLOSED) else observed
                         } catch (_: IOException) {
                             Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
                         } catch (_: SecurityException) {

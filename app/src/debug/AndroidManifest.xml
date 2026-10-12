@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug-only manual SAF picker acceptance; absent from release builds. -->
+        <activity
+            android:name="com.abdev.partituraspdf.storage.saf.SafGrantAcceptanceActivity"
+            android:exported="true"
+            android:label="@string/saf_accept_title" />
+    </application>
+</manifest>

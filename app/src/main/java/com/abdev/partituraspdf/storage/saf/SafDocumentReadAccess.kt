@@ -36,13 +36,18 @@ internal class SafDocumentReadAccess(
     )
 
     override suspend fun openRead(document: StorageDocumentRef): Outcome<ReadHandle> =
-        providerRead.openRead(document)
+        withContext(Dispatchers.IO) {
+            currentCoroutineContext().ensureActive()
+            SafReadCopyRecovery.cleanupOrphans(privateReadDir)
+            providerRead.openRead(document)
+        }
 
     override suspend fun openSeekable(
         document: StorageDocumentRef,
         limits: ReadAccessLimits,
     ): Outcome<ReadHandle> = withContext(Dispatchers.IO) {
         currentCoroutineContext().ensureActive()
+        SafReadCopyRecovery.cleanupOrphans(privateReadDir)
         when (val opened = providerRead.openRead(document)) {
             is Outcome.Failure -> opened
             is Outcome.Success -> {
@@ -71,10 +76,7 @@ internal class SafDocumentReadAccess(
         var copyDescriptor: ParcelFileDescriptor? = null
         try {
             currentCoroutineContext().ensureActive()
-            if (!privateReadDir.isDirectory && !privateReadDir.mkdirs()) {
-                return Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE)
-            }
-            val file = File.createTempFile("saf-read-", ".tmp", privateReadDir)
+            val file = SafReadCopyRecovery.createTracked(privateReadDir)
             incomplete = file
             var total = 0L
             val buffer = ByteArray(BUFFER_SIZE)
@@ -129,7 +131,7 @@ internal class SafDocumentReadAccess(
         } finally {
             copyDescriptor?.close()
             // The copy is never delivered unless ownership has transferred to a lease.
-            incomplete?.delete()
+            incomplete?.let(SafReadCopyRecovery::discard)
         }
     }
 
@@ -158,9 +160,7 @@ internal class SafDocumentReadAccess(
                 // PdfRenderer is allowed to have already closed this descriptor.
                 descriptor.close()
             } finally {
-                if (file.exists() && !file.delete()) {
-                    throw IOException("Unable to delete temporary SAF read copy")
-                }
+                SafReadCopyRecovery.release(file)
             }
         }
     }

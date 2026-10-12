@@ -1,5 +1,7 @@
 package com.abdev.partituraspdf.pdf.android
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import com.abdev.partituraspdf.core.result.AppError
 import com.abdev.partituraspdf.core.result.Outcome
@@ -26,13 +28,14 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
- * Android API 26 PDF reader. B1 supports opening sessions and reading page dimensions.
- * Rendering is deliberately deferred to B2; no bitmap or PDF file is generated here.
+ * Android API 26 PDF reader. Opens PDF files and renders bounded full pages.
+ * No PDF files are generated or modified by the adapter.
  */
 class AndroidPdfReadEngine internal constructor(
     private val limits: RenderLimits,
     private val worker: CoroutineDispatcher,
     private val openNative: (ReadHandle) -> NativePdfDocument,
+    private val allocateBuffer: (Int, Int) -> RenderBuffer = ::allocateAndroidBuffer,
 ) : PdfReadEngine {
     constructor(
         limits: RenderLimits,
@@ -71,7 +74,7 @@ class AndroidPdfReadEngine internal constructor(
                         pageCount = native.pageCount,
                         revision = revision,
                     )
-                    Outcome.Success(AndroidPdfReadSession(native, owner, info, limits, worker))
+                    Outcome.Success(AndroidPdfReadSession(native, owner, info, limits, worker, allocateBuffer))
                 }
             }
             // Set only after withContext returns: cancellation on dispatcher handoff must clean up.
@@ -105,6 +108,28 @@ internal interface NativePdfDocument : Closeable {
 internal interface NativePdfPage : Closeable {
     val width: Int
     val height: Int
+    fun renderInto(buffer: RenderBuffer)
+}
+
+/** Platform bitmap creation and disposal are behind this small JVM-testable boundary. */
+internal interface RenderBuffer : Closeable {
+    val bitmap: Bitmap
+}
+
+private fun allocateAndroidBuffer(width: Int, height: Int): RenderBuffer {
+    val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    try {
+        // PdfRenderer may preserve alpha; a page is presented against an opaque sheet.
+        output.eraseColor(Color.WHITE)
+        return AndroidRenderBuffer(output)
+    } catch (failure: Throwable) {
+        output.recycle()
+        throw failure
+    }
+}
+
+private class AndroidRenderBuffer(override val bitmap: Bitmap) : RenderBuffer {
+    override fun close() = bitmap.recycle()
 }
 
 private fun openAndroidPdfDocument(handle: ReadHandle): NativePdfDocument =
@@ -119,6 +144,8 @@ private class AndroidNativePdfDocument(private val native: PdfRenderer) : Native
 private class AndroidNativePdfPage(private val native: PdfRenderer.Page) : NativePdfPage {
     override val width: Int get() = native.width
     override val height: Int get() = native.height
+    override fun renderInto(buffer: RenderBuffer) =
+        native.render(buffer.bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
     override fun close() = native.close()
 }
 
@@ -128,6 +155,7 @@ internal class AndroidPdfReadSession(
     override val info: ReadSessionInfo,
     override val renderLimits: RenderLimits,
     private val worker: CoroutineDispatcher,
+    private val allocateBuffer: (Int, Int) -> RenderBuffer,
 ) : PdfReadSession {
     private val nativeLock = Any()
     @Volatile private var closing = false
@@ -161,6 +189,8 @@ internal class AndroidPdfReadSession(
                             Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
                         } catch (_: SecurityException) {
                             Outcome.Failure(AppError.Access.PERMISSION_REVOKED)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
                         } catch (_: IllegalStateException) {
                             Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
                         }
@@ -169,26 +199,105 @@ internal class AndroidPdfReadSession(
             }
         }
 
-    // B2 will implement bounded, page-serialized native bitmap rendering.
-    override suspend fun render(request: RenderRequest): Outcome<RenderedPage> =
-        withContext(worker) {
-            val job = currentCoroutineContext()
-            job.ensureActive()
-            synchronized(nativeLock) {
+    override suspend fun render(request: RenderRequest): Outcome<RenderedPage> {
+        // If withContext drops a successful result on cancellation, the bitmap is still ours.
+        var unpublished: AndroidRenderedPage? = null
+        var returned = false
+        var primaryFailure: Throwable? = null
+        try {
+            val result: Outcome<RenderedPage> = withContext(worker) {
+                val job = currentCoroutineContext()
                 job.ensureActive()
-                if (closing) {
-                    Outcome.Failure(AppError.Conflict.SESSION_CLOSED)
-                } else {
-                    when (val valid = info.validate(request.page)) {
-                        is Outcome.Failure -> valid
-                        is Outcome.Success -> when (val bounded = request.validate(renderLimits)) {
-                            is Outcome.Failure -> bounded
-                            is Outcome.Success -> Outcome.Failure(AppError.Unsupported.OPERATION)
+                synchronized(nativeLock) {
+                    job.ensureActive()
+                    if (closing) {
+                        Outcome.Failure(AppError.Conflict.SESSION_CLOSED)
+                    } else {
+                        when (val valid = info.validate(request.page)) {
+                            is Outcome.Failure -> valid
+                            is Outcome.Success -> when (val bounded = request.validate(renderLimits)) {
+                                is Outcome.Failure -> bounded
+                                is Outcome.Success -> {
+                                    val buffer = try {
+                                        allocateBuffer(request.width, request.height)
+                                    } catch (_: OutOfMemoryError) {
+                                        // Only bitmap allocation is mapped to a resource failure.
+                                        return@synchronized Outcome.Failure(AppError.Resource.RENDER_LIMIT)
+                                    }
+                                    var claimed = false
+                                    var renderFailure: Throwable? = null
+                                    try {
+                                        val observed = native.openPage(request.page.page.value).use { page ->
+                                            if (page.width <= 0 || page.height <= 0) {
+                                                Outcome.Failure(AppError.Validation.INVALID_DOCUMENT)
+                                            } else {
+                                                page.renderInto(buffer)
+                                                job.ensureActive()
+                                                Outcome.Success(
+                                                    PageDisplayInfo(request.page, page.width, page.height),
+                                                )
+                                            }
+                                        }
+                                        when (observed) {
+                                            is Outcome.Failure -> observed
+                                            is Outcome.Success -> {
+                                                job.ensureActive()
+                                                if (closing) {
+                                                    Outcome.Failure(AppError.Conflict.SESSION_CLOSED)
+                                                } else {
+                                                    val lease = AndroidRenderedPage(request, observed.value, buffer)
+                                                    unpublished = lease
+                                                    claimed = true
+                                                    Outcome.Success(lease)
+                                                }
+                                            }
+                                        }
+                                    } catch (failure: Throwable) {
+                                        renderFailure = failure
+                                        when (failure) {
+                                            is kotlinx.coroutines.CancellationException -> throw failure
+                                            is IOException, is IllegalStateException ->
+                                                Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+                                            is SecurityException ->
+                                                Outcome.Failure(AppError.Access.PERMISSION_REVOKED)
+                                            else -> throw failure // Includes coroutine cancellation.
+                                        }
+                                    } finally {
+                                        if (!claimed) {
+                                            try {
+                                                buffer.close()
+                                            } catch (cleanup: Throwable) {
+                                                if (renderFailure != null) {
+                                                    renderFailure.addSuppressed(cleanup)
+                                                    // A cleanup failure must not silently disappear behind Failure.
+                                                    throw renderFailure
+                                                } else {
+                                                    throw cleanup
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+            returned = true
+            return result
+        } catch (failure: Throwable) {
+            primaryFailure = failure
+            throw failure
+        } finally {
+            if (!returned) {
+                try {
+                    unpublished?.close()
+                } catch (cleanup: Throwable) {
+                    if (primaryFailure != null) primaryFailure.addSuppressed(cleanup) else throw cleanup
+                }
+            }
         }
+    }
 
     override fun close() {
         closing = true
@@ -215,4 +324,26 @@ private fun closeOwners(document: NativePdfDocument?, owner: ReadHandle) {
         if (primaryFailure == null) primaryFailure = failure else primaryFailure.addSuppressed(failure)
     }
     primaryFailure?.let { throw it }
+}
+
+/** Exclusive owner of a rendered bitmap, independent of its source session lifetime. */
+internal class AndroidRenderedPage(
+    override val request: RenderRequest,
+    override val displayInfo: PageDisplayInfo,
+    private val buffer: RenderBuffer,
+) : RenderedPage {
+    private var released = false
+
+    override val bitmap: Bitmap
+        @Synchronized get() {
+            check(!released) { "Rendered page was already closed" }
+            return buffer.bitmap
+        }
+
+    @Synchronized
+    override fun close() {
+        if (released) return
+        released = true
+        buffer.close()
+    }
 }

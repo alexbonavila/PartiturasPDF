@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="saf_accept_title">Comprobación de acceso SAF (depuración)</string>
+    <string name="saf_accept_instructions">Selecciona una carpeta que contenga un PDF pequeño. Comprueba el acceso después de forzar el cierre y volver a abrir la aplicación. Libera el permiso y repite la comprobación tras reiniciar.</string>
+    <string name="saf_accept_select">Seleccionar carpeta</string>
+    <string name="saf_accept_check">Comprobar acceso guardado</string>
+    <string name="saf_accept_release">Liberar permiso de lectura</string>
+    <string name="saf_accept_ready">Preparado. No se modificará ningún documento.</string>
+    <string name="saf_accept_cancelled">Selección de carpeta cancelada.</string>
+    <string name="saf_accept_grant_error">Error de permiso de lectura (%1$s).</string>
+    <string name="saf_accept_grant_saved">Permiso de lectura conservado.</string>
+    <string name="saf_accept_preference_error">No se pudo guardar la referencia de la carpeta.</string>
+    <string name="saf_accept_no_folder">No se ha seleccionado ninguna carpeta.</string>
+    <string name="saf_accept_yes">sí</string>
+    <string name="saf_accept_no">no</string>
+    <string name="saf_accept_grant_status">Permiso de lectura persistente: %1$s</string>
+    <string name="saf_accept_list_error">No se pudo acceder a la carpeta (%1$s). Esto no demuestra que haya sido eliminada.</string>
+    <string name="saf_accept_no_pdf">Se han listado %1$d elementos; no se encontró ningún PDF.</string>
+    <string name="saf_accept_read_error">Se han listado %1$d elementos; error al abrir el PDF (%2$s).</string>
+    <string name="saf_accept_read_ok">Se han listado %1$d elementos; PDF abierto en modo solo lectura (acceso aleatorio: %2$s).</string>
+    <string name="saf_accept_released">Permiso de lectura liberado. Fuerza el cierre y vuelve a abrir antes de comprobar.</string>
+    <string name="saf_accept_release_error">No se pudo liberar el permiso de lectura (%1$s).</string>
+</resources>

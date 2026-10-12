@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="saf_accept_title">Comprovació d’accés SAF (depuració)</string>
+    <string name="saf_accept_instructions">Trieu una carpeta amb un PDF petit. Comproveu-la després de forçar l’aturada i tornar a obrir l’aplicació. Allibereu el permís i repetiu la comprovació després de reiniciar.</string>
+    <string name="saf_accept_select">Tria una carpeta</string>
+    <string name="saf_accept_check">Comprova l’accés desat</string>
+    <string name="saf_accept_release">Allibera el permís de lectura</string>
+    <string name="saf_accept_ready">Preparat. No es modificarà cap document.</string>
+    <string name="saf_accept_cancelled">Selecció de carpeta cancel·lada.</string>
+    <string name="saf_accept_grant_error">Error en el permís de lectura (%1$s).</string>
+    <string name="saf_accept_grant_saved">Permís de lectura conservat.</string>
+    <string name="saf_accept_preference_error">No s’ha pogut desar la referència de la carpeta.</string>
+    <string name="saf_accept_no_folder">No s’ha seleccionat cap carpeta.</string>
+    <string name="saf_accept_yes">sí</string>
+    <string name="saf_accept_no">no</string>
+    <string name="saf_accept_grant_status">Permís de lectura persistent: %1$s</string>
+    <string name="saf_accept_list_error">Error en accedir a la carpeta (%1$s). Això no demostra que s’hagi eliminat.</string>
+    <string name="saf_accept_no_pdf">S’han llistat %1$d elements; no s’ha trobat cap PDF.</string>
+    <string name="saf_accept_read_error">S’han llistat %1$d elements; error en obrir el PDF (%2$s).</string>
+    <string name="saf_accept_read_ok">S’han llistat %1$d elements; PDF obert en mode de només lectura (accés aleatori: %2$s).</string>
+    <string name="saf_accept_released">Permís de lectura alliberat. Forceu l’aturada i torneu a obrir abans de comprovar.</string>
+    <string name="saf_accept_release_error">No s’ha pogut alliberar el permís de lectura (%1$s).</string>
+</resources>

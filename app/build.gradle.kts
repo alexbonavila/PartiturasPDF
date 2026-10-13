@@ -21,11 +21,11 @@ android {
     }
 
     buildTypes {
-        release {
         debug {
             // Native adapter coverage requires the real Android runtime.
             enableAndroidTestCoverage = true
         }
+        release {
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

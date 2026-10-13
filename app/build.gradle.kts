@@ -21,6 +21,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Native adapter coverage requires the real Android runtime.
+            enableAndroidTestCoverage = true
+        }
         release {
             optimization {
                 enable = true
@@ -35,6 +39,9 @@ android {
     buildFeatures {
         compose = true
     }
+    // Instrumentation APK only: canonical PDFs and manifest, never production APK assets.
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("test-fixtures"))
+
 }
 
 dependencies {
@@ -108,4 +115,50 @@ val verifyContractCoverage = tasks.register<JacocoCoverageVerification>("verifyC
 // The unchanged unit-tests CI command enforces the scoped policy as well as executing tests.
 tasks.withType<Test>().configureEach {
     if (name == "testDebugUnitTest") finalizedBy(verifyContractCoverage)
+}
+
+// B5 coverage: measure the native PDF adapter separately from shared A1 contracts.
+val pdfAdapterClasses = fileTree(layout.buildDirectory.dir("intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes")) {
+    include("com/abdev/partituraspdf/pdf/android/**")
+}
+
+// Include real API 26 PdfRenderer execution in the B-specific coverage denominator.
+// JVM fakes cannot exercise AndroidNativePdfDocument/Page and AndroidRenderBuffer.
+val pdfAdapterAndroidExecution = fileTree(layout.buildDirectory.dir("outputs/code_coverage/debugAndroidTest/connected")) {
+    include("**/*.ec")
+}
+val validatePdfAdapterAndroidExecution = tasks.register("validatePdfAdapterAndroidExecution") {
+    dependsOn("connectedDebugAndroidTest")
+    val evidence = pdfAdapterAndroidExecution
+    doLast {
+        check(evidence.files.any { it.isFile && it.length() > 0L }) {
+            "Missing Android instrumentation coverage. Verify API 26 ran with enableAndroidTestCoverage enabled."
+        }
+    }
+}
+
+val pdfAdapterCoverageReport = tasks.register<JacocoReport>("pdfAdapterCoverageReport") {
+    dependsOn("testDebugUnitTest", validatePdfAdapterAndroidExecution)
+    classDirectories.setFrom(pdfAdapterClasses)
+    sourceDirectories.setFrom(contractSources)
+    executionData.setFrom(contractExecution, pdfAdapterAndroidExecution)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/tests/testDebugUnitTest/pdf-adapter-coverage.xml"))
+        html.outputLocation.set(layout.buildDirectory.dir("reports/tests/testDebugUnitTest/pdf-adapter-coverage"))
+    }
+}
+
+val verifyPdfAdapterCoverage = tasks.register<JacocoCoverageVerification>("verifyPdfAdapterCoverage") {
+    dependsOn(pdfAdapterCoverageReport)
+    classDirectories.setFrom(pdfAdapterClasses)
+    sourceDirectories.setFrom(contractSources)
+    executionData.setFrom(contractExecution, pdfAdapterAndroidExecution)
+    violationRules {
+        rule {
+            limit { counter = "LINE"; minimum = "0.90".toBigDecimal() }
+            limit { counter = "BRANCH"; minimum = "0.80".toBigDecimal() }
+        }
+    }
 }

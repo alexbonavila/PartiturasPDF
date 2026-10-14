@@ -5,31 +5,57 @@ Evidence describes the baseline and local pre-publication review; the publicatio
 and subsequent CI execution are reported separately, without treating older runs as validation.
 Owner review target: [PR #10](https://github.com/alexbonavila/PartiturasPDF/pull/10).
 
-## 1. Executive status
+## 1. Executive status — consolidation at 8927e28
 
-**BLOCKED for final phase acceptance.** The persistence adapters and their regression tests
-have no newly confirmed functional defect from this source review. Local compilation, lint,
-128 JVM tests and infrastructure checks pass. The preceding infrastructure run is visibly
-successful on API 26/27/36. These results do not close the following mandatory items:
+**Implementation delivered; automated baseline PASS; formal acceptance DEFERRED / NOT RUN.**
+The owner has stopped further Phase C feature development and scheduled the remaining real
+transport/physical-device checks for later integrated functionality. The authoritative tracking
+register is [PHASE_C_DEFERRED_ACCEPTANCE.md](PHASE_C_DEFERRED_ACCEPTANCE.md), supplied by the owner
+and incorporated with only trailing-whitespace/Markdown line-break formatting cleanup. Scheduling deferral does not waive AGENTS.md, TESTING_POLICY.md or
+DEFINITION_OF_DONE.md. Unconditional phase acceptance is not yet satisfied; only the owner may
+merge PR #10, subject to applicable change control. This report grants no policy exception.
 
-- The integrated revision's seven mandatory CI jobs are now **PASS**, confirmed on the final
-  public run-page snapshot; its exact captured artifacts remain unavailable to this audit.
-- Exact hosted coverage XML, execution data, JUnit XML and provenance could not be downloaded.
-  Numeric combined coverage and independent artifact reproduction therefore remain BLOCKED.
-- API 27/36 phase-close execution on the final integrated SHA is not established.
-- Backup Policy B is explicitly approved and implemented below. Static/merged/APK checks PASS;
-  actual backup/restore/device-transfer execution remains NOT RUN.
-- Physical Android 8.1 tablet acceptance is BLOCKED: no physical device is attached.
+Completed: Room registry/metadata and DataStore preferences adapters, schema v1, regression tests,
+verified persistence coverage enforcement, and approved Backup Policy B. The existing manifest
+keeps allowBackup=true; all three rule sections allow only file:datastore/app_preferences.preferences_pb.
+The entire settings protobuf must remain non-sensitive. No new product functionality is added
+by consolidation. Four manually invoked acceptance tooling files are delivered with the register.
 
-**Current owner decision: implement Policy B.** Only the non-sensitive preferences protobuf is
-eligible for backup/transfer; Room and every other application-private file/domain are omitted
-from an exact-file allowlist. Both XML resources have been changed under explicit authorization;
-manifest references and allowBackup=true remain unchanged. Option C remains unsupported without
-restore/reconciliation integration. The earlier recommendation of A is superseded by the owner
-decision. This report is not merge authorization.
+Final verified implementation baseline: `8927e2868cf9b6ec8bc93a12948c027440199db2`.
+Both public GitHub run pages were independently reviewed during consolidation:
+
+- [PR CI 38625694907](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38625694907):
+  **Success**, all seven mandatory jobs including API26 and persistence quality gate.
+- [Compatibility CI 38626486247](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38626486247):
+  **Success**, all seven jobs and the requested compatibility matrix (API27/API36).
+
+The supplied owner register records hosted 128/128 JVM, 205/205 Android on API26/27/36,
+Room 207/210 LINE (98.57%) and 167/177 BRANCH (94.35%), DataStore 35/35 LINE and 12/12 BRANCH,
+and passing independent package/source gates. Exact numerical/XML evidence is owner-supplied;
+public workflow success is independently observed. Artifact downloads remain inaccessible here,
+so this does not claim independent parsing/reproduction of those archives. The owner-reported
+205-test Windows API26 tablet AVD run is an emulator result, not physical Android8.1 acceptance.
+
+The remaining requirements are explicitly retained:
+
+- C-DEF-01: real cloud-style backup/uninstall/reinstall/restore — NOT RUN / DEFERRED.
+- C-DEF-02: genuine device-to-device transfer — NOT RUN / DEFERRED, never equivalent to LocalTransport.
+- C-DEF-03: physical Android8.1/API27 tablet — NOT RUN / DEFERRED, mandatory under current policy.
+- C-DEF-04: other transfer modes/product restore reconciliation — conditional and separately scoped.
+
+Baseline compatibility PASS is now established; a later tooling/documentation commit still needs
+its own required CI. No pending/new run is relabeled PASS using these historical results.
 
 ## 2. Git state and integration
 
+Consolidation started clean of tracked changes at required HEAD
+`8927e2868cf9b6ec8bc93a12948c027440199db2` on feat/data-persistence-c; remote feature ref and
+PR #10 head matched. Four untracked acceptance files were preserved. Consolidation adds those
+four files and the supplied register, and updates this audit: six reviewed files, same branch/PR.
+No production, manifest, policy XML, Gradle build, CI, contracts or schema changes are included.
+The command-selected init script affects only an explicitly built manual test APK.
+
+The following records the earlier C05 integration audit, not the final consolidation baseline.
 Required and audited HEAD: `0f49390724eed9cce00e7eae2f2a6d6872dd8e8d`.
 Working branch: `feat/data-persistence-c`. Remote branch and `refs/pull/10/head` matched it.
 The initial clean checkout was on infrastructure commit
@@ -48,7 +74,8 @@ tree equality and the integration diff, rather than ancestry alone, establish in
 The original report is preserved and updated. The follow-up authorization modifies only the two
 backup XML resources and adds scripts/verify_backup_policy.py plus scripts/tests/test_backup_policy.py.
 No production Kotlin, existing tests, schema, Gradle, CI, manifest or public contracts changed.
-All five implementation/report files remain unstaged and uncommitted; no push or merge.
+Those five Policy B files were subsequently committed/published as 8927e2868cf9b6ec8bc93a12948c027440199db2.
+This consolidation review adds only the four manual files/register and this audit update.
 PR #11 was already integrated by the owner; this audit does not perform that merge.
 
 ## 3. Authority and requirement-to-test traceability
@@ -349,9 +376,10 @@ No test or product dependency was added by this audit.
 
 ### Policy B follow-up implementation validation
 
-Exactly five changed/new files: the two XML rules, this existing audit report,
-scripts/verify_backup_policy.py and scripts/tests/test_backup_policy.py. All are unstaged and
-uncommitted at baseline 0f49390724eed9cce00e7eae2f2a6d6872dd8e8d. The original audit is
+Historical Policy B implementation review: exactly five changed/new files were the two XML
+rules, this audit report, scripts/verify_backup_policy.py and scripts/tests/test_backup_policy.py.
+They were reviewed before publication from 0f49390724eed9cce00e7eae2f2a6d6872dd8e8d, then
+published as 8927e2868cf9b6ec8bc93a12948c027440199db2. The original audit is
 retained, with its superseded backup recommendation and findings updated rather than recreated.
 
 | Executed follow-up check | Actual result |
@@ -375,11 +403,16 @@ so source-only validation cannot substitute for the artifact check. Synthetic po
 never enter application coverage. The new Python tests are discovered by the unchanged existing
 infrastructure test command; no CI configuration/quality gate/coverage threshold was edited.
 
-The successful hosted CI discussed below predates this uncommitted Policy B patch and therefore
-does not validate its new resources/tests. Any future owner-authorized publication requires new
-latest-revision mandatory checks; no commit, push, dispatch or merge is performed here.
+At initial preparation, older hosted CI did not cover Policy B. That limitation was subsequently
+resolved: Section 1 records the actual successful 8927e28 policy/compatibility runs. The new
+manual-tooling consolidation commit must receive new latest-revision mandatory checks;
+consolidation publication is authorized, but no agent dispatch or merge is authorized.
 
 ## 9. Hosted execution, coverage and compatibility evidence
+
+Current verified baseline results are in Section 1 and the deferred register. The historical
+0ee8075/0f49390 snapshots below are retained for traceability, not substituted for 8927e28 or
+the forthcoming consolidation commit. Their earlier artifact limitations remain accurately stated.
 
 ### Infrastructure revision (historical relative to integrated HEAD)
 
@@ -427,10 +460,10 @@ provenance.build.commit, CI GITHUB_SHA and current base/head before attributing 
 
 ### Exact coverage audit boundary
 
-The current local debug bytecode inventory was analyzed with JaCoCo 0.8.14. Its denominators
+The unchanged local production debug bytecode inventory was analyzed with JaCoCo 0.8.14. Its denominators
 are verified, not combined coverage measurements. These are all handwritten source groups:
 
-| Scope | Source | Executable lines | Branches | Current hosted covered counts |
+| Scope | Source | Executable lines | Branches | Independently parsed hosted counts |
 | --- | --- | ---: | ---: | --- |
 | Room | DocumentDao.kt | 17 | 14 | BLOCKED: XML unavailable |
 | Room | MetadataDatabase.kt | 5 | 4 | BLOCKED: XML unavailable |
@@ -451,7 +484,8 @@ are verified, not combined coverage measurements. These are all handwritten sour
 Do not substitute earlier JVM-only Room 90/210 lines, 105/177 branches and DataStore 20/35
 lines, 12/12 branches for combined measurements. Likewise, the owner-supplied first hosted
 results (Room 206/210, 165/177; DataStore 35/35, 12/12) preceded the two construction tests
-and are not numerical evidence for this final revision. No inferred new percentages are supplied.
+and are not numerical evidence for this final revision. The final owner-supplied 8927e28 counters are recorded in Section 1 and the deferred register;
+no new percentages are inferred. Per-source numeric counters still require artifact inspection.
 Missing Android evidence is neither zero coverage nor passing coverage.
 
 The enforced thresholds remain 90% LINE and 80% BRANCH independently by package and source;
@@ -528,8 +562,8 @@ Owner decisions required:
 - Policy B is already approved and implemented. Obtain transport-validation evidence and keep
   the entire allowlisted protobuf limited to non-sensitive preferences. Choose C only with separately approved safeguards.
 - Supply/review final coverage/provenance/XML artifacts and confirm actual checkout/base/head.
-- Retain the successful integrated mandatory CI result and obtain compatibility at the final
-  accepted revision; any subsequent correction requires new current-revision checks.
+- Retain the verified 8927e28 mandatory and API26/27/36 compatibility PASS evidence.
+  Require new current-revision checks after this consolidation commit; older success is not reused.
 - Perform and record physical Android 8.1 acceptance; confirm whether v1 has ever shipped.
 - Resolve relevant security/review findings and personally decide integration of PR #10.
 
@@ -539,19 +573,43 @@ Owner decisions required:
 | Scope/contract/source correctness review | PASS source audit; no new confirmed functional defect |
 | Stable exported v1 schema and no destructive fallback | PASS |
 | Fresh local JVM suite, host builds/lint and infrastructure checks | PASS, including Policy B follow-up |
-| Integrated head-associated seven mandatory CI checks | PASS public job/run status; actual captured commit remains an artifact-audit item |
-| Exact latest coverage/provenance and independent reproduction | BLOCKED artifact access |
-| Final-SHA API27/API36 phase-close evidence | BLOCKED; earlier identical-tree run succeeds but is historical |
+| Baseline 8927e28 seven mandatory CI checks | PASS verified PR/compatibility run status; actual captured commit remains an artifact-audit item |
+| Baseline persistence coverage gate | PASS hosted job; counters owner-supplied in register |
+| Independent exact coverage/provenance reproduction | BLOCKED artifact access; not falsely marked PASS |
+| API27/API36 at final implementation baseline 8927e28 | PASS observed compatibility run 38626486247; exact counts owner-supplied |
+| New consolidation revision CI/compatibility | Pending after publication; no earlier-SHA substitution |
 | Backup Policy B configuration | PASS implemented exact-file allowlist, final merged manifest and APK checks |
-| Real backup/restore/device-transfer validation | NOT RUN / BLOCKED device/transport evidence |
-| Physical Android 8.1 tablet | BLOCKED / NOT RUN |
+| Real backup/restore/device-transfer validation | NOT RUN / DEFERRED: C-DEF-01/02 |
+| Physical Android 8.1 tablet | NOT RUN / DEFERRED: C-DEF-03; still formally required |
 | Product library/settings UI and PDF modification acceptance | NOT APPLICABLE to this adapter audit; not implemented by C |
 | Released-version migration obligation | NOT APPLICABLE to unchanged v1; release history needs owner confirmation |
-| Hosted CI for uncommitted Policy B patch | NOT RUN; previous baseline Success is historical for this delta |
+| Hosted CI for Policy B implementation 8927e28 | PASS verified run 38625694907 |
+| Hosted CI for this consolidation delivery | Pending new commit/run |
 | Human acceptance and merge authorization | Outstanding; never granted by this report |
 
 Technical adapter implementation appears suitable to continue final review, but the persistence
 phase is **not technically ready for unconditional final acceptance** while the mandatory evidence,
 transport validation and physical-device criteria remain unresolved. Human approval is separate even
-after those items pass. Stop for owner review; the five Policy B implementation/report files
-remain uncommitted and unstaged.
+after those items pass. The owner may schedule deferred tests, but that is not a policy waiver.
+See the deferred register for resumption criteria and any separate formal change-control requirement.
+This consolidation is delivery for review through existing PR #10, never agent merge approval.
+
+## 13. Manual-tooling consolidation review and validation
+
+Reviewed the complete four-file acceptance tooling. The runner has no @Test methods and checks
+emulator hardware, explicit consent and a host-created UUID marker before any fixture operation.
+Seed refuses existing persistence. Room closes before backup; restore verification checks for
+SQLite files before opening a new database. Host code requires an explicit serial, supported
+local transport and typed serial/package confirmation before wipe/uninstall; unavailable
+transport and declined consent stop safely. Local cloud-style and genuine D2D remain separate.
+The init script is loaded only via explicit -I; normal builds/CI keep AndroidJUnitRunner.
+No automatic destructive procedure or new phase behavior is introduced.
+
+Consolidation validation: app/test APK and lint PASS (0 errors/20 existing warnings); fresh
+JVM run PASS, 128 cases and contract coverage gate; Python PASS, 39 tests; en/ca/es PASS;
+15 fixture checks PASS; compiled APK Policy B/merged manifest PASS; PowerShell syntax plus
+four mocked refusal cases PASS (no Android commands executed). The explicit acceptance APK
+was previously built and its runner inspected; normal test APK rebuilt/inspected afterward.
+Regular JUnit source inventory remains 205; backup fixture/D2D/native Windows execution is NOT RUN.
+Production/schema/policy bytes remain identical to baseline, and whitespace/scope review is required
+before committing the six consolidation files. No additional branch/PR or policy amendment is created.

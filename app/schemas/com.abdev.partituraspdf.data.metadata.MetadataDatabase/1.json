@@ -1,0 +1,134 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c55fdabe4a043f57f99cbdbc8780c765",
+    "entities": [
+      {
+        "tableName": "document_registry",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`documentId` TEXT NOT NULL, `provider` TEXT NOT NULL, `locator` TEXT NOT NULL, `availability` TEXT NOT NULL, `revisionType` TEXT NOT NULL, `snapshotSha256` TEXT, `snapshotByteCount` INTEGER, PRIMARY KEY(`documentId`))",
+        "fields": [
+          {
+            "fieldPath": "documentId",
+            "columnName": "documentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locator",
+            "columnName": "locator",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "availability",
+            "columnName": "availability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "revisionType",
+            "columnName": "revisionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotSha256",
+            "columnName": "snapshotSha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "snapshotByteCount",
+            "columnName": "snapshotByteCount",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "documentId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_document_registry_provider_locator",
+            "unique": true,
+            "columnNames": [
+              "provider",
+              "locator"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_document_registry_provider_locator` ON `${TABLE_NAME}` (`provider`, `locator`)"
+          }
+        ]
+      },
+      {
+        "tableName": "document_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`documentId` TEXT NOT NULL, `favorite` INTEGER NOT NULL, `readingPage` INTEGER, `readingRevisionType` TEXT, `readingSha256` TEXT, `readingByteCount` INTEGER, PRIMARY KEY(`documentId`), FOREIGN KEY(`documentId`) REFERENCES `document_registry`(`documentId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "documentId",
+            "columnName": "documentId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "favorite",
+            "columnName": "favorite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readingPage",
+            "columnName": "readingPage",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "readingRevisionType",
+            "columnName": "readingRevisionType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "readingSha256",
+            "columnName": "readingSha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "readingByteCount",
+            "columnName": "readingByteCount",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "documentId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "document_registry",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "documentId"
+            ],
+            "referencedColumns": [
+              "documentId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c55fdabe4a043f57f99cbdbc8780c765')"
+    ]
+  }
+}

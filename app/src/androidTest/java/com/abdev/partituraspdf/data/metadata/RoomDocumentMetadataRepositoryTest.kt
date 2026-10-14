@@ -285,6 +285,8 @@ class RoomDocumentMetadataRepositoryTest {
                 assertEquals(Observation.Loading, next(states))
                 assertEquals(Observation.Ready(DocumentMetadata(true, position)), next(states))
                 db.openHelper.writableDatabase.execSQL("DELETE FROM document_registry WHERE documentId = 'logical-c03'")
+                // Raw SupportSQLite writes bypass Room's automatic invalidation refresh.
+                db.invalidationTracker.refreshAsync()
                 assertEquals(Observation.Failed(AppError.Access.NOT_REGISTERED), next(states))
                 registry.register(document, location)
                 assertEquals(Observation.Ready(DocumentMetadata()), next(states))

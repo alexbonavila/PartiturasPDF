@@ -1,6 +1,5 @@
 package com.abdev.partituraspdf.data.metadata
 
-import android.database.sqlite.SQLiteException
 import androidx.room.withTransaction
 import com.abdev.partituraspdf.core.document.DocumentAvailability
 import com.abdev.partituraspdf.core.document.DocumentRef
@@ -10,8 +9,6 @@ import com.abdev.partituraspdf.core.document.RegisteredDocument
 import com.abdev.partituraspdf.core.document.StorageDocumentRef
 import com.abdev.partituraspdf.core.result.AppError
 import com.abdev.partituraspdf.core.result.Outcome
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 
 /**
  * Logical registration persistence only: never opens providers or derives identities/evidence.
@@ -23,7 +20,7 @@ internal class RoomDocumentRegistry(private val database: MetadataDatabase) : Do
     private val dao = database.documents()
 
     override suspend fun register(document: DocumentRef, storage: StorageDocumentRef): Outcome<RegisteredDocument> =
-        databaseOperation {
+        metadataDatabaseOperation {
             database.withTransaction {
                 // These checks run under the SQLite writer lock, not a process-global mutex.
                 // Do not reinterpret every SQLiteConstraintException as a uniqueness conflict.
@@ -36,13 +33,13 @@ internal class RoomDocumentRegistry(private val database: MetadataDatabase) : Do
             }
         }
 
-    override suspend fun resolve(document: DocumentRef): Outcome<RegisteredDocument> = databaseOperation {
+    override suspend fun resolve(document: DocumentRef): Outcome<RegisteredDocument> = metadataDatabaseOperation {
         val row = dao.registry(document.id.value)
         if (row == null) Outcome.Failure(AppError.Access.NOT_REGISTERED)
         else Outcome.Success(MetadataMapping.registry(row))
     }
 
-    override suspend fun findRegistration(storage: StorageDocumentRef): Outcome<RegisteredDocument> = databaseOperation {
+    override suspend fun findRegistration(storage: StorageDocumentRef): Outcome<RegisteredDocument> = metadataDatabaseOperation {
         val row = dao.findLocation(storage.provider, storage.value)
         if (row == null) Outcome.Failure(AppError.Access.NOT_REGISTERED)
         else Outcome.Success(MetadataMapping.registry(row))
@@ -53,7 +50,7 @@ internal class RoomDocumentRegistry(private val database: MetadataDatabase) : Do
         revision: DocumentRevision, availability: DocumentAvailability,
     ): Outcome<Unit> {
         require(revision.document == document)
-        return databaseOperation {
+        return metadataDatabaseOperation {
             database.withTransaction {
                 val before = dao.registry(document.id.value)
                     ?: return@withTransaction Outcome.Failure(AppError.Access.NOT_REGISTERED)
@@ -70,7 +67,7 @@ internal class RoomDocumentRegistry(private val database: MetadataDatabase) : Do
 
     override suspend fun rebind(
         document: DocumentRef, expected: StorageDocumentRef, replacement: StorageDocumentRef,
-    ): Outcome<RegisteredDocument> = databaseOperation {
+    ): Outcome<RegisteredDocument> = metadataDatabaseOperation {
         database.withTransaction {
             val before = dao.registry(document.id.value)
                 ?: return@withTransaction Outcome.Failure(AppError.Access.NOT_REGISTERED)
@@ -104,15 +101,4 @@ internal class RoomDocumentRegistry(private val database: MetadataDatabase) : Do
             AppError.Conflict.REGISTRATION_CHANGED
         })
 
-    private suspend fun <T> databaseOperation(block: suspend () -> Outcome<T>): Outcome<T> {
-        currentCoroutineContext().ensureActive()
-        return try {
-            block()
-        } catch (failure: SQLiteException) {
-            // Cancellation takes precedence even if an interrupted SQL operation emitted an error.
-            currentCoroutineContext().ensureActive()
-            val error = registryDatabaseError(failure.javaClass) ?: throw failure
-            Outcome.Failure(error)
-        }
-    }
 }

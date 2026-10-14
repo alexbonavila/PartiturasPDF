@@ -44,6 +44,11 @@ internal abstract class DocumentDao {
     @Query("SELECT * FROM document_metadata WHERE documentId = :id")
     abstract fun observeMetadata(id: String): Flow<MetadataEntity?>
 
+    /** Observe parent existence and metadata in one read transaction, including both invalidations. */
+    @Transaction
+    @Query("SELECT * FROM document_registry WHERE documentId = :id")
+    abstract fun observeRegisteredMetadata(id: String): Flow<RegisteredMetadata?>
+
     @Query("""UPDATE document_registry SET provider = :provider, locator = :locator,
         revisionType = 'unknown', snapshotSha256 = NULL, snapshotByteCount = NULL, availability = 'unknown'
         WHERE documentId = :id AND provider = :expectedProvider AND locator = :expectedLocator""")

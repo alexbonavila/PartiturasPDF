@@ -1,0 +1,11 @@
+// Explicit manual test-APK build only. Never loaded by ordinary Gradle/CI commands.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.extensions.getByName('androidComponents').finalizeDsl { android ->
+                android.defaultConfig.testInstrumentationRunner =
+                    'com.abdev.partituraspdf.data.backup.BackupPolicyAcceptanceRunner'
+            }
+        }
+    }
+}

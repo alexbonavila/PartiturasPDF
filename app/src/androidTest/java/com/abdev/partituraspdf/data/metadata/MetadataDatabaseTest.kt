@@ -204,20 +204,22 @@ class MetadataDatabaseTest {
         }
     }
 
-    @Test fun corruptPersistedEvidenceIsRejectedAfterRealSqlRead() = runBlocking {
-        dao.register(document, location)
-        db.openHelper.writableDatabase.execSQL("UPDATE document_registry SET snapshotByteCount = 1 WHERE documentId = 'logical-id'")
-        assertThrows(IllegalStateException::class.java) {
-            MetadataMapping.registry(runBlocking { requireNotNull(dao.registry(document.id.value)) })
-        }
-        db.openHelper.writableDatabase.execSQL("UPDATE document_metadata SET favorite = 4294967296 WHERE documentId = 'logical-id'")
-        assertThrows(IllegalStateException::class.java) {
-            MetadataMapping.metadata(runBlocking { requireNotNull(dao.metadata(document.id.value)) })
-        }
-        db.openHelper.writableDatabase.execSQL("""UPDATE document_metadata SET favorite = 0,
-            readingPage = 4294967296, readingRevisionType = 'unknown' WHERE documentId = 'logical-id'""")
-        assertThrows(IllegalStateException::class.java) {
-            MetadataMapping.metadata(runBlocking { requireNotNull(dao.metadata(document.id.value)) })
+    @Test fun corruptPersistedEvidenceIsRejectedAfterRealSqlRead() {
+        runBlocking {
+            dao.register(document, location)
+            db.openHelper.writableDatabase.execSQL("UPDATE document_registry SET snapshotByteCount = 1 WHERE documentId = 'logical-id'")
+            assertThrows(IllegalStateException::class.java) {
+                MetadataMapping.registry(runBlocking { requireNotNull(dao.registry(document.id.value)) })
+            }
+            db.openHelper.writableDatabase.execSQL("UPDATE document_metadata SET favorite = 4294967296 WHERE documentId = 'logical-id'")
+            assertThrows(IllegalStateException::class.java) {
+                MetadataMapping.metadata(runBlocking { requireNotNull(dao.metadata(document.id.value)) })
+            }
+            db.openHelper.writableDatabase.execSQL("""UPDATE document_metadata SET favorite = 0,
+                readingPage = 4294967296, readingRevisionType = 'unknown' WHERE documentId = 'logical-id'""")
+            assertThrows(IllegalStateException::class.java) {
+                MetadataMapping.metadata(runBlocking { requireNotNull(dao.metadata(document.id.value)) })
+            }
         }
     }
 

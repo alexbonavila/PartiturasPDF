@@ -177,3 +177,95 @@ val verifyPdfAdapterCoverage = tasks.register<JacocoCoverageVerification>("verif
         }
     }
 }
+
+// C05-INFRA: consume one explicitly prepared same-build JVM/API26 run; never execute an emulator here.
+val persistenceReports = layout.buildDirectory.dir("reports/persistence")
+val persistenceClasses = layout.buildDirectory.dir(
+    "intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes"
+)
+val persistenceTool = rootProject.file("scripts/persistence_coverage.py")
+val persistenceJacoco = configurations.named("jacocoAnt")
+val persistenceAdb = androidComponents.sdkComponents.adb
+
+abstract class PersistenceToolArguments : org.gradle.process.CommandLineArgumentProvider {
+    @get:Classpath abstract val jacocoClasspath: ConfigurableFileCollection
+    @get:InputFile @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val script: RegularFileProperty
+    @get:InputFile @get:PathSensitive(PathSensitivity.NONE)
+    abstract val adbExecutable: RegularFileProperty
+    @get:Input abstract val mode: Property<String>
+    @get:Input abstract val versions: MapProperty<String, String>
+
+    override fun asArguments(): Iterable<String> = listOf(
+        script.get().asFile.absolutePath, mode.get(),
+        "--jacoco-classpath", jacocoClasspath.asPath,
+        "--adb", adbExecutable.get().asFile.absolutePath,
+    ) + versions.get().flatMap { (name, value) -> listOf("--$name", value) }
+}
+
+fun Exec.persistenceCommand(mode: String) {
+    executable = "python3"
+    val arguments = objects.newInstance<PersistenceToolArguments>()
+    arguments.script.set(persistenceTool)
+    arguments.jacocoClasspath.from(persistenceJacoco)
+    arguments.adbExecutable.set(persistenceAdb)
+    arguments.mode.set(mode)
+    arguments.versions.set(mapOf(
+        "gradle-version" to gradle.gradleVersion,
+        "agp-version" to libs.versions.agp.get(),
+        "jdk-version" to System.getProperty("java.version"),
+        "jacoco-version" to libs.versions.jacoco.get(),
+    ))
+    argumentProviders.add(arguments)
+}
+
+val testPersistenceCoverageInputs = tasks.register<Exec>("testPersistenceCoverageInputs") {
+    dependsOn("compileDebugKotlin", "compileDebugUnitTestJavaWithJavac", "compileDebugAndroidTestJavaWithJavac")
+    persistenceCommand("test-inputs")
+}
+
+val preparePersistenceCoverageRun = tasks.register<Exec>("preparePersistenceCoverageRun") {
+    dependsOn("assembleDebug", "assembleDebugAndroidTest", "compileDebugUnitTestJavaWithJavac", testPersistenceCoverageInputs)
+    persistenceCommand("prepare")
+}
+
+val validatePersistenceCoverageInputs = tasks.register<Exec>("validatePersistenceCoverageInputs") {
+    // Deliberately no test/compile dependency: consume captured data without rebuilding its classes.
+    persistenceCommand("validate")
+}
+
+val persistenceCoverageTasks = listOf("metadata", "preferences").map { scope ->
+    tasks.register<JacocoReport>("${scope}PersistenceCoverageReport") {
+        dependsOn(validatePersistenceCoverageInputs)
+        classDirectories.setFrom(fileTree(persistenceClasses) {
+            include("com/abdev/partituraspdf/data/$scope/**")
+            exclude("**/DocumentDao_Impl.class", "**/DocumentDao_Impl\$*.class",
+                "**/MetadataDatabase_Impl.class", "**/MetadataDatabase_Impl\$*.class") // KSP output only.
+        })
+        sourceDirectories.setFrom(files("src/main/java"))
+        executionData.setFrom(
+            layout.buildDirectory.file("jacoco/testDebugUnitTest.exec"),
+            fileTree(layout.buildDirectory.dir("outputs/code_coverage/debugAndroidTest/connected")) {
+                include("**/*.ec")
+            },
+        )
+        // Each input validation writes a fresh stamp; stale cached XML must not follow it.
+        outputs.upToDateWhen { false }
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+            xml.outputLocation.set(persistenceReports.map { it.file("$scope.xml") })
+            html.outputLocation.set(persistenceReports.map { it.dir("$scope.html") })
+        }
+    }
+}
+
+val verifyPersistenceCoverage = tasks.register<Exec>("verifyPersistenceCoverage") {
+    dependsOn(persistenceCoverageTasks)
+    persistenceCommand("verify")
+}
+
+// Reproduce a completed retained run offline; this does not perform or certify a new Android run.
+val auditPersistenceCoverage = tasks.register<Exec>("auditPersistenceCoverage") {
+    persistenceCommand("audit")
+}

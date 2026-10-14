@@ -110,8 +110,12 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
             test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = "26"
+            bash ./gradlew :app:preparePersistenceCoverageRun --stacktrace
+            bash ./gradlew :app:testDebugUnitTest --stacktrace --no-build-cache
+            python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect
             bash ./gradlew :app:connectedDebugAndroidTest --stacktrace
             python3 scripts/verify_test_results.py app/build/outputs/androidTest-results/connected --required-test com.abdev.partituraspdf.ExampleInstrumentedTest.useAppContext
+            bash ./gradlew :app:verifyPersistenceCoverage --stacktrace
       - name: Retain instrumentation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -120,6 +124,20 @@ jobs:
           path: |
             app/build/outputs/androidTest-results/connected/
             app/build/reports/androidTests/connected/
+            app/build/test-results/testDebugUnitTest/
+            app/build/outputs/code_coverage/debugAndroidTest/connected/
+            app/build/jacoco/testDebugUnitTest.exec
+            app/build/reports/persistence/
+            app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/abdev/partituraspdf/data/metadata/
+            app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes/com/abdev/partituraspdf/data/preferences/
+            app/build/intermediates/built_in_kotlinc/debugUnitTest/compileDebugUnitTestKotlin/classes/com/abdev/partituraspdf/data/metadata/
+            app/build/intermediates/built_in_kotlinc/debugUnitTest/compileDebugUnitTestKotlin/classes/com/abdev/partituraspdf/data/preferences/
+            app/build/intermediates/built_in_kotlinc/debugAndroidTest/compileDebugAndroidTestKotlin/classes/com/abdev/partituraspdf/data/metadata/
+            app/build/intermediates/built_in_kotlinc/debugAndroidTest/compileDebugAndroidTestKotlin/classes/com/abdev/partituraspdf/data/preferences/
+            app/build/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes/com/abdev/partituraspdf/data/metadata/
+            app/build/intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes/com/abdev/partituraspdf/data/preferences/
+            app/build/intermediates/javac/debugAndroidTest/compileDebugAndroidTestJavaWithJavac/classes/com/abdev/partituraspdf/data/metadata/
+            app/build/intermediates/javac/debugAndroidTest/compileDebugAndroidTestJavaWithJavac/classes/com/abdev/partituraspdf/data/preferences/
           retention-days: 14
 
   localization:

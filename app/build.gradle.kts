@@ -1,7 +1,14 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.androidx.room)
     jacoco
+}
+
+// The Room plugin declares schema inputs/outputs for cache-aware KSP processing.
+room {
+    schemaDirectory("$projectDir/schemas")
 }
 
 android {
@@ -41,10 +48,15 @@ android {
     }
     // Instrumentation APK only: canonical PDFs and manifest, never production APK assets.
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("test-fixtures"))
+    sourceSets.getByName("androidTest").assets.srcDir("schemas")
 
 }
 
 dependencies {
+    // Room 2.7+ includes Kotlin/coroutine APIs in runtime; room-ktx is redundant.
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.core)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -55,6 +67,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

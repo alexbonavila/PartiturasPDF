@@ -40,6 +40,14 @@ class Blocked(RuntimeError):
     """Missing infrastructure, unsafe identity, or incomplete execution evidence."""
 
 
+class AdbTransportError(Blocked):
+    """Retryable transport loss, only for explicitly read-only readiness operations."""
+
+
+class BootPending(Blocked):
+    """Owned emulator is identified but Android has not finished booting."""
+
+
 class FunctionalFailure(RuntimeError):
     """A real executed instrumentation assertion failed."""
 
@@ -455,23 +463,117 @@ class Runner:
         self.fixture_created = self.installed = self.identified = False
         self.settings = {}
         self.ui_failure_cleanup = None
+        self._adb_attempt = 1
+        self._adb_deadline = None
+        self.summary["adb_transport"] = []
+        self.summary["setting_changes"] = []
+        self.record("adb-transport.json", "[]")
 
     def record(self, name, value):
         (self.out / name).write_text(value, encoding="utf-8")
 
+    def process_state(self):
+        if self.process is None:
+            return {"ownership": "not launched by this run", "exit": None}
+        return {"ownership": "child of this run", "pid": self.process.pid, "exit": self.process.poll()}
+
+    def transport_event(self, **event):
+        self.summary["adb_transport"].append(dict(event, process=self.process_state()))
+        self.record("adb-transport.json", json.dumps(self.summary["adb_transport"], indent=2))
+
     def raw_adb(self, *args, **kwargs):
-        return checked([self.adb, "-s", self.serial, *args], **kwargs)
+        """Exactly one command; mutations are NEVER replayed after a lost response."""
+        command = [str(self.adb), "-s", self.serial, *args]
+        started = time.monotonic()
+        timeout = kwargs.pop("timeout", 30)
+        if self._adb_deadline is not None:
+            timeout = min(timeout, self._adb_deadline - started)
+            if timeout <= 0:
+                raise AdbTransportError("ADB readiness timeout budget exhausted")
+        if self.process is not None and self.process.poll() is not None:
+            raise Blocked("Dedicated emulator process terminated; see emulator.log")
+        try:
+            result = execute(command, timeout=timeout, **kwargs)
+        except Blocked as error:
+            self.transport_event(command=command, attempt=self._adb_attempt, exit=None,
+                                 elapsed_seconds=time.monotonic() - started, error=str(error))
+            if isinstance(error.__cause__, subprocess.TimeoutExpired):
+                raise AdbTransportError(str(error)) from error
+            raise
+        self.transport_event(command=command, attempt=self._adb_attempt, exit=result.returncode,
+                             elapsed_seconds=time.monotonic() - started,
+                             stdout=result.stdout if result.returncode else "",
+                             stderr=result.stderr if result.returncode else "")
+        if result.returncode:
+            message = f"ADB command failed ({result.returncode}): {command}\n{result.stdout}\n{result.stderr}"
+            transient = result.returncode == 255 or any(text in (result.stderr + result.stdout).lower()
+                for text in ("device offline", "device not found", "transport error", "error: closed"))
+            transient = transient or bool(re.search(r"error: device .+ (?:not found|offline)",
+                                                    (result.stderr + result.stdout).lower()))
+            raise (AdbTransportError if transient else Blocked)(message)
+        return result.stdout.strip()
+
+    def recover_readiness(self, label, operation, *, attempts=3, budget=8, delay=0.25):
+        """Bounded read-only recovery; defaults: 3 attempts / 8 seconds / 250 ms backoff.
+
+        A newly launched child gets a separate initial-connection window. Semantic identity
+        mismatches NEVER retry, even in that window. No mutation or JUnit method enters here.
+        """
+        started = time.monotonic()
+        previous_attempt, previous_deadline = self._adb_attempt, self._adb_deadline
+        self._adb_deadline = started + budget
+        try:
+            for attempt in range(1, attempts + 1):
+                self._adb_attempt = attempt
+                if self.process is not None and self.process.poll() is not None:
+                    self.transport_event(operation=label, attempt=attempt, outcome="process terminated",
+                                         elapsed_seconds=time.monotonic() - started)
+                    raise Blocked("Dedicated emulator process terminated; see emulator.log")
+                try:
+                    value = operation()
+                except AdbTransportError as error:
+                    remaining = self._adb_deadline - time.monotonic()
+                    exhausted = attempt == attempts or remaining <= delay
+                    self.transport_event(operation=label, attempt=attempt,
+                        outcome="exhausted" if exhausted else "retry transport read",
+                        elapsed_seconds=time.monotonic() - started, error=str(error))
+                    if exhausted:
+                        raise
+                    time.sleep(delay)
+                except Blocked as error:
+                    self.transport_event(operation=label, attempt=attempt, outcome="identity/readiness rejected",
+                        elapsed_seconds=time.monotonic() - started, error=str(error))
+                    raise
+                else:
+                    self.transport_event(operation=label, attempt=attempt,
+                        outcome="recovered" if attempt > 1 else "ready",
+                        elapsed_seconds=time.monotonic() - started,
+                        identity=dict(self.summary["device"]))
+                    return value
+        finally:
+            self._adb_attempt, self._adb_deadline = previous_attempt, previous_deadline
 
     def identify(self, *, boot=False):
-        if not self.state or not self.adb:
+        return self.recover_readiness("identity", lambda: self._identify_once(boot=boot))
+
+    def _identify_once(self, *, boot=False):
+        self.summary["device"]["identity_verified"] = False
+        if not self.state or not self.adb or not re.fullmatch(r"emulator-\d+", self.serial or ""):
             raise Blocked("No dedicated device selected")
+        if "port" in self.state and self.serial != f"emulator-{self.state['port']}":
+            raise Blocked("Selected serial conflicts with owned emulator port")
         name = self.raw_adb("emu", "avd", "name").splitlines()
+        self.summary["device"]["observed_name"] = name[0].strip() if name else None
         if not name or name[0].strip() != self.state["name"]:
             raise Blocked("Emulator port belongs to a different AVD; refusing device operations")
-        if self.raw_adb("shell", "getprop", "ro.kernel.qemu") != "1":
+        qemu = self.raw_adb("shell", "getprop", "ro.kernel.qemu")
+        self.summary["device"]["observed_qemu"] = qemu
+        if qemu != "1":
             raise Blocked("Device is not an emulator")
-        if self.raw_adb("shell", "getprop", "ro.build.version.sdk") != "26":
-            raise Blocked("Dedicated emulator is not API 26")
+        api = self.raw_adb("shell", "getprop", "ro.build.version.sdk")
+        self.summary["device"]["observed_api"] = api
+        if api != "26":
+            raise Blocked(f"Dedicated emulator is not API 26: {api!r}")
         selection = self.selection or host_image()
         if self.state.get("image") != selection["image"]:
             raise Blocked("Dedicated AVD image conflicts with the native host")
@@ -479,13 +581,69 @@ class Runner:
         self.summary["device"]["observed_abi"] = observed_abi
         if observed_abi != selection["abi"]:
             raise Blocked(f"Emulator ABI {observed_abi!r} does not match approved native API 26 ABI {selection['abi']!r}")
+        self.summary["device"].update(serial=self.serial, name=self.state["name"], api=26,
+                                       emulator=True, abi=observed_abi)
         if boot and self.raw_adb("shell", "getprop", "sys.boot_completed") != "1":
-            raise Blocked("Emulator boot is incomplete")
+            raise BootPending("Emulator boot is incomplete")
         self.identified = True
+        self.summary["device"]["identity_verified"] = True
+
+    def read_adb(self, *args):
+        """Only explicitly approved property/settings reads; revalidate ALL identity on recovery."""
+        if not ((len(args) in (2, 3) and args[:2] == ("shell", "getprop")) or
+                (len(args) == 5 and args[:3] == ("shell", "settings", "get"))):
+            raise Blocked("Not an approved read-only readiness command")
+        def read():
+            self._identify_once()
+            return self.raw_adb(*args)
+        return self.recover_readiness("read: " + " ".join(args), read)
 
     def adb_command(self, *args, **kwargs):
         self.identify()
         return self.raw_adb(*args, **kwargs)
+
+    def prepare_settings(self):
+        for namespace, key, value in (("global", "window_animation_scale", "0"),
+                ("global", "transition_animation_scale", "0"), ("global", "animator_duration_scale", "0"),
+                ("system", "accelerometer_rotation", "0"), ("system", "user_rotation", "0"),
+                ("system", "screen_off_timeout", "600000")):
+            original = self.read_adb("shell", "settings", "get", namespace, key)
+            if not original:
+                raise Blocked(f"Empty settings response; original value unknown: {namespace}/{key}")
+            if original == value:
+                continue
+            self.identify()  # No pending mutation if identity fails BEFORE dispatch.
+            entry = dict(namespace=namespace, key=key, original=original, target=value, state="response pending")
+            self.settings[(namespace, key)] = entry
+            self.summary["setting_changes"].append(entry)
+            # A failed response may still have changed the setting; cleanup reads it before restoring.
+            self.raw_adb("shell", "settings", "put", namespace, key, value)
+            entry["state"] = "write acknowledged"
+            if self.read_adb("shell", "settings", "get", namespace, key) != value:
+                raise Blocked(f"Setting write not verified: {namespace}/{key}")
+            entry["state"] = "modified and verified"
+
+    def restore_settings(self):
+        for (namespace, key), entry in self.settings.items():
+            result = dict(name=f"setting {namespace}/{key}", status="BLOCKED")
+            try:
+                current = self.read_adb("shell", "settings", "get", namespace, key)
+                if current != entry["original"]:
+                    if current != entry["target"]:
+                        raise Blocked("Setting changed unexpectedly; refusing to overwrite it")
+                    arguments = ("delete", namespace, key) if entry["original"] == "null" else (
+                        "put", namespace, key, entry["original"])
+                    self.adb_command("shell", "settings", *arguments)  # Exactly one restoration write.
+                    if self.read_adb("shell", "settings", "get", namespace, key) != entry["original"]:
+                        raise Blocked("Restoration could not be verified")
+                    result.update(status="PASS", detail="original value restored and read back")
+                else:
+                    result.update(status="PASS", detail="original value verified; no restoration write needed")
+                entry["state"] = "original value verified"
+            except Exception as error:
+                result["detail"] = str(error)
+                entry["state"] = "restoration unverified"
+            self.summary["cleanup"].append(result)
 
     def gradle(self, name, tasks, properties=(), timeout=900, *, instrumentation=False):
         script = ROOT / ("gradlew.bat" if os.name == "nt" else "gradlew")
@@ -551,6 +709,10 @@ class Runner:
                 "-port", str(self.state["port"]), "-accel", "on", "-no-snapshot-load", "-no-snapshot-save",
                 "-no-audio", "-no-boot-anim"], stdout=self.emulator_log,
                 stderr=subprocess.STDOUT, env=env)
+            # Cold-start ADB may not exist yet. Only the child we just launched gets this
+            # longer window, before any installation/settings write; foreign identities stop.
+            self.recover_readiness("initial child transport", self._identify_once,
+                                   attempts=60, budget=60, delay=0.5)
         deadline = time.monotonic() + 240
         last_error = "not online"
         while time.monotonic() < deadline:
@@ -559,26 +721,24 @@ class Runner:
             try:
                 self.identify(boot=True)
                 break
-            except Blocked as error:
+            except BootPending as error:
                 last_error = str(error)
-                # Polling boot readiness is not a retry of a functional test.
+                # Only boot-incomplete is polled; identity mismatches/transport exhaustion stop.
                 time.sleep(2)
         else:
             raise Blocked(f"Emulator boot timeout: {last_error}")
-        locale = self.raw_adb("shell", "getprop", "persist.sys.locale")
+        # Two complete boot/identity samples separated by just 250 ms. Any mismatch stops.
+        time.sleep(0.25)
+        self.identify(boot=True)
+        self.summary["device"]["stable_readiness"] = "two verified boot/identity samples, 250 ms apart"
+        locale = self.read_adb("shell", "getprop", "persist.sys.locale")
         if not locale:
-            locale = self.raw_adb("shell", "getprop", "ro.product.locale")
+            locale = self.read_adb("shell", "getprop", "ro.product.locale")
         if locale.replace("_", "-") != "en-US":
             raise Blocked(f"Dedicated AVD must use en-US; actual locale: {locale!r}")
         self.summary["device"]["locale"] = locale
-        self.record("device-properties.txt", self.raw_adb("shell", "getprop"))
-        # Only this provisioned AVD is changed; restore each original setting after evidence capture.
-        for namespace, key, value in (("global", "window_animation_scale", "0"),
-                ("global", "transition_animation_scale", "0"), ("global", "animator_duration_scale", "0"),
-                ("system", "accelerometer_rotation", "0"), ("system", "user_rotation", "0"),
-                ("system", "screen_off_timeout", "600000")):
-            self.settings[(namespace, key)] = self.adb_command("shell", "settings", "get", namespace, key)
-            self.adb_command("shell", "settings", "put", namespace, key, value)
+        self.record("device-properties.txt", self.read_adb("shell", "getprop"))
+        self.prepare_settings()
         self.summary["configuration"] = "en-US, natural orientation, animations off, 10 minute display timeout"
 
     def collect_instrumentation_failures(self):
@@ -698,12 +858,7 @@ class Runner:
                 self.summary["cleanup"].append({"name": "fixture", "status": "PASS"})
             except Exception as error:
                 self.summary["cleanup"].append({"name": "fixture", "status": "BLOCKED", "detail": str(error)})
-        for (namespace, key), value in self.settings.items():
-            try:
-                arguments = ("delete", namespace, key) if value == "null" else ("put", namespace, key, value)
-                self.adb_command("shell", "settings", *arguments)
-            except Exception as error:
-                self.summary["cleanup"].append({"name": key, "status": "BLOCKED", "detail": str(error)})
+        self.restore_settings()
         if any(item["status"] != "PASS" for item in self.summary["cleanup"]):
             self.collect(prefix="cleanup-")
         # Stop only the exact emulator child this invocation launched, not an existing emulator.

@@ -727,6 +727,7 @@ class DoctorTests(unittest.TestCase):
         runner = e2e.Runner(self.home, self.sdk)
         with patch.object(e2e, "checked", return_value="List of devices attached\n"), \
              patch.object(e2e.subprocess, "Popen") as launch, \
+             patch.object(runner, "recover_readiness"), \
              patch.object(e2e.time, "monotonic", side_effect=[0, 241]):
             with self.assertRaisesRegex(e2e.Blocked, "boot timeout"):
                 runner.connect()

@@ -599,3 +599,118 @@ PASS requires the existing acquisition, force-stop persistence, revocation and
 reacquisition stages to execute successfully on Android. If discovery still fails,
 inspect the earliest missing-root checkpoint and subsequent menu/foreground event,
 not only the host's post-test screenshot. Do not re-provision or wipe the AVD.
+
+## L01E: bounded ADB readiness recovery and partial setup cleanup
+
+The owner reports that all five authentic SAF stages (including cleanup) passed on
+the dedicated macOS Apple Silicon/API 26 ARM64 emulator. Two subsequent deliberate
+failure runs stopped before instrumentation: `getprop ro.kernel.qemu` and
+`getprop ro.build.version.sdk` returned 255 with empty output. One occurred in
+`connect -> settings preparation -> adb_command -> identify`. These are reported
+owner results; this cloud revision has not independently executed those runs.
+
+Previously every guarded ADB operation ran a fresh identity check through
+`checked()`. A single failed property query immediately raised BLOCKED, including
+after a successful earlier identification. Settings originals were recorded before
+writes, but cleanup neither distinguished a lost write response from an unsent
+write nor verified successful restoration. Functional tests were not the cause.
+
+The runner now has a read-only recovery boundary:
+
+- Identity and explicitly permitted `getprop` / `settings get` readiness reads get
+  **at most 3 attempts, 8 seconds total per operation, 250 ms between attempts**.
+  The time budget includes command execution; individual command timeouts are
+  limited to the remaining budget. After transport loss, repeat the complete AVD
+  name, exact serial/owned port, emulator flag, API 26 and host-selected ABI check
+  before using the result. Actual identity mismatches stop immediately.
+- Only a child emulator newly launched by this invocation gets an initial
+  transport-connection window of **at most 60 attempts / 60 seconds total**, with
+  **500 ms** backoff. Every attempt still verifies identity as soon as ADB replies;
+  a foreign identity never receives that grace period. This accommodates ADB not
+  yet being available during cold start. Existing emulators use the shorter limit.
+- Exit 255, explicit offline/not-found/closed transport errors and subprocess
+  timeouts can trigger read-only recovery. Other errors remain BLOCKED. Persistent
+  transport failures exhaust the limit visibly; they are never converted to PASS.
+  A terminated emulator child stops recovery, with its PID/exit status recorded.
+  For an already-running emulator there is no owned process handle; diagnostics
+  explicitly state that process ownership/exit status is unavailable.
+- Boot-incomplete polling retains its 240-second limit after initial connection.
+  Identity mismatch or exhausted transport recovery stops it. Before any settings
+  write or APK installation, require two complete boot/identity samples separated
+  by **250 ms**. Already stable emulators incur only that short stability interval.
+- Installation, writes, fixture operations and instrumentation methods are never
+  automatically replayed after a lost response. A retry of identity BEFORE a
+  write is not a retry of the write. No `adb kill-server`, arbitrary-device fallback,
+  physical device, emulator wipe, application clear or unrelated emulator operation
+  is introduced. Completed JUnit assertion evidence still produces FAIL/exit 1,
+  even when the Gradle wrapper exits nonzero. Missing execution remains BLOCKED/2.
+
+Settings are tracked only when a write is about to be dispatched after successful
+identity verification; already-correct settings are untouched. Each entry records
+its original/target value and whether the write is pending, acknowledged or read
+back successfully. A lost response is **uncertain**, not proof that nothing changed.
+On cleanup, revalidate the device and read the current value. If it is already the
+original, verify that fact without writing. If it equals this run's target, attempt
+one restoration (delete a previously absent key), then read back the original.
+An unexpected third value is preserved and reported BLOCKED. Failed or unverifiable
+restoration is explicitly recorded and does not replace the original setup/test
+error. A failed restoration response is not automatically replayed or called PASS.
+Other modified settings still receive independent restoration attempts.
+
+Every unique report contains `adb-transport.json` (an empty array if no ADB command
+ran), also embedded as `adb_transport` in `summary.json`. Events include exact
+serial-targeted argv, attempt, exit status or timeout, elapsed seconds, failed
+stdout/stderr, recovery outcome, verified identity after success and owned process
+state when available. `setting_changes` and `cleanup` in `summary.json` distinguish
+confirmed restoration from uncertainty. Existing host-error, Gradle/instrumentation,
+JUnit, HTML, screenshot, hierarchy, logcat and live checkpoint artifacts remain.
+
+Inspect the **exact report directory printed by the run**, for example:
+
+```bash
+REPORT='build/local-e2e/reports/<printed-run-directory>'
+python3 -m json.tool "$REPORT/adb-transport.json"
+python3 -m json.tool "$REPORT/summary.json"
+```
+
+Windows PowerShell (set the exact printed path):
+
+```powershell
+$report = 'build/local-e2e/reports/<printed-run-directory>'
+Get-Content -Raw "$report/adb-transport.json" | ConvertFrom-Json | Format-List
+$summary = Get-Content -Raw "$report/summary.json" | ConvertFrom-Json
+$summary.setting_changes | Format-List
+$summary.cleanup | Format-List
+```
+
+L01E cloud validation: **144 Python tests PASS** (26 new transport/setup regressions),
+**165 JVM tests PASS**, debug/release and ordinary/opt-in instrumentation APK builds
+PASS, Lint zero errors and 20 existing warnings, English/Catalan/Spanish localization
+PASS and all 15 canonical fixtures PASS. The ordinary instrumentation APK excludes
+the opt-in class; release excludes debug harness/helpers/IDs and PDF fixtures.
+Only the host runner, its tests and this documentation changed; no application,
+Gradle, dependency, contract, schema, CI gate or coverage threshold changed.
+
+Fault-injection tests cover transport recovery/exhaustion, the total timeout budget,
+foreign AVD/serial, wrong API/ABI (also after recovery starts), emulator exit, cold
+start, stable boot samples, lost write responses, untouched/partially changed
+settings, unverified cleanup, original error retention and no functional JUnit
+retries. They simulate host command responses; they do not prove real ADB stability.
+
+Authentic execution of **this revision is NOT RUN** in cloud: no attached emulator
+and no usable KVM acceleration. On the owner's already-provisioned dedicated AVD,
+without re-provisioning or disturbing `emulator-5554`, run:
+
+```bash
+python3 scripts/local_e2e.py doctor
+python3 scripts/local_e2e.py run --suite saf
+python3 scripts/local_e2e.py run --suite saf --inject-failure
+```
+
+The first suite must execute its real Android stages and return 0. The deliberate
+scenario must reach its genuine after-grant assertion, retain all evidence, clean
+only owned state and return **1/FAIL**, not a fabricated PASS. A setup failure still
+returns 2/BLOCKED with zero tests if instrumentation never starts. Collect both
+printed report directories, transport events and verified cleanup records for
+owner review. Real Mac transport-recovery and controlled-failure evidence remain
+pending; host mocks and APK compilation do not establish those results.

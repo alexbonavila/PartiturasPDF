@@ -9,9 +9,11 @@ import hashlib
 import html
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -19,6 +21,7 @@ import traceback
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOME = ROOT / "build/local-e2e"
@@ -37,15 +40,17 @@ class FunctionalFailure(RuntimeError):
 
 
 def execute(command, *, timeout=30, env=None, cwd=ROOT, binary=False, input_text=None):
-    """No shell interpolation; bounded commands. Caller retains all output."""
+    """Bounded argv commands. Reject CMD expansion characters in Windows batch launches."""
+    if os.name == "nt" and str(command[0]).lower().endswith((".bat", ".cmd")):
+        if any(re.search(r'[&|<>^%!\r\n"]', str(argument)) for argument in command):
+            raise Blocked("Unsafe CMD metacharacter in batch arguments; use SDK/project paths without & | < > ^ % ! or quotes")
     try:
         return subprocess.run([str(x) for x in command], cwd=cwd, env=env,
                               capture_output=True, text=not binary, timeout=timeout, input=input_text,
                               encoding=None if binary else "utf-8", errors=None if binary else "replace")
     except subprocess.TimeoutExpired as error:
-        output = error.stdout or b""
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", "replace")
+        chunks = [error.stdout or b"", error.stderr or b""]
+        output = "\n".join(part.decode("utf-8", "replace") if isinstance(part, bytes) else part for part in chunks)
         raise Blocked(f"Command timed out after {timeout}s: {command}\n{output}") from error
     except OSError as error:
         raise Blocked(f"Cannot execute {command[0]}: {error}") from error
@@ -59,12 +64,194 @@ def checked(command, **kwargs):
 
 
 def sdk_tool(sdk, relative):
-    path = sdk / relative
-    if os.name == "nt":
-        path = path.with_suffix(".bat" if "cmdline-tools" in relative else ".exe")
+    suffix = (".bat" if "cmdline-tools" in relative else ".exe") if platform.system() == "Windows" else ""
+    path = sdk / (relative + suffix)
+    if relative.startswith("cmdline-tools/latest/") and not path.is_file():
+        candidates = [item for item in (sdk / "cmdline-tools").glob("*/bin/" + Path(relative).name + suffix)
+                      if re.fullmatch(r"\d+(?:\.\d+)*", item.parent.parent.name)]
+        candidates.sort(key=lambda item: tuple(int(x) for x in item.parent.parent.name.split(".")), reverse=True)
+        if candidates:
+            path = candidates[0]
     if not path.is_file():
         raise Blocked(f"Missing SDK tool: {path}")
     return path
+
+
+def discover_sdk(explicit=None):
+    """Follow explicit configuration before platform defaults; never change SDK settings."""
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    for key in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        if os.environ.get(key):
+            return Path(os.environ[key]).expanduser().resolve()
+    local = ROOT / "local.properties"
+    if local.is_file():
+        match = re.search(r"(?m)^sdk\.dir\s*=\s*(.+)$", local.read_text(encoding="utf-8"))
+        if match:
+            value = re.sub(r"\\([\\ :=!])", r"\1", match[1].strip())
+            return Path(value).expanduser().resolve()
+    if platform.system() == "Darwin":
+        return Path.home() / "Library/Android/sdk"
+    if platform.system() == "Windows":
+        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Android/Sdk"
+    return Path.home() / "Android/Sdk"
+
+
+def native_architecture():
+    machine = platform.machine().lower()
+    # Rosetta can make an Apple Silicon host look x86_64 to Python.
+    if platform.system() == "Darwin":
+        result = execute(["/usr/sbin/sysctl", "-n", "hw.optional.arm64"], timeout=10)
+        if result.returncode == 0 and result.stdout.strip() == "1":
+            return "arm64"
+        if result.returncode != 0 or result.stdout.strip() not in ("0", "1"):
+            native = execute(["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"], timeout=10)
+            if native.returncode or "Intel" not in native.stdout:
+                raise Blocked("Cannot verify native Intel macOS CPU; do not assume Rosetta is compatible")
+    if platform.system() == "Windows":
+        machine = os.environ.get("PROCESSOR_ARCHITEW6432",
+                                 os.environ.get("PROCESSOR_ARCHITECTURE", machine)).lower()
+    return {"amd64": "x86_64", "aarch64": "arm64"}.get(machine, machine)
+
+
+def _inspect_host(home, sdk):
+    """Read-only host/device probes. Readiness is not proof of successful Android execution."""
+    report = {"status": "BLOCKED", "os": platform.system(), "machine": platform.machine(),
+              "python": platform.python_version(), "sdk": str(sdk), "checks": {}, "blockers": [],
+              "emulation": "NOT RUN", "ready_to_attempt": False,
+              "requested_avd": {"api": 26, "image": IMAGE, "abi": "x86_64", "profile": "pixel_c"}}
+    def fail(message):
+        report["blockers"].append(message)
+    def probe(name, command):
+        try:
+            result = execute(command, timeout=20)
+            text = result.stdout + "\n" + result.stderr
+            report["checks"][name] = {"command": [str(x) for x in command],
+                                      "exit": result.returncode, "output": text.strip()}
+            return result, text
+        except Blocked as error:
+            report["checks"][name] = {"error": str(error)}
+            return None, ""
+    try:
+        arch = native_architecture()
+        report["native_architecture"] = arch
+    except Blocked as error:
+        arch = "unknown"
+        fail(f"Cannot establish native CPU architecture: {error}")
+    if report["os"] not in ("Windows", "Darwin", "Linux") or arch != "x86_64":
+        fail("This runner's API 26 google_apis x86_64 AVD requires a native x86_64 host. "
+             "Apple Silicon/Windows ARM and Rosetta x86 translation are not supported. "
+             "Use an accelerated x86_64 Windows/Linux or Intel Mac host; do not substitute a newer API or software emulation.")
+    if sys.version_info < (3, 10):
+        fail("Python 3.10+ is required")
+    java_home = os.environ.get("JAVA_HOME")
+    java = Path(java_home) / "bin" / ("java.exe" if report["os"] == "Windows" else "java") if java_home else shutil.which("java")
+    report["jdk"] = {"java_home": java_home, "executable": str(java) if java else None,
+                     "resolved_installation": str(Path(java).resolve().parent.parent) if java else None}
+    javac = Path(java).resolve().with_name("javac.exe" if report["os"] == "Windows" else "javac") if java else None
+    if not java or not Path(java).is_file() or not javac.is_file():
+        fail("JDK 25 is required: set JAVA_HOME to a valid installation")
+    else:
+        result, output = probe("jdk", [java, "-version"])
+        if not result or result.returncode or not re.search(r'(?:java.version\s*=\s*|version ")25(?:\D|$)', output):
+            fail("A working JDK 25 is required by the pinned Gradle daemon toolchain")
+    tools = {}
+    for name, relative in (("adb", "platform-tools/adb"), ("emulator", "emulator/emulator"),
+                           ("sdkmanager", "cmdline-tools/latest/bin/sdkmanager"),
+                           ("avdmanager", "cmdline-tools/latest/bin/avdmanager")):
+        try:
+            tools[name] = sdk_tool(sdk, relative)
+        except Blocked as error:
+            fail(str(error))
+    report["tools"] = {key: str(value) for key, value in tools.items()}
+    for name, flag in (("adb", "version"), ("emulator", "-version"),
+                       ("sdkmanager", "--version"), ("avdmanager", "list")):
+        if name in tools:
+            # 'avdmanager list device -c' probes command-line/JDK compatibility without changing an AVD.
+            command = [tools[name], flag] + (["device", "-c"] if name == "avdmanager" else [])
+            result, output = probe(name, command)
+            if not result or result.returncode:
+                fail(f"{name} is installed but cannot execute successfully")
+            elif name == "avdmanager" and not re.search(r"(?m)^pixel_c\s*$", output):
+                fail("Required Pixel C hardware profile (pixel_c) is missing from avdmanager")
+    platforms = []
+    for properties in (sdk / "platforms").glob("*/source.properties"):
+        if re.search(r"(?m)^AndroidVersion.ApiLevel\s*=\s*37(?:\.0)?\s*$", properties.read_text(encoding="utf-8")) and (properties.parent / "android.jar").is_file():
+            platforms.append(str(properties.parent))
+    report["platform_api_37"] = platforms
+    if not platforms:
+        fail("SDK platform API 37 with android.jar is required (platforms;android-37 / android-37.0)")
+    build_tools = sdk / "build-tools/37.0.0"
+    report["build_tools"] = str(build_tools)
+    suffix = ".exe" if report["os"] == "Windows" else ""
+    if not (build_tools / ("aapt2" + suffix)).is_file() or not (build_tools / "lib/d8.jar").is_file():
+        fail("Build tools 37.0.0 (aapt2 and D8) are required")
+    images = []
+    for metadata in (sdk / "system-images/android-26").glob("*/*/package.xml"):
+        try:
+            root = ET.parse(metadata).getroot()
+            values = {node.tag.split("}")[-1]: node.text for node in root.iter() if node.text}
+            package = next(node for node in root.iter() if node.tag.split("}")[-1] == "localPackage")
+            images.append({"package": package.get("path"), "api": values.get("api-level"),
+                           "abi": values.get("abi"), "system_img": (metadata.parent / "system.img").is_file()})
+        except (ET.ParseError, StopIteration, OSError) as error:
+            fail(f"Invalid installed image metadata {metadata}: {error}")
+    report["installed_api26_images"] = images
+    report["compatible_api26_images"] = [item for item in images if item["abi"] == {"arm64": "arm64-v8a"}.get(arch, arch) and item["api"] == "26" and item["system_img"]]
+    if not any(item["package"] == IMAGE for item in report["compatible_api26_images"]):
+        fail(f"Requested installed image is missing or incompatible: {IMAGE}. Install it only on a compatible native x86_64 host.")
+    if "emulator" in tools:
+        result, output = probe("acceleration", [tools["emulator"], "-accel-check"])
+        usable = bool(result and result.returncode == 0 and re.search(r"(?m)^accel:\s*\n0\s*\n", output))
+        report["acceleration_available"] = usable
+        if not usable:
+            fail("Hardware acceleration is unavailable/unverified. Enable WHPX/AEHD (Windows), Hypervisor.Framework (Intel macOS), or KVM (Linux), then rerun doctor.")
+    else:
+        report["acceleration_available"] = False
+    if (home / "device.json").exists() or (home / "avd").exists():
+        try:
+            state = load_device(home)
+            identity = dict(state, status="OWNED_STOPPED", serial=f"emulator-{state['port']}")
+            report["dedicated_avd"] = identity
+            if "adb" in tools:
+                result, listing = probe("adb_devices", [tools["adb"], "devices", "-l"])
+                if not result or result.returncode:
+                    fail("Cannot verify dedicated AVD runtime identity: ADB unavailable")
+                elif any(line.split()[0] == identity["serial"] for line in listing.splitlines() if line.split()):
+                    for key, args in (("name", ["emu", "avd", "name"]), ("qemu", ["shell", "getprop", "ro.kernel.qemu"]),
+                                      ("api", ["shell", "getprop", "ro.build.version.sdk"]), ("boot", ["shell", "getprop", "sys.boot_completed"])):
+                        result, output = probe("device_" + key, [tools["adb"], "-s", identity["serial"], *args])
+                        identity[key] = result.stdout.strip().splitlines()[0] if result and result.returncode == 0 and result.stdout.strip() else "UNKNOWN"
+                    if (identity["name"], identity["qemu"], identity["api"], identity["boot"]) != (state["name"], "1", "26", "1"):
+                        identity["status"] = "UNVERIFIED"
+                        fail("Reserved serial is occupied by an unverified AVD or boot is incomplete; no device changes allowed")
+                    else:
+                        identity["status"] = "OWNED_BOOTED"
+        except Blocked as error:
+            report["dedicated_avd"] = {"status": "INVALID", "detail": str(error)}
+            fail(str(error))
+    else:
+        report["dedicated_avd"] = {"status": "UNPROVISIONED", "detail": "Explicit provision is required; doctor creates no AVD"}
+    report["ready_to_attempt"] = not report["blockers"]
+    report["status"] = "PASS" if report["ready_to_attempt"] else "BLOCKED"
+    return report
+
+
+def doctor(home, sdk):
+    try:
+        return _inspect_host(home, sdk)
+    except (OSError, ValueError, Blocked) as error:
+        return {"status": "BLOCKED", "os": platform.system(), "machine": platform.machine(),
+                "python": platform.python_version(), "sdk": str(sdk), "checks": {},
+                "blockers": [f"Host diagnostic could not complete: {error}"],
+                "emulation": "NOT RUN", "ready_to_attempt": False}
+
+
+def require_host(home, sdk):
+    report = doctor(home, sdk)
+    if report["status"] != "PASS":
+        raise Blocked("Host preflight blocked:\n" + "\n".join(report["blockers"]))
+    return report
 
 
 def safe_run_id(value):
@@ -110,6 +297,7 @@ def provision(home, sdk, port):
         # Image installation/licenses are an explicit prerequisite, not automatic acceptance.
         if not (sdk / "system-images/android-26/google_apis/x86_64/package.xml").is_file():
             raise Blocked(f"Install and license {IMAGE} with sdkmanager first")
+        require_host(home, sdk)
         avd_home = home / "avd"
         avd_home.mkdir()
         name = "PartiturasPDF_E2E_API26_" + uuid.uuid4().hex[:12]
@@ -172,13 +360,47 @@ def parse_instrumentation(output, method):
     unexpected = [b for c, b in bundles if "test" in b and (b.get("class") != CLASS or b["test"] != method)]
     if len(starts) != 1 or len(ends) != 1 or unexpected:
         raise Blocked(f"Missing, duplicate or unexpected test results for {method}")
+    completions = re.findall(r"(?m)^INSTRUMENTATION_CODE: (-?\d+)\s*$", output)
+    if (completions != ["-1"] or re.search(r"(?m)^INSTRUMENTATION_(?:FAILED|ABORTED)", output)
+            or re.search(r"(?m)^INSTRUMENTATION_RESULT: shortMsg=", output)):
+        raise Blocked(f"Instrumentation incomplete or crashed: {method}")
+    if bundles.index((1, starts[0])) >= bundles.index(ends[0]):
+        raise Blocked(f"JUnit result precedes its start: {method}")
+    completion = re.search(r"(?m)^INSTRUMENTATION_CODE: -1\s*$", output)
+    if completion.start() < max(match.start() for match in re.finditer(r"(?m)^INSTRUMENTATION_STATUS_CODE:", output)):
+        raise Blocked(f"Instrumentation result follows runner completion: {method}")
     code, data = ends[0]
     if code in (-1, -2):
-        raise FunctionalFailure(data.get("stack", f"JUnit failure in {method}"))
-    if (code != 0 or "INSTRUMENTATION_CODE: -1" not in output or
-            "INSTRUMENTATION_FAILED" in output or "shortMsg=" in output or "FAILURES!!!" in output):
-        raise Blocked(f"Instrumentation incomplete, skipped, or crashed: {method}")
+        if not data.get("stack", "").strip():
+            raise Blocked(f"Missing executed JUnit failure detail: {method}")
+        raise FunctionalFailure(data["stack"])
+    if code != 0 or "FAILURES!!!" in output:
+        raise Blocked(f"Instrumentation incomplete, skipped, or inconsistent: {method}")
     return 1
+
+
+def validate_screenshot(data):
+    """Reject truncated/corrupt screencap output without introducing an image dependency."""
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise Blocked("screencap did not return PNG")
+    offset, image_data = 8, False
+    while offset + 12 <= len(data):
+        length = struct.unpack_from(">I", data, offset)[0]
+        end = offset + 12 + length
+        if end > len(data):
+            break
+        kind, payload = data[offset + 4:offset + 8], data[offset + 8:end - 4]
+        crc = struct.unpack_from(">I", data, end - 4)[0]
+        if zlib.crc32(kind + payload) != crc:
+            raise Blocked("screencap PNG has a corrupt chunk")
+        if offset == 8:
+            if kind != b"IHDR" or length != 13 or not all(struct.unpack_from(">II", payload)):
+                raise Blocked("screencap PNG has an invalid image header")
+        image_data = image_data or kind == b"IDAT"
+        if kind == b"IEND" and not length and end == len(data) and image_data:
+            return
+        offset = end
+    raise Blocked("screencap PNG is incomplete")
 
 
 class Runner:
@@ -192,6 +414,7 @@ class Runner:
                         "android_e2e": "NOT RUN", "commit": "UNKNOWN",
                         "device": {"status": "NOT SELECTED"}, "cleanup": [], "diagnostics": []}
         self.inject = "after-grant" if inject_failure else "none"
+        self.summary["failure_injection"] = self.inject
         self.state = self.adb = self.serial = None
         self.process = self.emulator_log = None
         self.fixture_created = self.installed = self.identified = False
@@ -221,7 +444,7 @@ class Runner:
         self.identify()
         return self.raw_adb(*args, **kwargs)
 
-    def gradle(self, name, tasks, properties=(), timeout=900):
+    def gradle(self, name, tasks, properties=(), timeout=900, *, instrumentation=False):
         script = ROOT / ("gradlew.bat" if os.name == "nt" else "gradlew")
         command = ([str(script)] if os.name == "nt" else ["bash", str(script)])
         command += ["-I", str(ROOT / "scripts/local-e2e.init.gradle"), *tasks,
@@ -235,20 +458,25 @@ class Runner:
         output = result.stdout + "\n" + result.stderr
         self.record(name, output)
         # The instrumentation parser is also required: adb can return 0 for failed tests.
-        if result.returncode:
+        if result.returncode and not instrumentation:
             raise Blocked(f"Gradle failed ({result.returncode}); see {name}")
-        return output
+        return result if instrumentation else output
 
     def stage(self, method, *, cleanup=False):
         self.identify(boot=True)
         label = ("cleanup-" if cleanup else "") + method
         result = {"name": method, "status": "BLOCKED"}
         try:
-            output = self.gradle(label + ".log", [":app:localE2eStage"], [
+            process = self.gradle(label + ".log", [":app:localE2eStage"], [
                 f"-PlocalE2eSerial={self.serial}", f"-PlocalE2eStage={method}",
                 f"-PlocalE2eRun={self.run_id}", f"-PlocalE2eSha256={self.sha}",
-                f"-PlocalE2eFailure={self.inject}"], timeout=180)
-            parse_instrumentation(output, method)
+                f"-PlocalE2eFailure={self.inject}"], timeout=180, instrumentation=True)
+            result["process_exit"] = process.returncode
+            # Parse trustworthy completed JUnit evidence BEFORE considering the wrapper exit.
+            # A timeout raises Blocked in execute(), so partial output is never promoted.
+            parse_instrumentation(process.stdout + "\n" + process.stderr, method)
+            if process.returncode:
+                raise Blocked(f"Test completed but Gradle/ADB failed ({process.returncode}); see {label}.log")
             result["status"] = "PASS"
         except FunctionalFailure as error:
             result.update(status="FAIL", detail=str(error))
@@ -332,8 +560,9 @@ class Runner:
         try:
             self.identify()
             result = execute([self.adb, "-s", self.serial, "exec-out", "screencap", "-p"], binary=True)
-            if result.returncode or not result.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
-                raise Blocked("screencap did not return a PNG")
+            if result.returncode:
+                raise Blocked("screencap command failed")
+            validate_screenshot(result.stdout)
             (self.out / (prefix + "screenshot.png")).write_bytes(result.stdout)
         except Exception as error:
             self.summary["diagnostics"].append(f"screenshot: {error}")
@@ -341,6 +570,9 @@ class Runner:
             path = f"/data/local/tmp/local-e2e-{self.run_id}.xml"
             self.adb_command("shell", "uiautomator", "dump", path, timeout=30)
             self.adb_command("pull", path, str(self.out / (prefix + "hierarchy.xml")))
+            hierarchy = ET.parse(self.out / (prefix + "hierarchy.xml")).getroot()
+            if hierarchy.tag != "hierarchy" or not hierarchy.findall(".//node"):
+                raise Blocked("UI hierarchy is empty or has an unexpected root")
             self.adb_command("shell", "rm", path)
         except Exception as error:
             self.summary["diagnostics"].append(f"hierarchy: {error}")
@@ -398,6 +630,10 @@ class Runner:
     def workflow(self):
         if self.suite != "saf":
             raise Blocked(f"Suite {self.suite!r} is not implemented. No tests executed.")
+        self.summary["host"] = doctor(self.home, self.sdk)
+        self.record("doctor.json", json.dumps(self.summary["host"], indent=2))
+        if self.summary["host"]["status"] != "PASS":
+            raise Blocked("Host preflight blocked: " + "; ".join(self.summary["host"]["blockers"]))
         source, self.sha = fixture()
         self.summary["fixture_sha256"] = self.sha
         self.gradle("gradle-build.log", [":app:assembleDebug", ":app:assembleDebugAndroidTest"])
@@ -487,8 +723,10 @@ class Runner:
                     self.summary.update(status="BLOCKED", detail=f"{type(error).__name__}: {error}")
                     code = 2
                 finally:
-                    if code:
-                        self.collect()
+                    self.collect()
+                    if code == 0 and self.summary["diagnostics"]:
+                        self.summary.update(status="BLOCKED", detail="Required device evidence is incomplete; inspect diagnostics")
+                        code = 2
                     # Checkpoint host evidence BEFORE cleanup even if adb has disappeared.
                     self.reports()
                     try:
@@ -512,22 +750,28 @@ class Runner:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--home", type=Path, default=DEFAULT_HOME, help="Dedicated AVD state and unique reports")
-    parser.add_argument("--sdk", type=Path, default=Path(os.environ.get("ANDROID_HOME", os.environ.get("ANDROID_SDK_ROOT", "missing-sdk"))))
+    parser.add_argument("--sdk", type=Path, default=None)
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("doctor", help="Read-only host, SDK, acceleration and owned AVD diagnostics")
     setup = commands.add_parser("provision", help="Explicitly create a new private API 26 AVD; never overwrite")
     setup.add_argument("--port", type=int, default=5580)
     run = commands.add_parser("run")
     run.add_argument("--suite", choices=("saf", "reader", "library", "full", "coverage"), required=True)
     run.add_argument("--inject-failure", action="store_true", help="Deliberate assertion failure after real picker authorization")
     args = parser.parse_args(argv)
+    sdk = discover_sdk(args.sdk)
+    if args.command == "doctor":
+        report = doctor(args.home.resolve(), sdk)
+        print(json.dumps(report, indent=2))
+        return 0 if report["status"] == "PASS" else 2
     if args.command == "provision":
         try:
-            provision(args.home.resolve(), args.sdk.resolve(), args.port)
+            provision(args.home.resolve(), sdk, args.port)
             return 0
         except Blocked as error:
             print(f"BLOCKED: {error}", file=sys.stderr)
             return 2
-    return Runner(args.home, args.sdk, args.suite, args.inject_failure).run()
+    return Runner(args.home, sdk, args.suite, args.inject_failure).run()
 
 
 if __name__ == "__main__":

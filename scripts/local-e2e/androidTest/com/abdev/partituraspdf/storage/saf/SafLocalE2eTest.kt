@@ -2,8 +2,11 @@ package com.abdev.partituraspdf.storage.saf
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.os.Process
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -41,6 +44,8 @@ class SafLocalE2eTest {
     private val tree = DocumentsContract.buildTreeDocumentUri(
         "com.android.externalstorage.documents", "primary:Download/$directory",
     )
+    private val document = DocumentsContract.buildDocumentUriUsingTree(tree,
+        "primary:Download/$directory/fixture.pdf")
     private val folder = FolderRef(SafUriCodec.PROVIDER_ID, tree.toString())
     private val grants = SafTreeGrantAccess(context.contentResolver)
     private val prefs = context.getSharedPreferences("saf-grant-acceptance-debug", Context.MODE_PRIVATE)
@@ -72,6 +77,8 @@ class SafLocalE2eTest {
         guard()
         assertFalse("Run state already exists", stateFile.exists())
         assertFalse(context.contentResolver.persistedUriPermissions.any { it.uri == tree })
+        assertEquals("Pre-existing broader authorization would invalidate the grant-loss test; preserve it and use a fresh owned AVD",
+            PackageManager.PERMISSION_DENIED, readPermission())
         stateFile.writeText(JSONObject().put("run", run).put("tree", tree.toString())
             .put("baseline", JSONArray(currentGrants().toList()))
             .put("previous", prefs.getString("selected-tree-uri", null) ?: JSONObject.NULL).toString())
@@ -99,12 +106,19 @@ class SafLocalE2eTest {
         assertEquals(Outcome.Success(false), grants.hasPersistedReadGrant(folder))
         assertEquals(Outcome.Failure(AppError.Access.PERMISSION_REVOKED),
             grants.requirePreviouslyPersistedReadGrant(folder))
-        val document = DocumentsContract.buildDocumentUriUsingTree(tree,
-            "primary:Download/$directory/fixture.pdf")
+        assertEquals("OS URI authorization must actually be denied", PackageManager.PERMISSION_DENIED, readPermission())
         // A missing known grant establishes revocation, never document deletion.
-        assertThrows(SecurityException::class.java) {
+        val denied = assertThrows(SecurityException::class.java) {
             context.contentResolver.openInputStream(document)?.use { it.read() }
         }
+        runBlocking {
+            assertEquals(Outcome.Failure(AppError.Access.PERMISSION_DENIED),
+                SafDocumentCatalog(context.contentResolver).list(folder))
+        }
+        instrumentation.sendStatus(0, Bundle().apply {
+            putString("localE2eEvidence", "Known grant absent; OS URI READ denied; actual read exception=" +
+                denied.javaClass.name + "; production listing=PERMISSION_DENIED; host verifies original PDF hash")
+        })
         pickFolder()
         verifyAccess()
         assertOtherGrantsUnchanged()
@@ -136,7 +150,11 @@ class SafLocalE2eTest {
         assertTrue(stateFile.delete())
     }
 
+    private fun readPermission(): Int = context.checkUriPermission(document,
+        Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
     private fun verifyAccess() {
+        assertEquals(PackageManager.PERMISSION_GRANTED, readPermission())
         assertEquals(tree.toString(), prefs.getString("selected-tree-uri", null))
         val persisted = context.contentResolver.persistedUriPermissions.single { it.uri == tree }
         assertTrue(persisted.isReadPermission)

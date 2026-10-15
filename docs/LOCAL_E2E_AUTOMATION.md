@@ -15,33 +15,137 @@ this environment has no attached emulator or KVM. Compilation is not acceptance.
 The selectors and system permission behavior still require a real API 26 run.
 No phase/device acceptance or coverage gate is waived.
 
-## Prerequisites and one-time provisioning
+## Host diagnostics and prerequisites
 
-Use Python **3.10+**, the repository-supported JDK/Gradle toolchain, Android SDK
-platform/build tools required by the project, SDK command-line tools (`latest`),
-platform-tools, emulator, and hardware virtualization. Set `ANDROID_HOME` (or
-`ANDROID_SDK_ROOT`); ensure Gradle uses the same SDK. On Windows use PowerShell,
-`python` instead of `python3`, and `.bat` for SDK tools. Run from the repository
-root. Close concurrent Gradle builds and keep the working tree stable during a run.
+Start with `python3 scripts/local_e2e.py doctor` (`python` on Windows). The command
+prints JSON and exits **0** for prerequisite readiness, **2** for BLOCKED. It does
+not start an AVD, install an APK, clear data, grant/release permissions or claim an
+Android test PASS. Provisioning and SAF runs enforce the same preflight; a failed
+run retains `doctor.json` alongside its summary, JUnit and HTML reports.
 
-Install the API 26 image and accept its licenses yourself:
+The diagnostic reports native OS/CPU (including Rosetta detection), Python,
+JDK executable/version, selected SDK, SDK tool paths/versions, API 37 platform,
+37.0.0 build tools, installed API 26 image metadata/ABIs, `emulator -accel-check`,
+and dedicated AVD ownership. If an owned AVD is online it checks only its reserved
+serial, name, emulator flag, API and boot status. An absent AVD is UNPROVISIONED,
+which permits explicit provisioning; malformed ownership or a foreign occupant
+blocks operation. Readiness is permission to **attempt** boot, not proof of boot.
+
+Required: Python **3.10+**, a working **JDK 25** (`JAVA_HOME`), SDK command-line
+tools, platform-tools, emulator, platform `platforms;android-37.0` (API 37), build
+tools `build-tools;37.0.0`, and the installed
+`system-images;android-26;google_apis;x86_64` image. The profile is `pixel_c`.
+The platform check accepts metadata API 37 and 37.0; use the package available in
+your SDK catalog. The installed cloud SDK package is `platforms;android-37.0`.
+Command-line tools can be `latest` or a numbered installation: the runner selects
+`latest` first, then the highest installed numeric version. It never auto-installs
+packages, accepts licenses, or changes system virtualization settings.
+
+SDK selection: explicit global `--sdk`, then `ANDROID_HOME`, `ANDROID_SDK_ROOT`,
+repository `local.properties` (`sdk.dir`), then the platform default SDK directory.
+Windows batch launches reject CMD metacharacters (`& | < > ^ % !` and quotes)
+in arguments; use ordinary SDK/project paths (spaces are supported).
+Use the same SDK for Gradle and the runner; resolve conflicting local settings
+before execution. Explicit global options precede `doctor`, `provision`, or `run`.
+
+| Host | L01 compatibility contract | Native execution evidence |
+| --- | --- | --- |
+| Windows x86_64 | x86_64 API 26 image plus usable WHPX/AEHD (or another emulator-reported usable accelerator) | Host probes/dispatch covered by mocks; Windows boot/E2E NOT RUN |
+| Intel macOS | x86_64 API 26 image plus usable Hypervisor.Framework | Host probes covered by mocks; native macOS/E2E NOT RUN |
+| Apple Silicon, including x86 Python under Rosetta | BLOCKED for this pinned x86_64 AVD; no cross-architecture/software-emulation fallback | No API 26 Apple Silicon execution path validated |
+| Windows ARM / other ARM hosts | BLOCKED for this pinned AVD | NOT RUN |
+| Linux x86_64 | Same image plus usable KVM | Builds/probes executed here; KVM unavailable, E2E NOT RUN |
+
+Apple Silicon must not provision this x86_64 image simply because it appears in
+`sdkmanager`. Installed image availability and native ABI compatibility are
+separate checks. This version does not claim that an arbitrary API 26 ARM image
+works; even if one is installed it does not enable a new execution path. Use an
+accelerated native x86_64 Windows/Linux or Intel Mac machine for API 26 acceptance.
+Do not substitute a newer Android API, Rosetta, a physical user's device or slow
+software emulation and call that an API 26 PASS.
+
+## Windows PowerShell procedure
+
+These commands use native Windows SDK `.bat`/`.exe` names. Their path/argument
+selection is unit-tested and PowerShell syntax is checked using PowerShell on the
+cloud Linux host. **Native Windows provisioning and execution are not verified**.
+Install Python/JDK/SDK first; set `JAVA_HOME` to your JDK 25 and `ANDROID_HOME` to
+your SDK. Run from the repository root; close concurrent Gradle builds.
 
 ```powershell
-& "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" "platform-tools" "emulator" "system-images;android-26;google_apis;x86_64"
-& "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" --licenses
+# Substitute actual installation paths; do not copy cloud-specific paths.
+$env:JAVA_HOME = 'C:\Tools\jdk-25'
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+# Android Studio normally installs latest; if numbered, use that directory instead.
+$sdkmanager = "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat"
+& $sdkmanager 'platform-tools' 'emulator' 'platforms;android-37.0' 'build-tools;37.0.0' 'system-images;android-26;google_apis;x86_64'
+if ($LASTEXITCODE -ne 0) { throw 'SDK installation failed' }
+& $sdkmanager --licenses
+if ($LASTEXITCODE -ne 0) { throw 'Resolve SDK licenses before continuing' }
+python scripts/local_e2e.py doctor
+if ($LASTEXITCODE -ne 0) { throw 'Resolve doctor blockers; do not provision' }
 python scripts/local_e2e.py provision --port 5580
+if ($LASTEXITCODE -ne 0) { throw 'Provisioning blocked; preserve existing state' }
 python scripts/local_e2e.py run --suite saf
-$LASTEXITCODE
+$runExit = $LASTEXITCODE  # 0 PASS, 1 FAIL, 2 BLOCKED
+$report = Get-ChildItem build/local-e2e/reports -Directory | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+Get-Content (Join-Path $report.FullName 'summary.json')
+Get-Content (Join-Path $report.FullName 'junit.xml')
+Invoke-Item (Join-Path $report.FullName 'index.html')
+Write-Host "Runner exit: $runExit; report: $($report.FullName)"
 ```
 
-Linux/macOS (an x86_64 host/image with working acceleration is required):
+Do not rerun `provision` over existing state. Subsequent runs use `doctor` and
+`run`. For a controlled failure after authentic authorization:
+
+```powershell
+python scripts/local_e2e.py run --suite saf --inject-failure
+if ($LASTEXITCODE -ne 1) { throw 'Expected a completed functional failure, not PASS/BLOCKED' }
+$report = Get-ChildItem build/local-e2e/reports -Directory | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+'summary.json','junit.xml','index.html','acquire.log','screenshot.png','hierarchy.xml','logcat.txt','adb-final.txt' | ForEach-Object {
+    if (-not (Test-Path (Join-Path $report.FullName $_))) { throw "Missing evidence: $_" }
+}
+```
+
+## macOS procedure
+
+Use the same repository-pinned JDK 25. The following zsh-compatible commands are
+reviewed and their POSIX syntax checked; **native macOS execution is NOT RUN**.
+On Apple Silicon, stop after `doctor` reports BLOCKED and use the x86_64 alternative
+above. The SDK command is deliberately after the native-architecture guard.
 
 ```bash
-"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'emulator' 'system-images;android-26;google_apis;x86_64'
-"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-python3 scripts/local_e2e.py provision --port 5580
-python3 scripts/local_e2e.py run --suite saf
+export JAVA_HOME="$(/usr/libexec/java_home -v 25)"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+# hw.optional.arm64 also detects an Apple Silicon Mac running an x86 shell.
+if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
+  echo 'BLOCKED: use a native accelerated x86_64 host for API 26'
+else
+  "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'emulator' 'platforms;android-37.0' 'build-tools;37.0.0' 'system-images;android-26;google_apis;x86_64' &&
+  "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses &&
+  python3 scripts/local_e2e.py doctor &&
+  python3 scripts/local_e2e.py provision --port 5580 &&
+  python3 scripts/local_e2e.py run --suite saf
+fi
 ```
+
+For an existing owned AVD, run only `doctor` then `run` (no provisioning). To inspect
+the exact report directory printed by the runner, substitute it below:
+
+```bash
+report='build/local-e2e/reports/<printed-UTC-and-UUID>'
+cat "$report/summary.json" "$report/junit.xml"
+open "$report/index.html"
+python3 scripts/local_e2e.py run --suite saf --inject-failure
+result=$?
+test "$result" -eq 1 || { echo "Controlled failure NOT demonstrated: exit $result"; exit 2; }
+# Use the newly printed report path; verify screenshot.png, hierarchy.xml,
+# logcat.txt, adb-final.txt and acquire.log before sharing the complete directory.
+```
+
+Linux uses the same `python3` commands, a native x86_64 image and usable KVM;
+configure `JAVA_HOME`/`ANDROID_HOME` for that installation. A working SDK/build does
+not substitute for a usable accelerator.
 
 Provisioning creates a uniquely named Pixel C AVD in **`build/local-e2e/avd`**,
 not the normal user AVD home, plus an ownership manifest. It never overwrites or
@@ -92,7 +196,8 @@ unsupported OEM/localized pickers fail visibly rather than using coordinate taps
    calls the real production release API for only that run's tree.
 4. Host force-stops again and independently checks that the PDF copy still exists
    with its original hash. `lossAndRestore` checks known-grant revocation and a
-   real `SecurityException` on read, then selects the folder again through the
+   real `SecurityException` on read, OS URI READ denial and production listing
+   `PERMISSION_DENIED`, then selects the folder again through the
    picker and verifies restored access. Denied access is never called deletion.
 5. Another host force-stop precedes `restoredAfterRestart`, proving restored access
    also survives process death. All four functional stages must execute exactly
@@ -127,7 +232,7 @@ from potentially stale connected-test reports. Infrastructure failures are JUnit
 errors and have **BLOCKED / exit 2**; real assertion failures have **FAIL / exit 1**;
 only all stages plus successful cleanup yield **PASS / exit 0**.
 
-On failure the runner independently attempts screenshot, UI hierarchy, recent
+After execution (including success), the runner independently attempts screenshot, UI hierarchy, recent
 logcat, package/activity state and ADB/emulator diagnostics before cleanup. Capture
 errors are recorded individually, so disconnected ADB cannot erase host evidence.
 The emulator stdout/stderr is retained when launched by this run. Logs may contain
@@ -139,7 +244,7 @@ After a real successful run, exercise failure diagnostics on the same disposable
 ```powershell
 python scripts/local_e2e.py run --suite saf --inject-failure
 if ($LASTEXITCODE -ne 1) { throw "Expected a real controlled assertion failure" }
-Get-ChildItem build/local-e2e/reports | Sort-Object Name -Descending | Select-Object -First 2
+Get-ChildItem build/local-e2e/reports | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 2
 ```
 
 This intentionally fails **after authentic authorization** in `acquire`; it is
@@ -179,9 +284,9 @@ compiled artifacts with provenance, reject stale/incompatible data, report
 per-source lines/branches, and preserve current thresholds; none is claimed by
 this first SAF runner.
 
-### Cloud validation evidence
+### Baseline validation evidence
 
-On the implementation branch based on main `c5db5b4`:
+Historical evidence for baseline `3357497` (based on main `c5db5b4`):
 
 - Opt-in debug and instrumentation APK build: **PASS**, with the E2E class checked
   inside the test APK's DEX (not merely a successful assemble task).
@@ -200,3 +305,61 @@ On the implementation branch based on main `c5db5b4`:
   unique XML/HTML/summary and APK/hash/build evidence retained under ignored `build/`.
 - Real API 26 unattended PASS and controlled-failure screenshot evidence: **NOT RUN**.
   API 27/36 and physical-device acceptance are unchanged and not established here.
+
+## L01 SAF review and remaining evidence
+
+Source inspection used the exact AOSP **android-8.0.0_r1** tag:
+[DocumentsUI layout](https://github.com/aosp-mirror-neo/platform_packages_apps_documentsui/blob/android-8.0.0_r1/res/layout/fragment_pick.xml),
+[roots](https://github.com/aosp-mirror-neo/platform_packages_apps_documentsui/blob/android-8.0.0_r1/res/layout/fragment_roots.xml),
+[directory row](https://github.com/aosp-mirror-neo/platform_packages_apps_documentsui/blob/android-8.0.0_r1/res/layout/item_doc_list.xml),
+[BaseActivity](https://github.com/aosp-mirror-neo/platform_packages_apps_documentsui/blob/android-8.0.0_r1/src/com/android/documentsui/BaseActivity.java), and
+[picker result](https://github.com/aosp-mirror-neo/platform_packages_apps_documentsui/blob/android-8.0.0_r1/src/com/android/documentsui/picker/ActionHandler.java).
+They confirm `roots_list`, `android:id/title`, `android:id/button1`, the English
+Show roots/Show internal storage labels, root selection resetting the backstack,
+and ACTION_OPEN_TREE returning a real tree URI. These checks support the selectors;
+they do not establish that they have run against the installed emulator image.
+The existing bounded waits and coordinate-free authentic picker flow are retained.
+
+After release and a host force-stop, the test now requires all of: absent persisted
+READ, production `PERMISSION_REVOKED`, actual OS URI READ denial, actual input read
+throwing **SecurityException**, and production listing `PERMISSION_DENIED`. The
+host independently verifies the unchanged fixture hash before this stage. Initial
+already-authorized access is rejected before changing the debug selection, so
+pre-existing authorization cannot silently invalidate the loss test. No existing
+grant is released. Successful loss evidence is included in the instrumentation
+protocol as `localE2eEvidence`; the raw stage log retains its observed exception.
+
+The [API 26 ContentProvider source](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-8.0.0_r1/core/java/android/content/ContentProvider.java)
+shows missing URI authorization throwing `SecurityException` in
+`enforceReadPermissionInner`. Its separate AppOps-denial path can produce
+`FileNotFoundException`; that result, a provider crash/null stream, or a missing
+file is **not accepted** as proof of this test's grant-loss scenario. Actual device
+exception behavior remains **NOT RUN** here; keep strict assertions and investigate
+an unexpected result with retained diagnostics rather than broadening the catch.
+
+L01 fixes wrapper classification: a single matching started/completed JUnit failure
+with stack and completed, non-crashed AndroidJUnitRunner output yields **FAIL / 1**
+even if Gradle/ADB exits nonzero. Missing completion, duplicate/missing tests, skips,
+crashes, timeouts (even with a partial assertion), or wrapper failure after a passed
+test yield **BLOCKED / 2**. Full stdout/stderr, including partial timeout output,
+are retained. The nonzero Gradle-wrapper case was also exercised through the real
+Gradle Exec task with a fake ADB executable (host-only; no Android execution).
+No assertion is retried. Capture files are written before owned
+cleanup; cleanup diagnostics use a separate prefix and cannot erase original
+failure captures. PNG chunk/header/CRC validation and non-empty hierarchy XML checks reject corrupt
+capture output. A functional PASS with failed required captures is overall BLOCKED;
+a genuine functional failure remains FAIL with capture problems recorded separately.
+Mock tests check file retention, not genuine device screenshots.
+
+L01 cloud validation: Python infrastructure **100 tests PASS** (61 local-runner,
+39 existing infrastructure); **146 JVM tests PASS** and contract coverage gate;
+debug, opt-in instrumentation, ordinary instrumentation and release builds PASS;
+Lint zero errors; localization and all 15 fixture checks PASS. The opt-in class is
+present only in its opt-in test APK, absent from ordinary instrumentation and
+release APKs. No dependency, CI, policy, threshold or production changes were made.
+`doctor` ran on Linux x86_64 and correctly reported **BLOCKED** because acceleration
+is unavailable. Native Windows/macOS probes are tested with fixtures/mocks;
+PowerShell parsing and POSIX command syntax are checked locally, not claimed as
+native OS E2E execution. API 26 SAF PASS, controlled functional-failure screenshots,
+and existing Android regression execution remain **NOT RUN**. No API 27/36 or
+physical-device acceptance is established by this task.

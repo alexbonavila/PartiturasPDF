@@ -1,6 +1,7 @@
 """Safety and failure-contract tests; no SDK, adb, emulator, or Gradle is executed."""
 import importlib.util
 import json
+import base64
 from pathlib import Path
 import subprocess
 import tempfile
@@ -242,7 +243,8 @@ class HostTests(unittest.TestCase):
         root = self.home / "repository"
         self.mock_apks(root, include_class=False)
         with patch.object(e2e, "ROOT", root), patch.object(e2e, "fixture", return_value=(root / "fixture.pdf", "a" * 64)), \
-             patch.object(self.runner, "gradle"), patch.object(self.runner, "connect") as connect:
+             patch.object(self.runner, "gradle"), patch.object(self.runner, "connect") as connect, \
+             patch.object(e2e, "doctor", return_value={"status": "PASS"}):
             with self.assertRaisesRegex(e2e.Blocked, "absent"):
                 self.runner.workflow()
             connect.assert_not_called()
@@ -260,7 +262,8 @@ class HostTests(unittest.TestCase):
         with patch.object(e2e, "ROOT", root), patch.object(e2e, "fixture", return_value=(root / "fixture.pdf", "a" * 64)), \
              patch.object(self.runner, "gradle"), patch.object(self.runner, "connect"), \
              patch.object(self.runner, "adb_command", side_effect=adb), \
-             patch.object(self.runner, "stage", side_effect=stage):
+             patch.object(self.runner, "stage", side_effect=stage), \
+             patch.object(e2e, "doctor", return_value={"status": "PASS"}):
             self.runner.workflow()
         self.assertEqual([x[1] for x in events if x[0] == "stage"], list(e2e.STAGES))
         for index, event in enumerate(events):
@@ -279,6 +282,302 @@ class HostTests(unittest.TestCase):
         with patch.object(e2e, "execute", return_value=Mock(returncode=1, stdout="failure", stderr="error")):
             with self.assertRaisesRegex(e2e.Blocked, "failure"):
                 e2e.checked(["adb"])
+
+class ClassificationHardeningTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.runner = e2e.Runner(Path(self.temp.name), Path(self.temp.name) / "sdk")
+        self.runner.sha = "a" * 64
+
+    def invoke(self, output, exit_code):
+        process = subprocess.CompletedProcess(["gradle"], exit_code, output, "wrapper diagnostics")
+        with patch.object(self.runner, "identify"), patch.object(e2e, "execute", return_value=process):
+            self.runner.stage("acquire")
+
+    def test_completed_failure_survives_nonzero_gradle_or_adb_exit(self):
+        for exit_code in (0, 1, 137):
+            with self.subTest(exit_code=exit_code), self.assertRaises(e2e.FunctionalFailure):
+                self.invoke(protocol(-2), exit_code)
+        self.assertTrue(all(item["status"] == "FAIL" for item in self.runner.summary["tests"]))
+        self.assertIn("real failure", (self.runner.out / "acquire.log").read_text())
+        self.assertIn("wrapper diagnostics", (self.runner.out / "acquire.log").read_text())
+
+    def test_successful_test_with_failed_wrapper_is_blocked(self):
+        with self.assertRaises(e2e.Blocked):
+            self.invoke(protocol(), 1)
+        self.assertEqual(self.runner.summary["tests"][0]["status"], "BLOCKED")
+
+    def test_partial_failure_crash_or_missing_test_cannot_be_a_functional_fail(self):
+        for output in (protocol(-2, final=False), protocol(-2) + "INSTRUMENTATION_FAILED: device died",
+                       protocol(-2) + "INSTRUMENTATION_RESULT: shortMsg=Process crashed.", "BUILD FAILED"):
+            with self.subTest(output=output), self.assertRaises(e2e.Blocked):
+                self.invoke(output, 1)
+
+    def test_timeout_with_partial_assertion_is_blocked_and_retains_output(self):
+        with patch.object(self.runner, "identify"), patch.object(e2e.subprocess, "run",
+                side_effect=subprocess.TimeoutExpired("gradle", 180, output=protocol(-2).encode())):
+            with self.assertRaises(e2e.Blocked):
+                self.runner.stage("acquire")
+        self.assertEqual(self.runner.summary["tests"][0]["status"], "BLOCKED")
+        self.assertIn("real failure", (self.runner.out / "acquire.log").read_text())
+
+    def test_missing_failure_stack_and_false_completion_are_blocked(self):
+        for output in (protocol(-2).replace("INSTRUMENTATION_STATUS: stack=java.lang.AssertionError: real failure\n    at Test.kt:1\n", ""),
+                       protocol().replace("INSTRUMENTATION_CODE: -1", "INSTRUMENTATION_CODE: -10"),
+                       protocol() + "INSTRUMENTATION_CODE: -1\n"):
+            with self.subTest(output=output), self.assertRaises(e2e.Blocked):
+                e2e.parse_instrumentation(output, "acquire")
+
+    def test_real_failure_reaches_exit_one_and_failure_xml_even_with_wrapper_failure(self):
+        def workflow():
+            self.runner.stage("acquire")
+        process = subprocess.CompletedProcess(["gradle"], 1, protocol(-2), "BUILD FAILED")
+        with patch.object(self.runner, "workflow", side_effect=workflow), \
+             patch.object(self.runner, "identify"), patch.object(e2e, "execute", return_value=process), \
+             patch.object(e2e, "checked", return_value="revision"), \
+             patch.object(self.runner, "collect"), patch.object(self.runner, "clean"):
+            self.assertEqual(self.runner.run(), 1)
+        self.assertIsNotNone(ET.parse(self.runner.out / "junit.xml").find("testcase/failure"))
+        self.assertEqual(json.loads((self.runner.out / "summary.json").read_text())["status"], "FAIL")
+
+    def test_build_error_without_instrumentation_is_still_blocked(self):
+        with patch.object(e2e, "execute", return_value=subprocess.CompletedProcess([], 1, "build failed", "error")):
+            with self.assertRaises(e2e.Blocked):
+                self.runner.gradle("build.log", [":app:assembleDebug"])
+        self.assertIn("build failed", (self.runner.out / "build.log").read_text())
+
+    def test_failure_capture_files_survive_owned_folder_cleanup(self):
+        self.runner.adb, self.runner.serial, self.runner.identified = "adb", "emulator-5580", True
+        self.runner.fixture_created = True
+        def device(*args, **kwargs):
+            if args[0] == "pull":
+                Path(args[2]).write_text('<hierarchy><node text="real fixture UI"/></hierarchy>')
+            return "device log/identity"
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        with patch.object(self.runner, "identify"), patch.object(self.runner, "adb_command", side_effect=device), \
+             patch.object(e2e, "checked", return_value="emulator-5580 device"), \
+             patch.object(e2e, "execute", return_value=subprocess.CompletedProcess([], 0, png, b"")):
+            self.runner.collect()
+            self.runner.clean()
+        self.assertEqual((self.runner.out / "screenshot.png").read_bytes(), png)
+        self.assertIsNotNone(ET.parse(self.runner.out / "hierarchy.xml").find("node"))
+        for file in ("logcat.txt", "activity.txt", "package.txt", "adb-final.txt", "emulator-identity.txt"):
+            self.assertTrue((self.runner.out / file).is_file(), file)
+        self.assertEqual(self.runner.summary["diagnostics"], [])
+
+    def test_truncated_or_corrupt_png_is_not_capture_success(self):
+        png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        e2e.validate_screenshot(png)
+        for bad in (b"not PNG", png[:8], png[:-10], png[:40] + b"bad" + png[43:]):
+            with self.subTest(data=bad), self.assertRaises(e2e.Blocked):
+                e2e.validate_screenshot(bad)
+
+    def test_terminal_result_before_start_or_after_completion_is_blocked(self):
+        output = protocol()
+        start_end = output.index("INSTRUMENTATION_STATUS_CODE: 1") + len("INSTRUMENTATION_STATUS_CODE: 1\n")
+        end = output.index("INSTRUMENTATION_CODE: -1")
+        for bad in (output[start_end:end] + output[:start_end] + output[end:],
+                    output[end:] + output[:end]):
+            with self.assertRaises(e2e.Blocked):
+                e2e.parse_instrumentation(bad, "acquire")
+
+    def test_windows_batch_metacharacters_are_blocked_before_launch(self):
+        with patch.object(e2e.os, "name", "nt"), patch.object(e2e.subprocess, "run") as launch:
+            for command in ([r"C:\SDK&Other\sdkmanager.bat", "--version"],
+                            [r"C:\Project\gradlew.bat", "-Pvalue=%SECRET%"]):
+                with self.assertRaises(e2e.Blocked):
+                    e2e.execute(command)
+            launch.assert_not_called()
+
+    def test_grant_loss_telemetry_is_retained_without_counting_an_extra_test(self):
+        evidence = "INSTRUMENTATION_STATUS: localE2eEvidence=actual read exception=java.lang.SecurityException\nINSTRUMENTATION_STATUS_CODE: 0\n"
+        output = protocol().replace("INSTRUMENTATION_STATUS_CODE: 1\n", "INSTRUMENTATION_STATUS_CODE: 1\n" + evidence)
+        self.assertEqual(e2e.parse_instrumentation(output, "acquire"), 1)
+
+    def test_timeout_stderr_is_retained_alongside_stdout(self):
+        with patch.object(e2e.subprocess, "run", side_effect=subprocess.TimeoutExpired("gradle", 1, output=b"stdout", stderr=b"stderr")):
+            with self.assertRaises(e2e.Blocked) as context:
+                e2e.execute(["gradle"], timeout=1)
+        self.assertIn("stdout", str(context.exception))
+        self.assertIn("stderr", str(context.exception))
+
+    def test_missing_evidence_prevents_overall_pass_without_erasing_functional_result(self):
+        def workflow():
+            self.runner.summary.update(status="PASS", tests=[{"name": name, "status": "PASS"} for name in e2e.STAGES])
+        def collect():
+            self.runner.summary["diagnostics"].append("screenshot capture unavailable")
+        with patch.object(self.runner, "workflow", side_effect=workflow), patch.object(e2e, "checked", return_value="revision"), \
+             patch.object(self.runner, "collect", side_effect=collect), patch.object(self.runner, "clean"):
+            self.assertEqual(self.runner.run(), 2)
+        self.assertEqual(self.runner.summary["android_e2e"], "PASS")
+        self.assertEqual(self.runner.summary["status"], "BLOCKED")
+        self.assertIsNotNone(ET.parse(self.runner.out / "junit.xml").find("testcase/error"))
+
+
+class DoctorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.home = Path(self.temp.name) / "state"
+        self.sdk = Path(self.temp.name) / "Android SDK"
+        self.jdk = Path(self.temp.name) / "JDK 25"
+        self.system, self.machine, self.arm = "Linux", "x86_64", "0"
+        self.acceleration, self.java_version = 0, "25.0.1"
+        self.devices = "List of devices attached\n"
+        self.runtime = {}
+        for path in ("platform-tools/adb", "platform-tools/adb.exe", "emulator/emulator", "emulator/emulator.exe",
+                     "cmdline-tools/19.0/bin/sdkmanager", "cmdline-tools/19.0/bin/sdkmanager.bat",
+                     "cmdline-tools/19.0/bin/avdmanager", "cmdline-tools/19.0/bin/avdmanager.bat",
+                     "platforms/android-37.0/android.jar", "build-tools/37.0.0/aapt2", "build-tools/37.0.0/aapt2.exe",
+                     "build-tools/37.0.0/lib/d8.jar", "system-images/android-26/google_apis/x86_64/system.img"):
+            file = self.sdk / path
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.touch()
+        (self.sdk / "platforms/android-37.0/source.properties").write_text("AndroidVersion.ApiLevel=37.0\n")
+        self.metadata = self.sdk / "system-images/android-26/google_apis/x86_64/package.xml"
+        self.metadata.write_text(f'<repository><localPackage path="{e2e.IMAGE}"><type-details>'
+                                 '<api-level>26</api-level><abi>x86_64</abi></type-details></localPackage></repository>')
+        (self.jdk / "bin").mkdir(parents=True)
+        (self.jdk / "bin/java").touch()
+        (self.jdk / "bin/java.exe").touch()
+        (self.jdk / "bin/javac").touch()
+        (self.jdk / "bin/javac.exe").touch()
+        self.patches = [patch.object(e2e.platform, "system", side_effect=lambda: self.system),
+                        patch.object(e2e.platform, "machine", side_effect=lambda: self.machine),
+                        patch.dict(e2e.os.environ, {"JAVA_HOME": str(self.jdk), "PROCESSOR_ARCHITECTURE": "AMD64",
+                                                   "PROCESSOR_ARCHITEW6432": "AMD64"}),
+                        patch.object(e2e, "execute", side_effect=self.command)]
+        for item in self.patches:
+            item.start()
+            self.addCleanup(item.stop)
+
+    def command(self, command, **kwargs):
+        args = [str(x) for x in command]
+        output, code = "tool version", 0
+        if "hw.optional.arm64" in args:
+            output = self.arm
+        elif "-accel-check" in args:
+            code = self.acceleration
+            output = f"accel:\n{code}\nHardware acceleration probe\naccel\n"
+        elif Path(args[0]).stem == "java":
+            output = f'openjdk version "{self.java_version}"'
+        elif "device" in args and "-c" in args:
+            output = "pixel_c\n"
+        elif "devices" in args:
+            output = self.devices
+        elif "emu" in args:
+            output = self.runtime.get("name", "unknown") + "\nOK"
+        elif "getprop" in args:
+            output = self.runtime.get(args[-1], "unknown")
+        return subprocess.CompletedProcess(args, code, output, "")
+
+    def diagnose(self):
+        return e2e.doctor(self.home, self.sdk)
+
+    def test_native_linux_windows_and_intel_mac_are_eligible_not_executed(self):
+        for self.system, self.machine in (("Linux", "x86_64"), ("Windows", "AMD64"), ("Darwin", "x86_64")):
+            with self.subTest(system=self.system):
+                report = self.diagnose()
+                self.assertEqual(report["status"], "PASS", report["blockers"])
+                self.assertEqual(report["emulation"], "NOT RUN")
+                self.assertEqual(report["dedicated_avd"]["status"], "UNPROVISIONED")
+                self.assertEqual(len(report["compatible_api26_images"]), 1)
+
+    def test_apple_silicon_native_and_rosetta_are_blocked(self):
+        self.system, self.arm = "Darwin", "1"
+        for self.machine in ("arm64", "x86_64"):
+            report = self.diagnose()
+            self.assertEqual(report["native_architecture"], "arm64")
+            self.assertEqual(report["status"], "BLOCKED")
+            self.assertTrue(any("Intel Mac" in item for item in report["blockers"]))
+
+    def test_windows_arm_is_blocked_even_when_python_looks_x86(self):
+        self.system = "Windows"
+        with patch.dict(e2e.os.environ, {"PROCESSOR_ARCHITEW6432": "ARM64"}):
+            self.assertEqual(self.diagnose()["status"], "BLOCKED")
+
+    def test_no_acceleration_blocks_readiness(self):
+        self.acceleration = 3
+        self.assertFalse(self.diagnose()["ready_to_attempt"])
+
+    def test_missing_image_or_bad_metadata_blocks(self):
+        self.metadata.unlink()
+        self.assertEqual(self.diagnose()["status"], "BLOCKED")
+        self.metadata.write_text("<invalid")
+        self.assertTrue(any("metadata" in x for x in self.diagnose()["blockers"]))
+
+    def test_wrong_abi_cannot_be_adopted_as_compatible(self):
+        self.metadata.write_text(self.metadata.read_text().replace("<abi>x86_64", "<abi>arm64-v8a"))
+        self.assertEqual(self.diagnose()["compatible_api26_images"], [])
+
+    def test_jdk_mismatch_and_missing_sdk_tools_are_reported_together(self):
+        self.java_version = "24.0.1"
+        (self.sdk / "platform-tools/adb").unlink()
+        report = self.diagnose()
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertTrue(any("JDK 25" in x for x in report["blockers"]))
+        self.assertTrue(any("Missing SDK tool" in x for x in report["blockers"]))
+
+    def test_versioned_command_line_tools_and_windows_suffixes(self):
+        self.system = "Windows"
+        report = self.diagnose()
+        self.assertTrue(report["tools"]["avdmanager"].endswith("19.0/bin/avdmanager.bat"))
+        self.assertTrue(report["tools"]["adb"].endswith("adb.exe"))
+
+    def test_corrupt_ownership_is_blocked_without_device_probes(self):
+        self.home.mkdir()
+        (self.home / "device.json").write_text("{}")
+        report = self.diagnose()
+        self.assertEqual(report["dedicated_avd"]["status"], "INVALID")
+        self.assertNotIn("adb_devices", report["checks"])
+
+    def test_foreign_reserved_serial_is_not_accepted(self):
+        self.home.mkdir()
+        state, _ = HostTests.make_provision(self)
+        self.devices += "emulator-5580 device\nphysical-123 device\n"
+        self.runtime = {"name": "somebody-else", "ro.kernel.qemu": "1", "ro.build.version.sdk": "26", "sys.boot_completed": "1"}
+        report = self.diagnose()
+        self.assertEqual(report["dedicated_avd"]["status"], "UNVERIFIED")
+        self.assertEqual(report["status"], "BLOCKED")
+        for key, check in report["checks"].items():
+            if key.startswith("device_"):
+                self.assertEqual(check["command"][1:3], ["-s", "emulator-5580"])
+
+    def test_compatible_owned_booted_device_is_identified(self):
+        self.home.mkdir()
+        state, _ = HostTests.make_provision(self)
+        self.devices += "emulator-5580 device\n"
+        self.runtime = {"name": state["name"], "ro.kernel.qemu": "1", "ro.build.version.sdk": "26", "sys.boot_completed": "1"}
+        self.assertEqual(self.diagnose()["dedicated_avd"]["status"], "OWNED_BOOTED")
+
+    def test_provision_fails_preflight_before_creating_avd_or_running_manager(self):
+        with patch.object(e2e, "doctor", return_value={"status": "BLOCKED", "blockers": ["Apple Silicon not compatible"]}), \
+             patch.object(e2e, "checked") as create:
+            with self.assertRaisesRegex(e2e.Blocked, "Apple Silicon"):
+                e2e.provision(self.home, self.sdk, 5580)
+        create.assert_not_called()
+        self.assertFalse((self.home / "avd").exists())
+
+    def test_sdk_selection_explicit_then_environment_then_escaped_local_properties(self):
+        root = Path(self.temp.name)
+        selected = root / "SDK with spaces"
+        with patch.object(e2e, "ROOT", root), patch.dict(e2e.os.environ, {"ANDROID_HOME": str(self.sdk)}, clear=True):
+            self.assertEqual(e2e.discover_sdk(selected), selected.resolve())
+            self.assertEqual(e2e.discover_sdk(), self.sdk.resolve())
+        (root / "local.properties").write_text("sdk.dir=" + str(selected).replace(" ", "\\ ") + "\n")
+        with patch.object(e2e, "ROOT", root), patch.dict(e2e.os.environ, {}, clear=True):
+            self.assertEqual(e2e.discover_sdk(), selected.resolve())
+
+    def test_missing_jdk_compiler_is_reported_as_incomplete_installation(self):
+        (self.jdk / "bin/javac").unlink()
+        self.assertTrue(any("JDK 25" in item for item in self.diagnose()["blockers"]))
+
+    def test_diagnostic_io_error_is_blocked_json_not_uncaught_exception(self):
+        with patch.object(e2e, "_inspect_host", side_effect=PermissionError("SDK metadata unreadable")):
+            report = self.diagnose()
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertIn("unreadable", report["blockers"][0])
 
 
 if __name__ == "__main__":

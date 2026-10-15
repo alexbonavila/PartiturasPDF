@@ -714,3 +714,94 @@ returns 2/BLOCKED with zero tests if instrumentation never starts. Collect both
 printed report directories, transport events and verified cleanup records for
 owner review. Real Mac transport-recovery and controlled-failure evidence remain
 pending; host mocks and APK compilation do not establish those results.
+
+## L01F: cold-start console connection refusal (L01 acceptance still pending)
+
+The owner's L01E normal run `20261015T121809Z-513cbd46669144d2bfa3ee70ad9ad7b5`
+and injected-failure run `20261015T121914Z-f41d074e0e5545bb99d1e4f021bcc006`
+both stopped before instrumentation. The first `adb -s emulator-5580 emu avd name`
+returned **exit 1** with `error: could not connect to TCP port 5580: Connection refused`.
+The child was still opening its console port and subsequently booted, according to
+the owner's emulator log. L01E's classifier did not recognize this response, so it
+aborted rather than using its initial-connection budget. This was a runner startup
+synchronization defect; neither run executed SAF assertions.
+
+L01F recognizes that exact console-error line only when **all** conditions hold:
+
+- The command is the read-only `emu avd name` query and ADB exits 1.
+- The refused port equals the provisioned port and the selected serial is exactly
+  `emulator-<that port>`.
+- This invocation has just launched the emulator child; that child is still running.
+- The query occurs inside the existing initial-connection recovery window with an
+  active deadline. The scoped flag is cleared on success, failure or interruption.
+
+Generic exit 1, a refusal naming another port, an existing emulator, a later query
+outside this window, or a settings write does not get this new exception. The
+unchanged recovery mechanism permits at most **60 attempts / 60 seconds total**,
+with **500 ms** between attempts and deadline-aware command timeouts. It does not
+start a second retry loop. On a successful response it still verifies AVD name,
+reserved serial/port, emulator status, API 26, native ABI and provisioned image,
+then boot completion and the two stable readiness samples. Foreign identity,
+wrong API/ABI and child termination remain fatal. No other emulator (including
+`emulator-5554`), physical device, AVD provisioning or ADB server is modified.
+
+`adb-transport.json` now explicitly records `target_port`, alongside command,
+exit status, refused-connection output, attempts, elapsed times, process state,
+recovery/exhaustion reason and final verified identity. Original failed responses
+remain in the report. Settings writes and functional stages still have no automatic
+replay; the L01E restoration and FAIL/BLOCKED rules are unchanged.
+
+To meet the controlled-failure evidence requirement, the **same** deliberate
+after-grant assertion now invokes the existing in-process `failUi` capture helper.
+It preserves its message and failure result while collecting screenshot/hierarchy
+before returning to JUnit. These live UUID event files remain separate from host
+post-test snapshots and survive cleanup through the existing validated host copy.
+This is an opt-in instrumentation-only change; normal instrumentation and release
+packaging exclude it.
+
+L01F cloud checks:
+
+- `python -m unittest discover -s scripts/tests -v`: **155 PASS**. Ten new exact
+  connection-refusal regressions cover recovery, attempt/deadline exhaustion,
+  unrelated exit 1, wrong port, foreign responder, child exit, existing emulator,
+  scope expiry and non-retryable writes. One new retention regression verifies
+  deliberate-assertion snapshots without changing FAIL classification. Existing
+  functional-no-retry, cleanup, ABI and isolation regressions remain passing.
+- `bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest :app:assembleRelease --max-workers=4 --console=plain`:
+  **PASS**, with **165 JVM tests**, zero failures/errors/skips; Lint zero errors
+  and 20 existing warnings.
+- `bash ./gradlew -I scripts/local-e2e.init.gradle :app:assembleDebugAndroidTest --max-workers=4 --console=plain`:
+  **PASS**. DEX inspection verifies the opt-in class is present only in opt-in
+  instrumentation. Ordinary instrumentation excludes it; release excludes debug
+  harness/helpers/IDs and canonical PDF fixtures.
+- `python scripts/validate_localization.py`: **PASS** for English/Catalan/Spanish.
+  `python test-fixtures/scripts/verify_fixtures.py`: **PASS**, all 15 fixtures.
+  `git diff --check`: **PASS**.
+
+Real Android execution of **L01F is NOT RUN** in cloud: no attached device and no
+usable KVM acceleration. The earlier authentic PASS at `b2e6fa9` is owner-reported
+baseline evidence, not acceptance of this revision. Production application code,
+contracts, dependencies, Gradle, CI and coverage gates are unchanged.
+
+On the owner's already-provisioned Apple Silicon Mac:
+
+```bash
+python3 scripts/local_e2e.py run --suite saf
+python3 scripts/local_e2e.py run --suite saf --inject-failure
+```
+
+The normal run must return **0/PASS** with all four authentic stages, fixture and
+permission assertions, verified cleanup and complete evidence. The injected run
+must return **1/FAIL**, genuinely execute the after-grant assertion, retain its
+JUnit/summary failure details and live screenshot/hierarchy, and complete cleanup.
+Inspect both exact printed report directories, `adb-transport.json`,
+`summary.json` (`setting_changes`, `cleanup`, `tests`), `cleanup-cleanupOwnedGrant.log`
+and `instrumentation-failures/`. Independently confirm on the selected owned
+emulator that the run-owned fixture folder is absent, settings match their recorded
+originals and owned/unrelated grants match the cleanup assertions; do not infer
+complete cleanup from exit 1 alone. Preserve both reports for owner review.
+
+**L01 remains open until these real Mac acceptance runs pass their respective
+criteria.** BLOCKED is not acceptance; FAIL with incomplete cleanup or missing
+failure-time evidence is not full acceptance either. No PR, merge, main change or
+L02 work is authorized by this correction.

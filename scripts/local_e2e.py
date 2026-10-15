@@ -465,6 +465,7 @@ class Runner:
         self.ui_failure_cleanup = None
         self._adb_attempt = 1
         self._adb_deadline = None
+        self._initial_child_transport = False
         self.summary["adb_transport"] = []
         self.summary["setting_changes"] = []
         self.record("adb-transport.json", "[]")
@@ -478,7 +479,8 @@ class Runner:
         return {"ownership": "child of this run", "pid": self.process.pid, "exit": self.process.poll()}
 
     def transport_event(self, **event):
-        self.summary["adb_transport"].append(dict(event, process=self.process_state()))
+        self.summary["adb_transport"].append(dict(event, process=self.process_state(),
+                                                target_port=self.state.get("port") if self.state else None))
         self.record("adb-transport.json", json.dumps(self.summary["adb_transport"], indent=2))
 
     def raw_adb(self, *args, **kwargs):
@@ -510,6 +512,15 @@ class Runner:
                 for text in ("device offline", "device not found", "transport error", "error: closed"))
             transient = transient or bool(re.search(r"error: device .+ (?:not found|offline)",
                                                     (result.stderr + result.stdout).lower()))
+            # API 26 console startup can refuse the reserved TCP port before ADB is ready.
+            # This exception applies ONLY to the initial name query of our live child.
+            refused = re.search(r"(?mi)^error: could not connect to TCP port ([0-9]+): connection refused[ \t\r]*$",
+                                result.stderr + "\n" + result.stdout)
+            transient = transient or bool(
+                result.returncode == 1 and refused and self._initial_child_transport and
+                self._adb_deadline is not None and self.process is not None and self.process.poll() is None and
+                self.state and int(refused[1]) == self.state["port"] and
+                self.serial == f"emulator-{self.state['port']}" and args == ("emu", "avd", "name"))
             raise (AdbTransportError if transient else Blocked)(message)
         return result.stdout.strip()
 
@@ -711,8 +722,12 @@ class Runner:
                 stderr=subprocess.STDOUT, env=env)
             # Cold-start ADB may not exist yet. Only the child we just launched gets this
             # longer window, before any installation/settings write; foreign identities stop.
-            self.recover_readiness("initial child transport", self._identify_once,
-                                   attempts=60, budget=60, delay=0.5)
+            self._initial_child_transport = True
+            try:
+                self.recover_readiness("initial child transport", self._identify_once,
+                                       attempts=60, budget=60, delay=0.5)
+            finally:
+                self._initial_child_transport = False
         deadline = time.monotonic() + 240
         last_error = "not online"
         while time.monotonic() < deadline:

@@ -789,6 +789,20 @@ class LiveUiEvidenceTests(unittest.TestCase):
             self.event = "b" * 32  # Each checkpoint must survive as a separate event.
         self.assertEqual(len(self.runner.summary["instrumentation_failures"]), 2)
 
+    def test_deliberate_assertion_snapshots_are_retained_without_changing_fail_classification(self):
+        self.payloads["metadata.json"] = json.dumps({"run": self.runner.run_id,
+            "selector": "Deliberate local E2E diagnostic failure after authentic grant acquisition",
+            "errors": []}).encode()
+        self.runner.summary.update(status="FAIL", tests=[{"name": "acquire", "status": "FAIL"}])
+        self.collect()
+        self.runner.reports()
+        destination = self.runner.out / "instrumentation-failures" / self.event
+        self.assertEqual((destination / "screenshot.png").read_bytes(), self.png)
+        self.assertTrue((destination / "hierarchy.xml").exists())
+        self.assertEqual(self.runner.summary["status"], "FAIL")
+        self.assertEqual(ET.parse(self.runner.out / "junit.xml").getroot().get("failures"), "1")
+        self.assertEqual(self.runner.ui_failure_cleanup, self.root)
+
     def test_recollection_never_overwrites_first_snapshots(self):
         self.collect()
         self.payloads["metadata.json"] = b"replacement"

@@ -89,7 +89,7 @@ class SafLocalE2eTest {
         verifyAccess()
         assertOtherGrantsUnchanged()
         if (args.getString("localE2eFailure") == "after-grant") {
-            fail("Deliberate local E2E diagnostic failure after authentic grant acquisition")
+            failUi(AssertionError("Deliberate local E2E diagnostic failure after authentic grant acquisition"))
         }
     }
 

@@ -58,6 +58,154 @@ class TransportTests(unittest.TestCase):
             self.fail(f"Unexpected command: {command}")
         return subprocess.CompletedProcess(command, 0, text, "")
 
+    def connect_child(self, process=None):
+        self.runner.state["avd_home"] = self.temp.name
+        process = process or Mock(pid=123, poll=Mock(return_value=None))
+        with patch.object(e2e, "host_image", return_value=self.runner.selection), \
+             patch.object(e2e, "load_device", return_value=self.runner.state), \
+             patch.object(e2e, "sdk_tool", return_value="adb"), \
+             patch.object(e2e, "checked", return_value="List of devices attached\nemulator-5554 device"), \
+             patch.object(e2e.subprocess, "Popen", return_value=process):
+            try:
+                self.runner.connect()
+            finally:
+                if self.runner.emulator_log:
+                    self.runner.emulator_log.close()
+
+    def refuse_console(self, count, port=5580, message=None):
+        remaining = [count]
+        def command(argv, **kwargs):
+            if argv[3:] == ["emu", "avd", "name"] and remaining[0]:
+                remaining[0] -= 1
+                self.calls.append(list(argv))
+                return subprocess.CompletedProcess(argv, 1, "", message or
+                    f"error: could not connect to TCP port {port}: Connection refused\n")
+            return self.device(argv, **kwargs)
+        self.execute.side_effect = command
+
+    def test_cold_child_connection_refused_recovers_then_verifies_complete_identity(self):
+        self.refuse_console(1)
+        self.connect_child()
+        events = json.loads((self.runner.out / "adb-transport.json").read_text())
+        first = events[0]
+        self.assertEqual(first["exit"], 1)
+        self.assertEqual(first["target_port"], 5580)
+        self.assertEqual(first["command"], ["adb", "-s", "emulator-5580", "emu", "avd", "name"])
+        self.assertIn("Connection refused", first["stderr"])
+        self.assertIn("elapsed_seconds", first)
+        recovered = next(e for e in events if e.get("outcome") == "recovered")
+        self.assertEqual(recovered["attempt"], 2)
+        self.assertEqual(recovered["identity"]["observed_name"], "owned")
+        self.assertEqual(recovered["identity"]["observed_qemu"], "1")
+        self.assertEqual(recovered["identity"]["observed_api"], "26")
+        self.assertEqual(recovered["identity"]["observed_abi"], "x86_64")
+        self.assertTrue(recovered["identity"]["identity_verified"])
+        self.assertEqual(sum(c[-1] == "sys.boot_completed" for c in self.calls), 2)
+        self.assertTrue(all(c[2] == "emulator-5580" for c in self.calls))
+        self.assertFalse(self.runner._initial_child_transport)
+
+    def test_cold_child_refusal_exhausts_sixty_attempts_without_mutating_any_device(self):
+        self.refuse_console(100)
+        with self.assertRaisesRegex(e2e.AdbTransportError, "Connection refused"):
+            self.connect_child()
+        self.assertEqual(len(self.calls), 60)
+        self.assertEqual(self.sleep.call_count, 59)
+        last = self.runner.summary["adb_transport"][-1]
+        self.assertEqual(last["attempt"], 60)
+        self.assertEqual(last["outcome"], "exhausted")
+        self.assertIn("Connection refused", last["error"])
+        self.assertTrue(all(c[3:] == ["emu", "avd", "name"] for c in self.calls))
+        self.assertFalse(self.runner._initial_child_transport)
+
+    def test_cold_child_unrelated_exit_one_is_not_retried(self):
+        self.refuse_console(100, message="error: unknown command")
+        with self.assertRaises(e2e.Blocked) as error:
+            self.connect_child()
+        self.assertNotIsInstance(error.exception, e2e.AdbTransportError)
+        self.assertEqual(len(self.calls), 1)
+        self.sleep.assert_not_called()
+
+    def test_cold_child_refusal_of_unexpected_port_is_not_retried(self):
+        self.refuse_console(100, port=5554)
+        with self.assertRaises(e2e.Blocked) as error:
+            self.connect_child()
+        self.assertNotIsInstance(error.exception, e2e.AdbTransportError)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0][2], "emulator-5580")
+        self.sleep.assert_not_called()
+
+    def test_foreign_avd_after_console_refusal_stops_before_other_identity_queries(self):
+        self.refuse_console(1)
+        self.avd = "foreign"
+        with self.assertRaisesRegex(e2e.Blocked, "different AVD"):
+            self.connect_child()
+        self.assertEqual(len(self.calls), 2)
+        self.sleep.assert_called_once_with(0.5)
+        self.assertFalse(self.runner._initial_child_transport)
+
+    def test_child_exit_after_console_refusal_stops_without_another_adb_command(self):
+        process = Mock(pid=123, poll=Mock(return_value=None))
+        self.refuse_console(100)
+        self.sleep.side_effect = lambda _: process.poll.configure_mock(return_value=7)
+        with self.assertRaisesRegex(e2e.Blocked, "terminated"):
+            self.connect_child(process)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.runner.summary["adb_transport"][-1]["process"]["exit"], 7)
+        self.assertFalse(self.runner._initial_child_transport)
+
+    def test_existing_emulator_console_refusal_is_not_given_cold_child_recovery(self):
+        self.refuse_console(100)
+        with patch.object(e2e, "host_image", return_value=self.runner.selection), \
+             patch.object(e2e, "load_device", return_value=self.runner.state), \
+             patch.object(e2e, "sdk_tool", return_value="adb"), \
+             patch.object(e2e, "checked", return_value="emulator-5554 device\nemulator-5580 device"), \
+             patch.object(e2e.subprocess, "Popen") as launch:
+            with self.assertRaises(e2e.Blocked) as error:
+                self.runner.connect()
+        self.assertNotIsInstance(error.exception, e2e.AdbTransportError)
+        launch.assert_not_called()
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0][2], "emulator-5580")
+        self.sleep.assert_not_called()
+
+    def test_running_child_refusal_outside_initial_window_is_not_retried(self):
+        self.runner.process = Mock(pid=123, poll=Mock(return_value=None))
+        self.refuse_console(100)
+        with self.assertRaises(e2e.Blocked) as error:
+            self.runner.identify()
+        self.assertNotIsInstance(error.exception, e2e.AdbTransportError)
+        self.assertEqual(len(self.calls), 1)
+        self.sleep.assert_not_called()
+
+    def test_console_refusal_cannot_make_a_settings_write_retryable(self):
+        self.runner._initial_child_transport = True
+        self.runner._adb_deadline = e2e.time.monotonic() + 60
+        self.runner.process = Mock(pid=123, poll=Mock(return_value=None))
+        self.execute.side_effect = lambda argv, **_: subprocess.CompletedProcess(argv, 1, "",
+            "error: could not connect to TCP port 5580: Connection refused")
+        with self.assertRaises(e2e.Blocked) as error:
+            self.runner.raw_adb("shell", "settings", "put", "global", "window_animation_scale", "0")
+        self.assertNotIsInstance(error.exception, e2e.AdbTransportError)
+        self.execute.assert_called_once()
+        self.sleep.assert_not_called()
+
+    def test_cold_child_refusal_stops_at_total_deadline_and_preserves_original_error(self):
+        self.refuse_console(100)
+        refuse = self.execute.side_effect
+        clock = [0.0]
+        def consume_budget(argv, **kwargs):
+            self.assertLessEqual(kwargs["timeout"], 60)
+            result = refuse(argv, **kwargs)
+            clock[0] = 60.0
+            return result
+        self.execute.side_effect = consume_budget
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(e2e.AdbTransportError, "Connection refused"):
+                self.connect_child()
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.runner.summary["adb_transport"][-1]["outcome"], "exhausted")
+        self.sleep.assert_not_called()
+
     def test_exit_255_retries_whole_identity_and_records_recovery(self):
         self.failures = 1
         self.runner.identify(boot=True)

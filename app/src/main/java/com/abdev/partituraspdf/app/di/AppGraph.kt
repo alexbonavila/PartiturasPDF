@@ -14,6 +14,8 @@ import com.abdev.partituraspdf.storage.saf.SafTreeGrantAccess
  * Reader owners retain responsibility for their sessions, read handles and bitmap leases.
  */
 internal class AppGraph(
+    /** Inject these immutable values alongside the relevant contracts into future consumers. */
+    val runtimeLimits: AppRuntimeLimits,
     val catalog: DocumentCatalog,
     val readAccess: DocumentReadAccess,
     val registry: DocumentRegistry,

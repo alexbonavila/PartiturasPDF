@@ -23,8 +23,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class AppGraphFactoryTest {
+    private val limits = AppRuntimeLimits(ReadAccessLimits(128), RenderLimits(32, 512))
     @Test fun exposesInjectedContractsWithoutReplacingOrInvokingThem() {
-        val inputs = Inputs()
+        val inputs = Inputs(limits)
         val graph = inputs.graph()
         assertSame(inputs.catalog, graph.catalog)
         assertSame(inputs.readAccess, graph.readAccess)
@@ -37,11 +38,11 @@ class AppGraphFactoryTest {
     }
 
     @Test fun factoryIsLazyAndReusesOneGraphAndItsSharedContracts() {
-        val inputs = Inputs()
+        val inputs = Inputs(limits)
         val created = AtomicInteger()
         val released = AtomicInteger()
         val graph = inputs.graph()
-        val factory = AppGraphFactory { created.incrementAndGet(); AppGraphFactory.Resources(graph) { released.incrementAndGet() } }
+        val factory = AppGraphFactory(limits) { created.incrementAndGet(); AppGraphFactory.Resources(graph) { released.incrementAndGet() } }
         assertEquals(0, created.get())
         assertSame(graph, factory.get())
         assertSame(factory.get().registry, factory.get().registry)
@@ -57,10 +58,10 @@ class AppGraphFactoryTest {
     }
 
     @Test fun concurrentConsumersShareOneConstructionAndOneRelease() {
-        val graph = Inputs().graph()
+        val graph = Inputs(limits).graph()
         val created = AtomicInteger()
         val released = AtomicInteger()
-        val factory = AppGraphFactory { created.incrementAndGet(); AppGraphFactory.Resources(graph) { released.incrementAndGet() } }
+        val factory = AppGraphFactory(limits) { created.incrementAndGet(); AppGraphFactory.Resources(graph) { released.incrementAndGet() } }
         val executor = Executors.newFixedThreadPool(8)
         val start = CountDownLatch(1)
         try {
@@ -79,7 +80,7 @@ class AppGraphFactoryTest {
     }
 
     @Test fun closingUnusedFactoryDoesNotAllocateAnyResources() {
-        val factory = AppGraphFactory { error("Closed unused owner must not allocate") }
+        val factory = AppGraphFactory(limits) { error("Closed unused owner must not allocate") }
         factory.close()
         factory.close()
         assertThrows(IllegalStateException::class.java) { factory.get() }
@@ -88,8 +89,8 @@ class AppGraphFactoryTest {
     @Test fun constructionFailuresPropagateAndDoNotCacheAnIncompleteGraph() {
         val defect = IllegalArgumentException("construction failure")
         val attempts = AtomicInteger()
-        val graph = Inputs().graph()
-        val factory = AppGraphFactory {
+        val graph = Inputs(limits).graph()
+        val factory = AppGraphFactory(limits) {
             if (attempts.incrementAndGet() == 1) throw defect
             AppGraphFactory.Resources(graph) {}
         }
@@ -102,7 +103,7 @@ class AppGraphFactoryTest {
     @Test fun releaseFailurePropagatesWithoutAllowingReuseOrDoubleRelease() {
         val defect = IllegalStateException("close failure")
         val released = AtomicInteger()
-        val factory = AppGraphFactory { AppGraphFactory.Resources(Inputs().graph()) { released.incrementAndGet(); throw defect } }
+        val factory = AppGraphFactory(limits) { AppGraphFactory.Resources(Inputs(limits).graph()) { released.incrementAndGet(); throw defect } }
         factory.get()
         assertSame(defect, assertThrows(IllegalStateException::class.java) { factory.close() })
         factory.close()
@@ -112,18 +113,18 @@ class AppGraphFactoryTest {
 
     @Test fun factoryDoesNotTranslateCancellationDuringConstruction() {
         val cancelled = CancellationException("cancel construction")
-        val factory = AppGraphFactory { throw cancelled }
+        val factory = AppGraphFactory(limits) { throw cancelled }
         assertSame(cancelled, assertThrows(CancellationException::class.java) { factory.get() })
         factory.close()
     }
 
     @Test fun isolatedOwnersNeverShareGraphsOrDisposeBorrowedContracts() {
-        val inputs = Inputs()
+        val inputs = Inputs(limits)
         val graph = inputs.graph()
         val firstReleased = AtomicInteger()
-        val first = AppGraphFactory { AppGraphFactory.Resources(graph) { firstReleased.incrementAndGet() } }
-        val otherGraph = Inputs().graph()
-        val second = AppGraphFactory { AppGraphFactory.Resources(otherGraph) {} }
+        val first = AppGraphFactory(limits) { AppGraphFactory.Resources(graph) { firstReleased.incrementAndGet() } }
+        val otherGraph = Inputs(limits).graph()
+        val second = AppGraphFactory(limits) { AppGraphFactory.Resources(otherGraph) {} }
         assertNotSame(first.get(), second.get())
         first.close()
         assertSame(otherGraph, second.get())
@@ -137,13 +138,13 @@ class AppGraphFactoryTest {
     @Test fun productionEntryAcceptsApplicationAndExplicitLimitsRatherThanActivityContext() {
         val constructors = AppGraphFactory::class.java.declaredConstructors
         val androidEntry = constructors.single { it.parameterTypes.firstOrNull() == Application::class.java }
-        assertArrayEquals(arrayOf(Application::class.java, RenderLimits::class.java), androidEntry.parameterTypes)
+        assertArrayEquals(arrayOf(Application::class.java, AppRuntimeLimits::class.java), androidEntry.parameterTypes)
         assertFalse(constructors.any { it.parameterTypes.contains(Context::class.java) })
         assertFalse(AppGraph::class.java.declaredFields.any { Context::class.java.isAssignableFrom(it.type) })
     }
 
     @Test fun consumersUseExistingContractsAndReceiveUnmodifiedTypedResults() {
-        val inputs = Inputs()
+        val inputs = Inputs(limits)
         val graph = inputs.graph()
         val document = DocumentRef(DocumentId("isolated"))
         runBlocking {
@@ -153,7 +154,50 @@ class AppGraphFactoryTest {
         assertEquals(2, inputs.operations.get())
     }
 
-    private class Inputs {
+    @Test fun oneImmutableConfigurationIsPassedToConstructionAndExposedForConsumerInjection() {
+        val configured = AppRuntimeLimits(ReadAccessLimits(77), RenderLimits(19, 150))
+        var received: AppRuntimeLimits? = null
+        val graph = Inputs(configured).graph()
+        val factory = AppGraphFactory(configured) { supplied ->
+            received = supplied
+            AppGraphFactory.Resources(graph) {}
+        }
+        assertNull(received)
+        assertSame(graph, factory.get())
+        assertSame(configured, received)
+        assertSame(configured, factory.get().runtimeLimits)
+        assertSame(configured.read, factory.get().runtimeLimits.read)
+        assertSame(configured.render, factory.get().runtimeLimits.render)
+        val independentCopy = configured.copy(render = RenderLimits(1, 1))
+        assertEquals(19, factory.get().runtimeLimits.render.maxDimension)
+        assertEquals(1, independentCopy.render.maxDimension)
+        factory.close()
+    }
+
+    @Test fun separateOwnersHaveIndependentLimitSelectionsAndCleanup() {
+        val small = AppRuntimeLimits(ReadAccessLimits(1), RenderLimits(1, 1))
+        val large = AppRuntimeLimits.provisional()
+        val smallClosed = AtomicInteger()
+        val largeClosed = AtomicInteger()
+        val first = AppGraphFactory(small) { supplied ->
+            AppGraphFactory.Resources(Inputs(supplied).graph()) { smallClosed.incrementAndGet() }
+        }
+        val second = AppGraphFactory(large) { supplied ->
+            AppGraphFactory.Resources(Inputs(supplied).graph()) { largeClosed.incrementAndGet() }
+        }
+        assertSame(small, first.get().runtimeLimits)
+        assertSame(large, second.get().runtimeLimits)
+        assertNotSame(first.get().runtimeLimits, second.get().runtimeLimits)
+        first.close()
+        first.close()
+        assertEquals(1, smallClosed.get())
+        assertEquals(0, largeClosed.get())
+        assertSame(large, second.get().runtimeLimits)
+        second.close()
+        assertEquals(1, largeClosed.get())
+    }
+
+    private class Inputs(val limits: AppRuntimeLimits) {
         val operations = AtomicInteger()
         val catalog = object : DocumentCatalog {
             override suspend fun list(folder: FolderRef): Outcome<DocumentListing> = error("Unexpected catalog IO")
@@ -186,6 +230,6 @@ class AppGraphFactoryTest {
             override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> = error("Unexpected renderer")
         }
         val grants = SafTreeGrantAccess({ _, _ -> error("Unexpected grant") }, { _, _ -> error("Unexpected release") }, { emptyList() })
-        fun graph() = AppGraph(catalog, readAccess, registry, metadata, preferences, pdfEngine, grants)
+        fun graph() = AppGraph(limits, catalog, readAccess, registry, metadata, preferences, pdfEngine, grants)
     }
 }

@@ -169,7 +169,7 @@ preflight. Local cloud-style transport acceptance is not proof of D2D. Existing
 C06 backup/D2D/physical-device acceptance requirements remain outstanding and do
 not block acceptance of the non-destructive L02 implementation by themselves.
 
-## Evidence from this implementation and owner verification
+## L02 baseline evidence and owner verification
 
 Cloud Linux: **193 Python tests PASS** (38 new L02 regressions), **165 JVM tests
 PASS**, existing scoped contract coverage gate PASS, debug/release builds and Lint
@@ -193,3 +193,82 @@ all 228 ordinary tests plus smoke, four authentic SAF stages, owned cleanup and
 unrelated-grant/device preservation. Repeat the deliberate SAF scenario separately;
 its required result is genuine FAIL/1 with evidence and cleanup, not PASS. No new
 provisioning, destructive backup acceptance, PR, merge or L03 work is part of L02.
+
+## L02C: independent identity-attempt and total deadlines
+
+Owner-provided Windows 11 evidence at `e9b6e3b` shows host PASS (195 Python/165 JVM),
+all 228 ordinary Android tests PASS, then SAF BLOCKED before APK installation or
+fixture creation. Settings restoration passed. The pre-install identity check's
+`getprop ro.build.version.sdk` timed out after approximately 7.93 seconds. The
+ordinary Android result proves that suite completed; it does not prove subsequent
+ADB reads will be prompt. No evidence here establishes the underlying emulator/
+host stall, a reboot or process death. Those must not be inferred from this timeout.
+
+The demonstrated runner defect was budget starvation: a read could use the entire
+remaining eight-second window, so the advertised retry could never happen after
+one stalled command. The existing recovery helper now has independent bounds:
+
+- Normal identity/readiness: **at most 3 attempts**, **2 seconds per complete
+  attempt**, **8 seconds total**, existing **250 ms** backoff only after a
+  recoverable failure. A healthy attempt adds no sleep.
+- Every AVD-name/property read uses the minimum of its command timeout, remaining
+  attempt deadline and remaining total deadline. The attempt deadline is shared
+  across all reads; it is not reset per command. A result arriving after its
+  deadline cannot be marked ready. Exhausted total time can shorten the final
+  attempt or prevent another one.
+- A retry restarts full identity verification: reserved serial/port, expected AVD,
+  emulator flag, API 26, native ABI and provisioned image; boot checks remain where
+  already required. A partial or timed-out attempt is not verified identity.
+- The existing cold-start window retains **60 attempts / 60 seconds / 500 ms**,
+  now with the same two-second attempt cap. Owned-port connection refusal remains
+  restricted to the initial window of this invocation's live child.
+- There is no second transition retry loop or new fixed transition delay. SAF
+  already checks identity when reusing the AVD and again before each install; the
+  shared fix makes those existing checks capable of recovering from a timeout.
+
+These are conservative requested deadlines, tested with a deterministic host clock,
+not a promise about Windows scheduling or a measured latency distribution. If the
+native full identity sequence remains too slow, it must be reported BLOCKED and
+investigated with the new evidence, not silently accepted. This task does not
+increase installation, settings-write or instrumentation timeouts. Their calls
+remain outside the read-only attempt context; uncertain writes and functional
+JUnit stages are never replayed. All context deadlines are restored on exit.
+
+`adb-transport.json` retains each original timeout and partial output, effective
+`timeout_seconds`, attempt number and elapsed time. Recovery events include
+`attempt_timeout_seconds`, `total_budget_seconds`, remaining total time on failure,
+and `exhaustion_reason` (`attempt limit` or `total deadline`). Successful recovery
+records the fully verified identity. Existing rejection/process-exit events,
+raw instrumentation, group results and cleanup evidence remain separate; an
+executed assertion failure is still FAIL, not a recovered transport event.
+
+Regression coverage models a first SDK-property timeout consuming its entire
+per-attempt allowance, then a full successful verification at 2.25 simulated
+seconds (the old behavior consumed eight seconds on the first read). It also
+checks repeated timeouts, a shorter total deadline, decreasing read timeouts within
+one attempt, late-result rejection, foreign/API/ABI rejection after timeout,
+child termination, unchanged one-shot installation timeout, and the actual SAF
+workflow reaching its first install only after pre-install identity recovery.
+Existing tests still cover no functional retries, incomplete cleanup blocking
+PASS, settings restoration and cold-start connection-refusal recovery. These are
+host fault-injection tests, not authentic Android execution.
+
+L02C validation: **204 Python regressions PASS**, **165 JVM tests and existing
+contract coverage PASS**; actual `host` JSON and JUnit PASS; debug/release,
+ordinary and opt-in instrumentation builds PASS; compiled APK mode/runner isolation
+checks PASS; Lint zero errors with 20 existing warnings; English/Catalan/Spanish
+localization and all 15 canonical fixtures PASS. No application source, Android
+assertion, dependency, Gradle/CI policy or coverage threshold changed.
+
+Native Windows and successful real Android/full execution of **L02C are NOT RUN**
+in cloud (no usable native emulator). On the owner's existing Windows AVD:
+
+```powershell
+py -3 scripts/local_e2e.py run --suite full
+```
+
+Acceptance requires host PASS, all 228 ordinary Android tests PASS, four authentic
+SAF stages PASS, owned grant/fixture cleanup and settings restoration PASS, no
+unresolved diagnostics, overall PASS and exit 0. Retain the printed report path
+and transport events, including any timeout/recovered attempts. The prior Windows
+Android PASS is baseline evidence, not proof that this correction has executed.

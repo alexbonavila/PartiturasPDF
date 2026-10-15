@@ -468,6 +468,7 @@ class Runner:
         self.ui_failure_cleanup = None
         self._adb_attempt = 1
         self._adb_deadline = None
+        self._adb_attempt_deadline = None
         self._initial_child_transport = False
         self.summary["adb_transport"] = []
         self.summary["setting_changes"] = []
@@ -496,20 +497,25 @@ class Runner:
         timeout = kwargs.pop("timeout", 30)
         if self._adb_deadline is not None:
             timeout = min(timeout, self._adb_deadline - started)
-            if timeout <= 0:
-                raise AdbTransportError("ADB readiness timeout budget exhausted")
+        if self._adb_attempt_deadline is not None:
+            timeout = min(timeout, self._adb_attempt_deadline - started)
+        if timeout <= 0:
+            reason = "total" if self._adb_deadline is not None and started >= self._adb_deadline else "attempt"
+            self.transport_event(command=command, attempt=self._adb_attempt, exit=None,
+                                 timeout_seconds=0, error=f"ADB readiness {reason} deadline exhausted")
+            raise AdbTransportError(f"ADB readiness {reason} deadline exhausted")
         if self.process is not None and self.process.poll() is not None:
             raise Blocked("Dedicated emulator process terminated; see emulator.log")
         try:
             result = execute(command, timeout=timeout, **kwargs)
         except Blocked as error:
             self.transport_event(command=command, attempt=self._adb_attempt, exit=None,
-                                 elapsed_seconds=time.monotonic() - started, error=str(error))
+                                 elapsed_seconds=time.monotonic() - started, timeout_seconds=timeout, error=str(error))
             if isinstance(error.__cause__, subprocess.TimeoutExpired):
                 raise AdbTransportError(str(error)) from error
             raise
         self.transport_event(command=command, attempt=self._adb_attempt, exit=result.returncode,
-                             elapsed_seconds=time.monotonic() - started,
+                             elapsed_seconds=time.monotonic() - started, timeout_seconds=timeout,
                              stdout=result.stdout if result.returncode else "",
                              stderr=result.stderr if result.returncode else "")
         if result.returncode:
@@ -530,29 +536,37 @@ class Runner:
             raise (AdbTransportError if transient else Blocked)(message)
         return result.stdout.strip()
 
-    def recover_readiness(self, label, operation, *, attempts=3, budget=8, delay=0.25):
-        """Bounded read-only recovery; defaults: 3 attempts / 8 seconds / 250 ms backoff.
+    def recover_readiness(self, label, operation, *, attempts=3, budget=8, delay=0.25, attempt_timeout=2):
+        """Read-only recovery: 3 attempts, 2 seconds each, 8 seconds total, 250 ms backoff.
 
         A newly launched child gets a separate initial-connection window. Semantic identity
         mismatches NEVER retry, even in that window. No mutation or JUnit method enters here.
         """
         started = time.monotonic()
-        previous_attempt, previous_deadline = self._adb_attempt, self._adb_deadline
+        previous_attempt, previous_deadline, previous_attempt_deadline = (
+            self._adb_attempt, self._adb_deadline, self._adb_attempt_deadline)
         self._adb_deadline = started + budget
         try:
             for attempt in range(1, attempts + 1):
                 self._adb_attempt = attempt
+                self._adb_attempt_deadline = min(self._adb_deadline, time.monotonic() + attempt_timeout)
                 if self.process is not None and self.process.poll() is not None:
                     self.transport_event(operation=label, attempt=attempt, outcome="process terminated",
                                          elapsed_seconds=time.monotonic() - started)
                     raise Blocked("Dedicated emulator process terminated; see emulator.log")
                 try:
                     value = operation()
+                    if time.monotonic() > min(self._adb_deadline, self._adb_attempt_deadline):
+                        raise AdbTransportError("ADB readiness result arrived after its deadline")
                 except AdbTransportError as error:
+                    self.summary["device"]["identity_verified"] = False
                     remaining = self._adb_deadline - time.monotonic()
                     exhausted = attempt == attempts or remaining <= delay
                     self.transport_event(operation=label, attempt=attempt,
                         outcome="exhausted" if exhausted else "retry transport read",
+                        exhaustion_reason=("total deadline" if remaining <= delay else "attempt limit") if exhausted else None,
+                        attempt_timeout_seconds=attempt_timeout, total_budget_seconds=budget,
+                        total_remaining_seconds=max(0, remaining),
                         elapsed_seconds=time.monotonic() - started, error=str(error))
                     if exhausted:
                         raise
@@ -565,10 +579,12 @@ class Runner:
                     self.transport_event(operation=label, attempt=attempt,
                         outcome="recovered" if attempt > 1 else "ready",
                         elapsed_seconds=time.monotonic() - started,
+                        attempt_timeout_seconds=attempt_timeout, total_budget_seconds=budget,
                         identity=dict(self.summary["device"]))
                     return value
         finally:
-            self._adb_attempt, self._adb_deadline = previous_attempt, previous_deadline
+            self._adb_attempt, self._adb_deadline, self._adb_attempt_deadline = (
+                previous_attempt, previous_deadline, previous_attempt_deadline)
 
     def identify(self, *, boot=False):
         return self.recover_readiness("identity", lambda: self._identify_once(boot=boot))

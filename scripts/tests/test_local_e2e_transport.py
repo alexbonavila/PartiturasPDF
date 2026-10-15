@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 from test_local_e2e import e2e, protocol, X86_IMAGE
 
@@ -205,6 +206,191 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(self.runner.summary["adb_transport"][-1]["outcome"], "exhausted")
         self.sleep.assert_not_called()
+
+    def property_timeout(self, clock, failures=1, skip=0):
+        """Model a stalled SDK read consuming exactly its supplied subprocess timeout."""
+        remaining, seen = [failures], [0]
+        def command(argv, **kwargs):
+            if argv[3:] == ["shell", "getprop", "ro.build.version.sdk"]:
+                seen[0] += 1
+                if seen[0] > skip and remaining[0]:
+                    remaining[0] -= 1
+                    self.calls.append(list(argv))
+                    clock[0] += kwargs["timeout"]
+                    try:
+                        raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output=b"original stalled read")
+                    except subprocess.TimeoutExpired as error:
+                        raise e2e.Blocked(f"Command timed out after {kwargs['timeout']} seconds: original stalled read") from error
+            return self.device(argv, **kwargs)
+        self.execute.side_effect = command
+        self.sleep.side_effect = lambda delay: clock.__setitem__(0, clock[0] + delay)
+        return command
+
+    def test_stalled_property_uses_attempt_budget_and_recovers_before_old_total_deadline(self):
+        clock = [0.0]
+        self.property_timeout(clock)
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            self.runner.identify(boot=True)
+        events = json.loads((self.runner.out / "adb-transport.json").read_text())
+        timeout = next(e for e in events if e.get("exit") is None and "command" in e)
+        self.assertEqual(timeout["timeout_seconds"], 2)
+        self.assertIn("original stalled read", timeout["error"])
+        self.assertEqual(events[-1]["outcome"], "recovered")
+        self.assertEqual(events[-1]["attempt"], 2)
+        self.assertTrue(events[-1]["identity"]["identity_verified"])
+        self.assertEqual(events[-1]["identity"]["observed_api"], "26")
+        self.assertEqual(events[-1]["identity"]["observed_abi"], "x86_64")
+        self.assertEqual(sum(c[3:] == ["emu", "avd", "name"] for c in self.calls), 2)
+        self.assertEqual(clock[0], 2.25)
+        self.assertLess(clock[0], 8)
+        self.assertIsNone(self.runner._adb_deadline)
+        self.assertIsNone(self.runner._adb_attempt_deadline)
+
+    def test_repeated_property_timeouts_exhaust_attempts_without_using_all_total_budget(self):
+        clock = [0.0]
+        self.property_timeout(clock, failures=99)
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(e2e.AdbTransportError, "original stalled read"):
+                self.runner.identify()
+        events = self.runner.summary["adb_transport"]
+        self.assertEqual(events[-1]["outcome"], "exhausted")
+        self.assertEqual(events[-1]["exhaustion_reason"], "attempt limit")
+        self.assertEqual(events[-1]["attempt"], 3)
+        self.assertEqual(clock[0], 6.5)
+        self.assertFalse(self.runner.summary["device"]["identity_verified"])
+        self.assertFalse(any(e.get("outcome") in ("ready", "recovered") for e in events))
+
+    def test_total_deadline_independently_caps_shorter_final_attempt(self):
+        clock = [0.0]
+        self.property_timeout(clock, failures=99)
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaises(e2e.AdbTransportError):
+                self.runner.recover_readiness("short total window", self.runner._identify_once, budget=3)
+        events = self.runner.summary["adb_transport"]
+        timeouts = [e["timeout_seconds"] for e in events if "timeout_seconds" in e and e.get("exit") is None]
+        self.assertEqual(timeouts, [2, 0.75])
+        self.assertEqual(events[-1]["exhaustion_reason"], "total deadline")
+        self.assertEqual(events[-1]["attempt"], 2)
+        self.assertEqual(clock[0], 3)
+
+    def test_entire_identity_attempt_has_one_deadline_not_a_new_budget_per_command(self):
+        clock = [0.0]
+        timeouts = []
+        def slow(command, **kwargs):
+            timeouts.append(kwargs["timeout"])
+            clock[0] += 0.2
+            return self.device(command, **kwargs)
+        self.execute.side_effect = slow
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            self.runner.identify(boot=True)
+        self.assertEqual(len(timeouts), 5)
+        for earlier, later in zip(timeouts, timeouts[1:]):
+            self.assertLess(later, earlier)
+        self.assertEqual(self.runner.summary["adb_transport"][-1]["outcome"], "ready")
+
+    def test_late_identity_result_cannot_be_promoted_to_ready(self):
+        clock = [0.0]
+        def late(command, **kwargs):
+            result = self.device(command, **kwargs)
+            if command[-1] == "ro.product.cpu.abi":
+                clock[0] += 2.1  # Simulate a result arriving beyond its attempt limit.
+            return result
+        self.execute.side_effect = late
+        self.sleep.side_effect = lambda delay: clock.__setitem__(0, clock[0] + delay)
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaises(e2e.AdbTransportError):
+                self.runner.identify()
+        self.assertFalse(self.runner.summary["device"]["identity_verified"])
+        self.assertFalse(any(e.get("outcome") in ("ready", "recovered") for e in self.runner.summary["adb_transport"]))
+
+    def test_foreign_identity_api_or_abi_after_timeout_is_immediately_rejected(self):
+        for field, wrong in (("avd", "foreign"), ("api", "36"), ("abi", "arm64-v8a")):
+            with self.subTest(field=field):
+                clock, original = [0.0], getattr(self, field)
+                self.property_timeout(clock)
+                def delay(seconds):
+                    clock[0] += seconds
+                    setattr(self, field, wrong)
+                self.sleep.reset_mock()
+                self.sleep.side_effect = delay
+                with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+                    with self.assertRaises(e2e.Blocked):
+                        self.runner.identify()
+                self.sleep.assert_called_once_with(0.25)
+                self.assertEqual(self.runner.summary["adb_transport"][-1]["outcome"], "identity/readiness rejected")
+                self.assertFalse(self.runner.summary["device"]["identity_verified"])
+                setattr(self, field, original)
+
+    def test_child_termination_after_timeout_stops_before_a_second_attempt(self):
+        clock = [0.0]
+        self.property_timeout(clock)
+        process = Mock(pid=123, poll=Mock(return_value=None))
+        self.runner.process = process
+        def terminate(seconds):
+            clock[0] += seconds
+            process.poll.return_value = 7
+        self.sleep.side_effect = terminate
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(e2e.Blocked, "terminated"):
+                self.runner.identify()
+        self.assertEqual(sum(c[3:] == ["emu", "avd", "name"] for c in self.calls), 1)
+        self.assertEqual(self.runner.summary["adb_transport"][-1]["process"]["exit"], 7)
+
+    def test_android_to_saf_transition_revalidates_before_first_install_after_timeout(self):
+        root = Path(self.temp.name) / "checkout"
+        for relative in ("debug/app-debug.apk", "androidTest/debug/app-debug-androidTest.apk"):
+            apk = root / "app/build/outputs/apk" / relative
+            apk.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("classes.dex", ("L" + e2e.CLASS.replace(".", "/") + ";").encode())
+        self.runner.suite, self.runner.identified = "full", True
+        self.runner.summary["android_cases"] = [{"name": "ordinary smoke", "status": "PASS"}]
+        clock = [0.0]
+        read = self.property_timeout(clock, skip=1)  # Transition boot check passes; pre-install identity stalls.
+        class InstallReached(Exception):
+            pass
+        def command(argv, **kwargs):
+            if argv[3] == "install":
+                self.assertEqual(kwargs["timeout"], 120)
+                identity = self.runner.summary["device"]
+                self.assertTrue(identity["identity_verified"])
+                self.assertEqual((identity["observed_name"], identity["observed_api"], identity["observed_abi"]),
+                                 ("owned", "26", "x86_64"))
+                self.assertEqual(self.runner.summary["adb_transport"][-1]["outcome"], "recovered")
+                raise InstallReached()  # Stop before any simulated APK write or functional test.
+            return read(argv, **kwargs)
+        self.execute.side_effect = command
+        with patch.object(e2e, "ROOT", root), patch.object(e2e, "doctor", return_value={"status": "PASS"}), \
+             patch.object(e2e, "fixture", return_value=(root / "fixture.pdf", "a" * 64)), \
+             patch.object(self.runner, "gradle"), patch.object(self.runner, "verify_apk_mode"), \
+             patch.object(self.runner, "connect") as connect, patch.object(self.runner, "stage") as stage, \
+             patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaises(InstallReached):
+                self.runner.workflow_saf()
+        connect.assert_not_called()
+        stage.assert_not_called()
+        self.assertFalse(self.runner.fixture_created)
+        self.assertEqual(sum(c[3:] == ["emu", "avd", "name"] for c in self.calls), 3)
+        self.assertEqual(clock[0], 2.25)
+
+    def test_install_timeout_keeps_its_own_limit_and_is_never_retried(self):
+        clock = [0.0]
+        read = self.property_timeout(clock)
+        installs = []
+        def command(argv, **kwargs):
+            if argv[3] == "install":
+                installs.append(kwargs["timeout"])
+                try:
+                    raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+                except subprocess.TimeoutExpired as error:
+                    raise e2e.Blocked("uncertain installation response") from error
+            return read(argv, **kwargs)
+        self.execute.side_effect = command
+        with patch.object(e2e.time, "monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(e2e.AdbTransportError, "uncertain installation"):
+                self.runner.adb_command("install", "-r", "test.apk", timeout=120)
+        self.assertEqual(installs, [120])
+        self.assertIsNone(self.runner._adb_attempt_deadline)
 
     def test_exit_255_retries_whole_identity_and_records_recovery(self):
         self.failures = 1

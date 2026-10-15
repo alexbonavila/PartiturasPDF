@@ -34,7 +34,8 @@ blocks operation. Readiness is permission to **attempt** boot, not proof of boot
 Required: Python **3.10+**, a working **JDK 25** (`JAVA_HOME`), SDK command-line
 tools, platform-tools, emulator, platform `platforms;android-37.0` (API 37), build
 tools `build-tools;37.0.0`, and the installed
-`system-images;android-26;google_apis;x86_64` image. The profile is `pixel_c`.
+API 26 Google APIs image selected for the native host (`x86_64`, or `arm64-v8a`
+on Apple Silicon). The profile is `pixel_c`.
 The platform check accepts metadata API 37 and 37.0; use the package available in
 your SDK catalog. The installed cloud SDK package is `platforms;android-37.0`.
 Command-line tools can be `latest` or a numbered installation: the runner selects
@@ -48,21 +49,36 @@ in arguments; use ordinary SDK/project paths (spaces are supported).
 Use the same SDK for Gradle and the runner; resolve conflicting local settings
 before execution. Explicit global options precede `doctor`, `provision`, or `run`.
 
-| Host | L01 compatibility contract | Native execution evidence |
+| Host | L01B native image selection | Execution evidence |
 | --- | --- | --- |
 | Windows x86_64 | x86_64 API 26 image plus usable WHPX/AEHD (or another emulator-reported usable accelerator) | Host probes/dispatch covered by mocks; Windows boot/E2E NOT RUN |
-| Intel macOS | x86_64 API 26 image plus usable Hypervisor.Framework | Host probes covered by mocks; native macOS/E2E NOT RUN |
-| Apple Silicon, including x86 Python under Rosetta | BLOCKED for this pinned x86_64 AVD; no cross-architecture/software-emulation fallback | No API 26 Apple Silicon execution path validated |
-| Windows ARM / other ARM hosts | BLOCKED for this pinned AVD | NOT RUN |
+| Intel macOS | `system-images;android-26;google_apis;x86_64` plus usable Hypervisor.Framework | Host probes covered by mocks; native macOS/E2E NOT RUN |
+| Apple Silicon, including x86 Python under Rosetta | `system-images;android-26;google_apis;arm64-v8a` plus usable Hypervisor.Framework | Host selection/provisioning/ABI checks covered by mocks; native boot and SAF E2E NOT RUN here |
+| Windows ARM / Linux ARM / all other combinations | BLOCKED; no mapping authorized | NOT RUN |
 | Linux x86_64 | Same image plus usable KVM | Builds/probes executed here; KVM unavailable, E2E NOT RUN |
 
-Apple Silicon must not provision this x86_64 image simply because it appears in
-`sdkmanager`. Installed image availability and native ABI compatibility are
-separate checks. This version does not claim that an arbitrary API 26 ARM image
-works; even if one is installed it does not enable a new execution path. Use an
-accelerated native x86_64 Windows/Linux or Intel Mac machine for API 26 acceptance.
-Do not substitute a newer Android API, Rosetta, a physical user's device or slow
-software emulation and call that an API 26 PASS.
+`host_image()` is the single compatibility decision used by doctor, provisioning,
+ownership checks and emulator launch. It uses native hardware detection (including
+`sysctl.proc_translated` and `hw.optional.arm64` for Rosetta), not Python's architecture alone. Installed
+image metadata must match the selected package, directory, API **26**, ABI and
+actual `system.img`. API 27/36 images do not satisfy this suite. On macOS, emulator
+version/acceleration probes and launch explicitly use `/usr/bin/arch -arm64` or
+`-x86_64` according to the native host. Every launch includes **`-accel on`**;
+failed hardware acceleration must fail boot, never fall back to software.
+
+The version-1 ownership manifest remains unchanged in shape: `image` records the
+actual selected SDK package. Existing valid x86_64 v1 state stays usable on the
+supported x86_64 hosts without rewriting it. ARM64 v1 state is validated against
+the ARM64 package/configuration on Apple Silicon. A manifest/config image mismatch,
+conflicting `abi.type`/tag, foreign name/path, or a booted device reporting the wrong
+API or ABI blocks operations. Run reports distinguish selected `abi` from the
+boot validation's `observed_abi`. No AVD is adopted, wiped or migrated automatically.
+An x86_64 state copied to Apple Silicon stays untouched and BLOCKED; preserve it
+and explicitly choose a **new private state directory**, for example
+`python3 scripts/local_e2e.py --home build/local-e2e-arm64 doctor` followed by
+`--home build/local-e2e-arm64 provision`, instead of editing its manifest.
+For the owner's reported UNPROVISIONED ARM64 state, the normal default home is
+appropriate once doctor passes. These choices create no new Git branch.
 
 ## Windows PowerShell procedure
 
@@ -107,19 +123,18 @@ $report = Get-ChildItem build/local-e2e/reports -Directory | Sort-Object LastWri
 }
 ```
 
-## macOS procedure
+## Intel macOS procedure
 
-Use the same repository-pinned JDK 25. The following zsh-compatible commands are
-reviewed and their POSIX syntax checked; **native macOS execution is NOT RUN**.
-On Apple Silicon, stop after `doctor` reports BLOCKED and use the x86_64 alternative
-above. The SDK command is deliberately after the native-architecture guard.
+Use the repository-pinned JDK 25 and a native x86_64 Mac. These commands are
+reviewed and their POSIX syntax checked; **native macOS execution is NOT RUN here**.
+If native hardware is Apple Silicon, use the following ARM64 procedure instead.
 
 ```bash
 export JAVA_HOME="$(/usr/libexec/java_home -v 25)"
 export ANDROID_HOME="$HOME/Library/Android/sdk"
-# hw.optional.arm64 also detects an Apple Silicon Mac running an x86 shell.
-if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
-  echo 'BLOCKED: use a native accelerated x86_64 host for API 26'
+if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] ||
+   [ "$(/usr/sbin/sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+  echo 'Use the Apple Silicon ARM64 procedure below'
 else
   "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'emulator' 'platforms;android-37.0' 'build-tools;37.0.0' 'system-images;android-26;google_apis;x86_64' &&
   "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses &&
@@ -128,6 +143,42 @@ else
   python3 scripts/local_e2e.py run --suite saf
 fi
 ```
+
+## Apple Silicon macOS procedure
+
+Use a native ARM64 JDK 25 and the **ARM64** API 26 Google APIs image. If those
+packages are already installed, start at `doctor`; do not reinstall or recreate an
+existing owned AVD. No SDK path specific to the owner's machine is embedded.
+The following commands are reviewed/syntax-checked and host behavior is tested
+with mocks; **this cloud has no native ARM64 acceleration, so native macOS boot,
+authentic SAF and controlled-failure capture are NOT RUN here**. The owner's
+reported native CPU/image and working Hypervisor.Framework are prerequisites,
+not evidence that the SAF suite passed.
+
+```bash
+export JAVA_HOME="$(/usr/libexec/java_home -v 25)"
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" != 1 ] &&
+   [ "$(/usr/sbin/sysctl -n sysctl.proc_translated 2>/dev/null)" != 1 ]; then
+  echo 'BLOCKED: this procedure requires native Apple Silicon hardware'
+else
+  "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'emulator' 'platforms;android-37.0' 'build-tools;37.0.0' 'system-images;android-26;google_apis;arm64-v8a' &&
+  "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses &&
+  python3 scripts/local_e2e.py doctor &&
+  python3 scripts/local_e2e.py provision --port 5580 &&
+  python3 scripts/local_e2e.py run --suite saf
+fi
+```
+
+Expected doctor fields on a ready Apple Silicon host: `native_architecture=arm64`,
+`requested_avd.abi=arm64-v8a`, package
+`system-images;android-26;google_apis;arm64-v8a`, `acceleration_available=true`,
+and `dedicated_avd.status=UNPROVISIONED` before first provisioning. Its diagnostic
+PASS means ready to **attempt** boot. A real run must additionally verify the
+reserved AVD identity, API 26, `ro.product.cpu.abi=arm64-v8a`, completed boot and
+all four authentic SAF stages with retained evidence. Native Python is preferred;
+a Rosetta Python process still selects ARM64 hardware and launches the emulator
+through `arch -arm64`, never the x86_64 guest image or software fallback.
 
 For an existing owned AVD, run only `doctor` then `run` (no provisioning). To inspect
 the exact report directory printed by the runner, substitute it below:
@@ -363,3 +414,30 @@ PowerShell parsing and POSIX command syntax are checked locally, not claimed as
 native OS E2E execution. API 26 SAF PASS, controlled functional-failure screenshots,
 and existing Android regression execution remain **NOT RUN**. No API 27/36 or
 physical-device acceptance is established by this task.
+
+## L01B validation and remaining owner execution
+
+L01B modifies only the host runner, host regression tests and this document. The
+SAF Kotlin tests/selectors, production sources, permissions, contracts, schemas,
+dependencies, CI gates and coverage thresholds are unchanged. No ARM64-specific
+DocumentsUI selector change is justified without actual UI evidence.
+
+Host regression checks cover the four authorized native host/image combinations,
+Rosetta detection, missing/mismatched ARM64 metadata, API 27/36 rejection, unchanged
+legacy x86_64 v1 ownership, ARM64 v1 provisioning, foreign identity, conflicting
+config/ABI, boot-time API/ABI checks and forced native accelerated emulator launch.
+These tests use SDK/device fixtures and mocks; they are not emulator boot tests.
+Python infrastructure: **110 PASS** (71 local-runner + 39 existing infrastructure,
+10 new tests relative to L01). JVM: **146 PASS**. Debug/opt-in APK, Lint,
+localization and all 15 fixture checks PASS; ordinary instrumentation APK compiles
+with the opt-in class absent. The opt-in APK contains the class. No build-system
+or dependency change is needed for native ARM64 instrumentation.
+
+Real cloud doctor still reports BLOCKED for unavailable KVM on Linux x86_64; this
+says nothing about the owner's Hypervisor.Framework readiness. Native macOS boot,
+API 26 SAF success, controlled-failure screenshots, and existing Android regression
+execution are **NOT RUN** here. Owner acceptance must retain separate reports for
+an actual ARM64 SAF PASS and `run --suite saf --inject-failure` returning **1** with
+screenshot, hierarchy, logcat, stage protocol, revision and native AVD identity.
+A BLOCKED run or mocked host fixture is not that evidence. The same manual command
+and report-inspection steps above apply after successful ARM64 provisioning.

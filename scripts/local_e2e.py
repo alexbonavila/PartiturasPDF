@@ -28,7 +28,12 @@ DEFAULT_HOME = ROOT / "build/local-e2e"
 APP = "com.abdev.partituraspdf"
 CLASS = APP + ".storage.saf.SafLocalE2eTest"
 STAGES = ("acquire", "restartAndRelease", "lossAndRestore", "restoredAfterRestart")
-IMAGE = "system-images;android-26;google_apis;x86_64"
+HOST_ABIS = {
+    ("Darwin", "arm64"): "arm64-v8a",
+    ("Darwin", "x86_64"): "x86_64",
+    ("Windows", "x86_64"): "x86_64",
+    ("Linux", "x86_64"): "x86_64",
+}
 
 
 class Blocked(RuntimeError):
@@ -101,6 +106,9 @@ def native_architecture():
     machine = platform.machine().lower()
     # Rosetta can make an Apple Silicon host look x86_64 to Python.
     if platform.system() == "Darwin":
+        translated = execute(["/usr/sbin/sysctl", "-n", "sysctl.proc_translated"], timeout=10)
+        if translated.returncode == 0 and translated.stdout.strip() == "1":
+            return "arm64"
         result = execute(["/usr/sbin/sysctl", "-n", "hw.optional.arm64"], timeout=10)
         if result.returncode == 0 and result.stdout.strip() == "1":
             return "arm64"
@@ -114,12 +122,25 @@ def native_architecture():
     return {"amd64": "x86_64", "aarch64": "arm64"}.get(machine, machine)
 
 
+def host_image(system=None, architecture=None):
+    """The sole API 26 host/image decision, based on native hardware, not Rosetta Python."""
+    system = platform.system() if system is None else system
+    architecture = native_architecture() if architecture is None else architecture
+    abi = HOST_ABIS.get((system, architecture))
+    if abi is None:
+        raise Blocked(f"Unsupported native host {system}/{architecture}. API 26 requires macOS arm64, "
+                      "or native x86_64 macOS/Windows/Linux with hardware acceleration; no software fallback.")
+    return {"api": 26, "image": f"system-images;android-26;google_apis;{abi}",
+            "abi": abi, "profile": "pixel_c",
+            "emulator_prefix": ["/usr/bin/arch", f"-{architecture}"] if system == "Darwin" else []}
+
+
 def _inspect_host(home, sdk):
     """Read-only host/device probes. Readiness is not proof of successful Android execution."""
     report = {"status": "BLOCKED", "os": platform.system(), "machine": platform.machine(),
               "python": platform.python_version(), "sdk": str(sdk), "checks": {}, "blockers": [],
               "emulation": "NOT RUN", "ready_to_attempt": False,
-              "requested_avd": {"api": 26, "image": IMAGE, "abi": "x86_64", "profile": "pixel_c"}}
+              "requested_avd": None}
     def fail(message):
         report["blockers"].append(message)
     def probe(name, command):
@@ -138,10 +159,12 @@ def _inspect_host(home, sdk):
     except Blocked as error:
         arch = "unknown"
         fail(f"Cannot establish native CPU architecture: {error}")
-    if report["os"] not in ("Windows", "Darwin", "Linux") or arch != "x86_64":
-        fail("This runner's API 26 google_apis x86_64 AVD requires a native x86_64 host. "
-             "Apple Silicon/Windows ARM and Rosetta x86 translation are not supported. "
-             "Use an accelerated x86_64 Windows/Linux or Intel Mac host; do not substitute a newer API or software emulation.")
+    selection = None
+    try:
+        selection = host_image(report["os"], arch)
+        report["requested_avd"] = selection
+    except Blocked as error:
+        fail(str(error))
     if sys.version_info < (3, 10):
         fail("Python 3.10+ is required")
     java_home = os.environ.get("JAVA_HOME")
@@ -169,6 +192,8 @@ def _inspect_host(home, sdk):
         if name in tools:
             # 'avdmanager list device -c' probes command-line/JDK compatibility without changing an AVD.
             command = [tools[name], flag] + (["device", "-c"] if name == "avdmanager" else [])
+            if name == "emulator" and selection:
+                command = selection["emulator_prefix"] + command
             result, output = probe(name, command)
             if not result or result.returncode:
                 fail(f"{name} is installed but cannot execute successfully")
@@ -193,24 +218,30 @@ def _inspect_host(home, sdk):
             values = {node.tag.split("}")[-1]: node.text for node in root.iter() if node.text}
             package = next(node for node in root.iter() if node.tag.split("}")[-1] == "localPackage")
             images.append({"package": package.get("path"), "api": values.get("api-level"),
-                           "abi": values.get("abi"), "system_img": (metadata.parent / "system.img").is_file()})
+                           "abi": values.get("abi"), "system_img": (metadata.parent / "system.img").is_file(),
+                           "path": metadata.parent.relative_to(sdk).as_posix()})
         except (ET.ParseError, StopIteration, OSError) as error:
             fail(f"Invalid installed image metadata {metadata}: {error}")
     report["installed_api26_images"] = images
-    report["compatible_api26_images"] = [item for item in images if item["abi"] == {"arm64": "arm64-v8a"}.get(arch, arch) and item["api"] == "26" and item["system_img"]]
-    if not any(item["package"] == IMAGE for item in report["compatible_api26_images"]):
-        fail(f"Requested installed image is missing or incompatible: {IMAGE}. Install it only on a compatible native x86_64 host.")
+    report["compatible_api26_images"] = [item for item in images if selection and
+        item["abi"] == selection["abi"] and item["api"] == "26" and item["system_img"] and
+        item["path"] == (item["package"] or "").replace(";", "/")]
+    if selection and not any(item["package"] == selection["image"] for item in report["compatible_api26_images"]):
+        fail(f"Requested installed API 26 image is missing or incompatible: {selection['image']}. "
+             f"Install and license this exact {selection['abi']} package on the compatible native host.")
     if "emulator" in tools:
-        result, output = probe("acceleration", [tools["emulator"], "-accel-check"])
+        result, output = probe("acceleration", (selection["emulator_prefix"] if selection else []) + [tools["emulator"], "-accel-check"])
         usable = bool(result and result.returncode == 0 and re.search(r"(?m)^accel:\s*\n0\s*\n", output))
         report["acceleration_available"] = usable
         if not usable:
-            fail("Hardware acceleration is unavailable/unverified. Enable WHPX/AEHD (Windows), Hypervisor.Framework (Intel macOS), or KVM (Linux), then rerun doctor.")
+            fail("Hardware acceleration is unavailable/unverified. Enable WHPX/AEHD (Windows), Hypervisor.Framework (macOS), or KVM (Linux), then rerun doctor.")
     else:
         report["acceleration_available"] = False
     if (home / "device.json").exists() or (home / "avd").exists():
         try:
-            state = load_device(home)
+            if selection is None:
+                raise Blocked("Cannot validate AVD ownership for an unsupported native host")
+            state = load_device(home, selection)
             identity = dict(state, status="OWNED_STOPPED", serial=f"emulator-{state['port']}")
             report["dedicated_avd"] = identity
             if "adb" in tools:
@@ -219,10 +250,11 @@ def _inspect_host(home, sdk):
                     fail("Cannot verify dedicated AVD runtime identity: ADB unavailable")
                 elif any(line.split()[0] == identity["serial"] for line in listing.splitlines() if line.split()):
                     for key, args in (("name", ["emu", "avd", "name"]), ("qemu", ["shell", "getprop", "ro.kernel.qemu"]),
-                                      ("api", ["shell", "getprop", "ro.build.version.sdk"]), ("boot", ["shell", "getprop", "sys.boot_completed"])):
+                                      ("api", ["shell", "getprop", "ro.build.version.sdk"]), ("boot", ["shell", "getprop", "sys.boot_completed"]),
+                                      ("abi", ["shell", "getprop", "ro.product.cpu.abi"])):
                         result, output = probe("device_" + key, [tools["adb"], "-s", identity["serial"], *args])
                         identity[key] = result.stdout.strip().splitlines()[0] if result and result.returncode == 0 and result.stdout.strip() else "UNKNOWN"
-                    if (identity["name"], identity["qemu"], identity["api"], identity["boot"]) != (state["name"], "1", "26", "1"):
+                    if (identity["name"], identity["qemu"], identity["api"], identity["boot"], identity["abi"]) != (state["name"], "1", "26", "1", selection["abi"]):
                         identity["status"] = "UNVERIFIED"
                         fail("Reserved serial is occupied by an unverified AVD or boot is incomplete; no device changes allowed")
                     else:
@@ -294,28 +326,27 @@ def provision(home, sdk, port):
         if state.exists() or (home / "avd").exists():
             raise Blocked("Existing provisioning found; refusing to overwrite or adopt it")
         manager = sdk_tool(sdk, "cmdline-tools/latest/bin/avdmanager")
-        # Image installation/licenses are an explicit prerequisite, not automatic acceptance.
-        if not (sdk / "system-images/android-26/google_apis/x86_64/package.xml").is_file():
-            raise Blocked(f"Install and license {IMAGE} with sdkmanager first")
-        require_host(home, sdk)
+        # Readiness checks exact package metadata, ABI, API and acceleration before creation.
+        selection = require_host(home, sdk)["requested_avd"]
         avd_home = home / "avd"
         avd_home.mkdir()
         name = "PartiturasPDF_E2E_API26_" + uuid.uuid4().hex[:12]
         env = dict(os.environ, ANDROID_AVD_HOME=str(avd_home))
         # --device selects a known profile; explicit input avoids an interactive skin prompt.
-        output = checked([manager, "create", "avd", "--name", name, "--package", IMAGE,
-                          "--device", "pixel_c"], timeout=120, env=env, input_text="no\n")
+        output = checked([manager, "create", "avd", "--name", name, "--package", selection["image"],
+                          "--device", selection["profile"]], timeout=120, env=env, input_text="no\n")
         (home / "provision.log").write_text(output, encoding="utf-8")
         state.write_text(json.dumps({"version": 1, "name": name, "port": port,
-                                     "image": IMAGE, "avd_home": str(avd_home)}, indent=2), encoding="utf-8")
+                                     "image": selection["image"], "avd_home": str(avd_home)}, indent=2), encoding="utf-8")
         print(f"Provisioned dedicated AVD {name}; emulator-{port}. No emulator was started.")
 
 
-def load_device(home):
+def load_device(home, selection=None):
     try:
+        selection = host_image() if selection is None else selection
         state = json.loads((home / "device.json").read_text(encoding="utf-8"))
         port = state["port"]
-        if (state["version"] != 1 or state["image"] != IMAGE or not isinstance(port, int)
+        if (state["version"] != 1 or state["image"] != selection["image"] or not isinstance(port, int)
                 or port % 2 or not 5554 <= port <= 5682
                 or not re.fullmatch(r"PartiturasPDF_E2E_API26_[a-f0-9]{12}", state["name"])
                 or Path(state["avd_home"]).resolve() != (home / "avd").resolve()):
@@ -330,8 +361,12 @@ def load_device(home):
                             for line in index.read_text().splitlines() if "=" in line)
         if Path(index_values.get("path", "")).resolve() != config.parent.resolve():
             raise ValueError("AVD index points outside its dedicated directory")
-        if values.get("image.sysdir.1", "").replace("\\", "/").rstrip("/") != "system-images/android-26/google_apis/x86_64":
-            raise ValueError("AVD does not use the approved API 26 image")
+        if values.get("image.sysdir.1", "").replace("\\", "/").rstrip("/") != selection["image"].replace(";", "/"):
+            raise ValueError("AVD does not use the approved API 26 native image")
+        if "abi.type" in values and values["abi.type"] != selection["abi"]:
+            raise ValueError("AVD ABI conflicts with its native image")
+        if "tag.id" in values and values["tag.id"] != "google_apis":
+            raise ValueError("AVD tag conflicts with its approved image")
         return state
     except (OSError, KeyError, ValueError, TypeError) as error:
         raise Blocked(f"Dedicated AVD is not safely provisioned: {error}. Run provision first.") from error
@@ -415,7 +450,7 @@ class Runner:
                         "device": {"status": "NOT SELECTED"}, "cleanup": [], "diagnostics": []}
         self.inject = "after-grant" if inject_failure else "none"
         self.summary["failure_injection"] = self.inject
-        self.state = self.adb = self.serial = None
+        self.state = self.adb = self.serial = self.selection = None
         self.process = self.emulator_log = None
         self.fixture_created = self.installed = self.identified = False
         self.settings = {}
@@ -436,6 +471,13 @@ class Runner:
             raise Blocked("Device is not an emulator")
         if self.raw_adb("shell", "getprop", "ro.build.version.sdk") != "26":
             raise Blocked("Dedicated emulator is not API 26")
+        selection = self.selection or host_image()
+        if self.state.get("image") != selection["image"]:
+            raise Blocked("Dedicated AVD image conflicts with the native host")
+        observed_abi = self.raw_adb("shell", "getprop", "ro.product.cpu.abi")
+        self.summary["device"]["observed_abi"] = observed_abi
+        if observed_abi != selection["abi"]:
+            raise Blocked(f"Emulator ABI {observed_abi!r} does not match approved native API 26 ABI {selection['abi']!r}")
         if boot and self.raw_adb("shell", "getprop", "sys.boot_completed") != "1":
             raise Blocked("Emulator boot is incomplete")
         self.identified = True
@@ -491,10 +533,11 @@ class Runner:
                 self.summary["tests"].append(result)
 
     def connect(self):
-        self.state = load_device(self.home)
+        self.selection = host_image()
+        self.state = load_device(self.home, self.selection)
         self.adb = sdk_tool(self.sdk, "platform-tools/adb")
         self.serial = f"emulator-{self.state['port']}"
-        self.summary["device"] = dict(self.state, serial=self.serial, api=26)
+        self.summary["device"] = dict(self.state, serial=self.serial, api=26, abi=self.selection["abi"])
         listing = checked([self.adb, "devices", "-l"])
         self.record("adb-initial.txt", listing)
         if any(line.split()[0] == self.serial for line in listing.splitlines() if line.split()):
@@ -503,8 +546,8 @@ class Runner:
             emulator = sdk_tool(self.sdk, "emulator/emulator")
             self.emulator_log = (self.out / "emulator.log").open("wb")
             env = dict(os.environ, ANDROID_AVD_HOME=self.state["avd_home"])
-            self.process = subprocess.Popen([str(emulator), "-avd", self.state["name"],
-                "-port", str(self.state["port"]), "-no-snapshot-load", "-no-snapshot-save",
+            self.process = subprocess.Popen(self.selection["emulator_prefix"] + [str(emulator), "-avd", self.state["name"],
+                "-port", str(self.state["port"]), "-accel", "on", "-no-snapshot-load", "-no-snapshot-save",
                 "-no-audio", "-no-boot-anim"], stdout=self.emulator_log,
                 stderr=subprocess.STDOUT, env=env)
         deadline = time.monotonic() + 240

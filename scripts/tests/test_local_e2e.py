@@ -10,6 +10,9 @@ from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 import zipfile
 
+X86_IMAGE = "system-images;android-26;google_apis;x86_64"
+ARM_IMAGE = "system-images;android-26;google_apis;arm64-v8a"
+
 SPEC = importlib.util.spec_from_file_location("local_e2e", Path(__file__).parents[1] / "local_e2e.py")
 e2e = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(e2e)
@@ -203,7 +206,7 @@ class HostTests(unittest.TestCase):
 
     def make_provision(self):
         state = {"version": 1, "name": "PartiturasPDF_E2E_API26_0123456789ab", "port": 5580,
-                 "image": e2e.IMAGE, "avd_home": str(self.home / "avd")}
+                 "image": X86_IMAGE, "avd_home": str(self.home / "avd")}
         directory = self.home / "avd" / (state["name"] + ".avd")
         directory.mkdir(parents=True)
         (directory / "config.ini").write_text("image.sysdir.1=system-images/android-26/google_apis/x86_64/\n")
@@ -423,6 +426,7 @@ class DoctorTests(unittest.TestCase):
         self.sdk = Path(self.temp.name) / "Android SDK"
         self.jdk = Path(self.temp.name) / "JDK 25"
         self.system, self.machine, self.arm = "Linux", "x86_64", "0"
+        self.translated = "0"
         self.acceleration, self.java_version = 0, "25.0.1"
         self.devices = "List of devices attached\n"
         self.runtime = {}
@@ -436,7 +440,7 @@ class DoctorTests(unittest.TestCase):
             file.touch()
         (self.sdk / "platforms/android-37.0/source.properties").write_text("AndroidVersion.ApiLevel=37.0\n")
         self.metadata = self.sdk / "system-images/android-26/google_apis/x86_64/package.xml"
-        self.metadata.write_text(f'<repository><localPackage path="{e2e.IMAGE}"><type-details>'
+        self.metadata.write_text(f'<repository><localPackage path="{X86_IMAGE}"><type-details>'
                                  '<api-level>26</api-level><abi>x86_64</abi></type-details></localPackage></repository>')
         (self.jdk / "bin").mkdir(parents=True)
         (self.jdk / "bin/java").touch()
@@ -455,7 +459,9 @@ class DoctorTests(unittest.TestCase):
     def command(self, command, **kwargs):
         args = [str(x) for x in command]
         output, code = "tool version", 0
-        if "hw.optional.arm64" in args:
+        if "sysctl.proc_translated" in args:
+            output = self.translated
+        elif "hw.optional.arm64" in args:
             output = self.arm
         elif "-accel-check" in args:
             code = self.acceleration
@@ -484,13 +490,14 @@ class DoctorTests(unittest.TestCase):
                 self.assertEqual(report["dedicated_avd"]["status"], "UNPROVISIONED")
                 self.assertEqual(len(report["compatible_api26_images"]), 1)
 
-    def test_apple_silicon_native_and_rosetta_are_blocked(self):
+    def test_apple_silicon_native_and_rosetta_require_the_arm_image(self):
         self.system, self.arm = "Darwin", "1"
         for self.machine in ("arm64", "x86_64"):
             report = self.diagnose()
             self.assertEqual(report["native_architecture"], "arm64")
             self.assertEqual(report["status"], "BLOCKED")
-            self.assertTrue(any("Intel Mac" in item for item in report["blockers"]))
+            self.assertEqual(report["requested_avd"]["image"], ARM_IMAGE)
+            self.assertTrue(any(ARM_IMAGE in item for item in report["blockers"]))
 
     def test_windows_arm_is_blocked_even_when_python_looks_x86(self):
         self.system = "Windows"
@@ -536,7 +543,7 @@ class DoctorTests(unittest.TestCase):
         self.home.mkdir()
         state, _ = HostTests.make_provision(self)
         self.devices += "emulator-5580 device\nphysical-123 device\n"
-        self.runtime = {"name": "somebody-else", "ro.kernel.qemu": "1", "ro.build.version.sdk": "26", "sys.boot_completed": "1"}
+        self.runtime = {"name": "somebody-else", "ro.kernel.qemu": "1", "ro.build.version.sdk": "26", "sys.boot_completed": "1", "ro.product.cpu.abi": "x86_64"}
         report = self.diagnose()
         self.assertEqual(report["dedicated_avd"]["status"], "UNVERIFIED")
         self.assertEqual(report["status"], "BLOCKED")
@@ -548,13 +555,13 @@ class DoctorTests(unittest.TestCase):
         self.home.mkdir()
         state, _ = HostTests.make_provision(self)
         self.devices += "emulator-5580 device\n"
-        self.runtime = {"name": state["name"], "ro.kernel.qemu": "1", "ro.build.version.sdk": "26", "sys.boot_completed": "1"}
+        self.runtime = {"name": state["name"], "ro.kernel.qemu": "1", "ro.build.version.sdk": "26", "sys.boot_completed": "1", "ro.product.cpu.abi": "x86_64"}
         self.assertEqual(self.diagnose()["dedicated_avd"]["status"], "OWNED_BOOTED")
 
     def test_provision_fails_preflight_before_creating_avd_or_running_manager(self):
-        with patch.object(e2e, "doctor", return_value={"status": "BLOCKED", "blockers": ["Apple Silicon not compatible"]}), \
+        with patch.object(e2e, "doctor", return_value={"status": "BLOCKED", "blockers": ["ARM64 API 26 image missing"]}), \
              patch.object(e2e, "checked") as create:
-            with self.assertRaisesRegex(e2e.Blocked, "Apple Silicon"):
+            with self.assertRaisesRegex(e2e.Blocked, "ARM64 API 26"):
                 e2e.provision(self.home, self.sdk, 5580)
         create.assert_not_called()
         self.assertFalse((self.home / "avd").exists())
@@ -578,6 +585,156 @@ class DoctorTests(unittest.TestCase):
             report = self.diagnose()
         self.assertEqual(report["status"], "BLOCKED")
         self.assertIn("unreadable", report["blockers"][0])
+
+    def install_arm_image(self):
+        metadata = self.sdk / "system-images/android-26/google_apis/arm64-v8a/package.xml"
+        metadata.parent.mkdir(parents=True, exist_ok=True)
+        metadata.write_text(f'<repository><localPackage path="{ARM_IMAGE}"><type-details>'
+                            '<api-level>26</api-level><abi>arm64-v8a</abi></type-details></localPackage></repository>')
+        (metadata.parent / "system.img").touch()
+        return metadata
+
+    def own_arm_avd(self):
+        self.home.mkdir(parents=True, exist_ok=True)
+        state, directory = HostTests.make_provision(self)
+        state["image"] = ARM_IMAGE
+        (self.home / "device.json").write_text(json.dumps(state))
+        (directory / "config.ini").write_text("image.sysdir.1=system-images/android-26/google_apis/arm64-v8a/\nabi.type=arm64-v8a\ntag.id=google_apis\n")
+        return state, directory
+
+    def test_native_arm64_and_rosetta_are_ready_with_arm_image_and_acceleration(self):
+        self.system, self.arm = "Darwin", "1"
+        self.install_arm_image()
+        for self.machine in ("arm64", "x86_64"):
+            self.translated = "1" if self.machine == "x86_64" else "0"
+            self.arm = "0" if self.translated == "1" else "1"
+            with self.subTest(process_arch=self.machine):
+                report = self.diagnose()
+                self.assertEqual(report["status"], "PASS", report["blockers"])
+                self.assertEqual(report["requested_avd"]["image"], ARM_IMAGE)
+                self.assertEqual(report["requested_avd"]["abi"], "arm64-v8a")
+                self.assertEqual(report["checks"]["acceleration"]["command"][:2], ["/usr/bin/arch", "-arm64"])
+                self.assertEqual(report["emulation"], "NOT RUN")
+        self.acceleration = 3
+        self.assertEqual(self.diagnose()["status"], "BLOCKED")
+
+    def test_supported_mapping_is_explicit_and_other_hosts_remain_blocked(self):
+        for system, arch, expected in (("Darwin", "arm64", ARM_IMAGE), ("Darwin", "x86_64", X86_IMAGE),
+                                       ("Windows", "x86_64", X86_IMAGE), ("Linux", "x86_64", X86_IMAGE)):
+            self.assertEqual(e2e.host_image(system, arch)["image"], expected)
+        for system, arch in (("Linux", "arm64"), ("Windows", "arm64"), ("Darwin", "unknown"), ("FreeBSD", "x86_64")):
+            with self.assertRaises(e2e.Blocked):
+                e2e.host_image(system, arch)
+
+    def test_arm_image_metadata_must_match_abi_api_and_installed_path(self):
+        self.system, self.machine, self.arm = "Darwin", "arm64", "1"
+        metadata = self.install_arm_image()
+        valid = metadata.read_text()
+        for bad in (valid.replace("<abi>arm64-v8a", "<abi>x86_64"),
+                    valid.replace("<api-level>26", "<api-level>27"),
+                    valid.replace("<api-level>26", "<api-level>36"),
+                    valid.replace(ARM_IMAGE, X86_IMAGE)):
+            metadata.write_text(bad)
+            report = self.diagnose()
+            self.assertEqual(report["status"], "BLOCKED")
+            self.assertTrue(any(ARM_IMAGE in message for message in report["blockers"]))
+
+    def test_legacy_x86_v1_manifest_remains_valid_and_is_not_rewritten(self):
+        self.home.mkdir()
+        state, directory = HostTests.make_provision(self)
+        original = (self.home / "device.json").read_bytes()
+        self.assertEqual(e2e.load_device(self.home), state)
+        self.assertEqual(self.diagnose()["status"], "PASS")
+        self.assertEqual((self.home / "device.json").read_bytes(), original)
+        self.assertEqual(state["version"], 1)
+
+    def test_x86_state_is_never_migrated_or_adopted_on_apple_silicon(self):
+        self.home.mkdir()
+        _, directory = HostTests.make_provision(self)
+        manifest = (self.home / "device.json").read_bytes()
+        config = (directory / "config.ini").read_bytes()
+        self.system, self.machine, self.arm = "Darwin", "arm64", "1"
+        self.install_arm_image()
+        self.assertEqual(self.diagnose()["status"], "BLOCKED")
+        with self.assertRaises(e2e.Blocked):
+            e2e.provision(self.home, self.sdk, 5580)
+        self.assertEqual((self.home / "device.json").read_bytes(), manifest)
+        self.assertEqual((directory / "config.ini").read_bytes(), config)
+
+    def test_native_arm_v1_state_validates_and_foreign_identity_stays_blocked(self):
+        self.system, self.machine, self.arm = "Darwin", "arm64", "1"
+        self.install_arm_image()
+        state, _ = self.own_arm_avd()
+        self.assertEqual(e2e.load_device(self.home), state)
+        self.devices += "emulator-5580 device\n"
+        self.runtime = {"name": state["name"], "ro.kernel.qemu": "1", "ro.build.version.sdk": "26",
+                        "sys.boot_completed": "1", "ro.product.cpu.abi": "arm64-v8a"}
+        self.assertEqual(self.diagnose()["dedicated_avd"]["status"], "OWNED_BOOTED")
+        self.runtime["name"] = "foreign"
+        self.assertEqual(self.diagnose()["status"], "BLOCKED")
+        self.runtime["name"] = state["name"]
+        self.runtime["ro.product.cpu.abi"] = "x86_64"
+        self.assertEqual(self.diagnose()["status"], "BLOCKED")
+
+    def test_arm_avd_config_cannot_substitute_other_api_or_abi(self):
+        self.system, self.machine, self.arm = "Darwin", "arm64", "1"
+        state, directory = self.own_arm_avd()
+        valid = (directory / "config.ini").read_text()
+        for bad in (valid.replace("android-26", "android-27"), valid.replace("android-26", "android-36"),
+                    valid.replace("abi.type=arm64-v8a", "abi.type=x86_64")):
+            (directory / "config.ini").write_text(bad)
+            with self.assertRaises(e2e.Blocked):
+                e2e.load_device(self.home)
+
+    def test_arm_provision_uses_selected_package_and_creates_backward_compatible_state(self):
+        self.system, self.machine, self.arm = "Darwin", "arm64", "1"
+        self.install_arm_image()
+        captured = []
+        def create(command, **kwargs):
+            args = [str(value) for value in command]
+            captured.append(args)
+            self.assertEqual(args[args.index("--package") + 1], ARM_IMAGE)
+            name = args[args.index("--name") + 1]
+            directory = self.home / "avd" / (name + ".avd")
+            directory.mkdir()
+            (directory / "config.ini").write_text("image.sysdir.1=system-images/android-26/google_apis/arm64-v8a/\nabi.type=arm64-v8a\n")
+            (directory.parent / (name + ".ini")).write_text("path=" + str(directory) + "\n")
+            self.assertEqual(kwargs["env"]["ANDROID_AVD_HOME"], str(self.home / "avd"))
+            return "created (host mock, not a real AVD)"
+        with patch.object(e2e, "checked", side_effect=create):
+            e2e.provision(self.home, self.sdk, 5580)
+        state = e2e.load_device(self.home)
+        self.assertEqual(state["image"], ARM_IMAGE)
+        self.assertEqual(state["version"], 1)
+        self.assertEqual(len(captured), 1)
+        self.assertNotIn("--force", captured[0])
+
+    def test_boot_identity_checks_native_abi_and_rejects_api_substitution(self):
+        runner = e2e.Runner(self.home, self.sdk)
+        runner.adb, runner.serial = "adb", "emulator-5580"
+        runner.selection = e2e.host_image("Darwin", "arm64")
+        runner.state = {"name": "owned", "image": ARM_IMAGE}
+        with patch.object(runner, "raw_adb", side_effect=["owned\nOK", "1", "26", "arm64-v8a", "1"]):
+            runner.identify(boot=True)
+        self.assertEqual(runner.summary["device"]["observed_abi"], "arm64-v8a")
+        for output in (["owned\nOK", "1", "26", "x86_64"], ["owned\nOK", "1", "27"], ["owned\nOK", "1", "36"]):
+            with patch.object(runner, "raw_adb", side_effect=output), self.assertRaises(e2e.Blocked):
+                runner.identify(boot=True)
+
+    def test_emulator_launch_forces_native_arm64_and_hardware_acceleration(self):
+        self.system, self.machine, self.arm = "Darwin", "x86_64", "1"  # Rosetta Python
+        self.own_arm_avd()
+        runner = e2e.Runner(self.home, self.sdk)
+        with patch.object(e2e, "checked", return_value="List of devices attached\n"), \
+             patch.object(e2e.subprocess, "Popen") as launch, \
+             patch.object(e2e.time, "monotonic", side_effect=[0, 241]):
+            with self.assertRaisesRegex(e2e.Blocked, "boot timeout"):
+                runner.connect()
+        args = launch.call_args.args[0]
+        self.assertEqual(args[:2], ["/usr/bin/arch", "-arm64"])
+        self.assertEqual(args[args.index("-accel") + 1], "on")
+        self.assertNotIn("-wipe-data", args)
+        runner.emulator_log.close()
 
 
 if __name__ == "__main__":

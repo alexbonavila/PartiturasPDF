@@ -771,6 +771,23 @@ class LiveUiEvidenceTests(unittest.TestCase):
         self.assertTrue((destination / "hierarchy.xml").is_file())
         self.assertEqual((self.runner.out / "screenshot.png").read_text(), "post-test screenshot")
 
+    def test_missing_root_and_unavailable_menu_checkpoints_retain_navigation_metadata(self):
+        for checkpoint in ("primary storage root missing before configuration", "picker overflow unavailable"):
+            metadata = {"run": self.runner.run_id, "selector": "checkpoint: " + checkpoint,
+                        "package": "com.android.documentsui", "expectedPickerPackage": "com.android.documentsui",
+                        "expectedPrimaryRootTitle": "Renamed API 26 emulator", "visibleRootTitles": ["Downloads"],
+                        "errors": []}
+            self.payloads["metadata.json"] = json.dumps(metadata).encode()
+            self.collect()
+            destination = self.runner.out / "instrumentation-failures" / self.event
+            self.assertEqual(json.loads((destination / "metadata.json").read_bytes()), metadata)
+            self.assertEqual((destination / "screenshot.png").read_bytes(), self.png)
+            self.assertTrue((destination / "hierarchy.xml").exists())
+            self.assertEqual(self.runner.summary["diagnostics"], [])
+            self.assertEqual(self.runner.ui_failure_cleanup, self.root)
+            self.event = "b" * 32  # Each checkpoint must survive as a separate event.
+        self.assertEqual(len(self.runner.summary["instrumentation_failures"]), 2)
+
     def test_recollection_never_overwrites_first_snapshots(self):
         self.collect()
         self.payloads["metadata.json"] = b"replacement"

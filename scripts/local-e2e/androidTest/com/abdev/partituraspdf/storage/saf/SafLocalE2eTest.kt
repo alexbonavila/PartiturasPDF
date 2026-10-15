@@ -9,10 +9,12 @@ import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
@@ -23,7 +25,6 @@ import com.abdev.partituraspdf.core.result.Outcome
 import com.abdev.partituraspdf.storage.api.ReadAccessLimits
 import java.io.File
 import java.security.MessageDigest
-import java.util.regex.Pattern
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -207,11 +208,24 @@ class SafLocalE2eTest {
             errors.put("package: $error")
             null
         }
+        val rootTitle = try { primaryRootTitle() } catch (error: Exception) {
+            errors.put("primary root title: $error"); null
+        }
+        val visibleRoots = try {
+            device.findObjects(By.res("android:id/title").hasAncestor(By.res(PICKER, "roots_list")))
+                .map { it.text }
+        } catch (error: Exception) {
+            errors.put("root titles: $error"); emptyList<String>()
+        }
         File(event, "metadata.json").writeText(JSONObject()
             .put("run", run).put("selector", selector).put("stage", args.getString("class"))
             .put("captureStartedElapsedRealtimeMs", started)
             .put("elapsedRealtimeMs", SystemClock.elapsedRealtime()).put("wallTimeMs", System.currentTimeMillis())
-            .put("package", visiblePackage).put("errors", errors).toString())
+            .put("package", visiblePackage)
+            .put("expectedPickerPackage", PICKER)
+            .put("expectedPrimaryRootTitle", rootTitle)
+            .put("visibleRootTitles", JSONArray(visibleRoots))
+            .put("errors", errors).toString())
     }
 
     private fun failUi(failure: AssertionError): Nothing {
@@ -222,11 +236,6 @@ class SafLocalE2eTest {
         }
         throw failure
     }
-
-    private fun requireUi(selector: androidx.test.uiautomator.BySelector): UiObject2 = awaitSafUi(
-        selector.toString(), WAIT, SystemClock::elapsedRealtime, { SystemClock.sleep(100) },
-        find = { device.findObject(selector) }, capture = ::captureMissingUi,
-    )
 
     private fun requireInteractiveActivity(): UiObject2 = awaitSafUi(
         "resumed/focused SafGrantAcceptanceActivity and enabled saf_accept_select_button", WAIT,
@@ -246,6 +255,85 @@ class SafLocalE2eTest {
         capture = ::captureMissingUi,
     )
 
+    // API 26 ExternalStorageProvider uses Settings.Global.DEVICE_NAME, NOT Build.MODEL.
+    // Only the unset-name fallback comes from the provider's localized resources.
+    private fun primaryRootTitle(): String =
+        primarySafRootTitle(Settings.Global.getString(context.contentResolver, "device_name")) {
+            systemString("com.android.externalstorage", "root_internal_storage")
+        }
+
+    private fun systemString(packageName: String, name: String): String {
+        val resources = context.packageManager.getResourcesForApplication(packageName)
+        val id = resources.getIdentifier(name, "string", packageName)
+        check(id != 0) { "Missing API 26 system string $packageName:$name" }
+        return resources.getString(id)
+    }
+
+    private fun requirePicker(action: String) {
+        if (device.currentPackageName != PICKER) {
+            failUi(AssertionError("DocumentsUI is not foreground before $action"))
+        }
+    }
+
+    private fun requirePickerUi(selector: androidx.test.uiautomator.BySelector): UiObject2 = awaitSafUi(
+        "DocumentsUI control: $selector", WAIT, SystemClock::elapsedRealtime, { SystemClock.sleep(100) },
+        find = { requirePicker("lookup $selector"); device.findObject(selector) },
+        capture = ::captureMissingUi,
+    )
+
+    private fun clickPicker(control: UiObject2, action: String) {
+        requirePicker(action)
+        control.click()
+        device.waitForIdle()
+    }
+
+    private fun showPickerRoots() {
+        requirePicker("inspect roots drawer")
+        if (!device.hasObject(By.res(PICKER, "roots_list"))) {
+            // NavigationViewManager assigns drawer_open to the toolbar navigation ImageButton.
+            val navigation = By.clazz("android.widget.ImageButton").pkg(PICKER)
+                .desc(systemString(PICKER, "drawer_open")).hasAncestor(By.res(PICKER, "toolbar"))
+            clickPicker(requirePickerUi(navigation), "open roots drawer")
+        }
+        requirePickerUi(By.res(PICKER, "roots_list"))
+    }
+
+    private fun showInternalStorage() {
+        requirePicker("configure hidden primary storage")
+        // Back can cancel ACTION_OPEN_DOCUMENT_TREE. Close only the identified sliding drawer
+        // with its normal horizontal gesture, then prove the picker is still foreground.
+        // Wide layouts have a permanent roots pane and need no drawer dismissal.
+        if (device.hasObject(By.res(PICKER, "drawer_layout")) &&
+            device.hasObject(By.res(PICKER, "roots_list"))) {
+            val drawer = requirePickerUi(By.res(PICKER, "drawer_roots"))
+            requirePicker("close roots drawer by resource-bounded swipe")
+            drawer.swipe(Direction.LEFT, 1.0f)
+            awaitSafUi("roots drawer closed without cancelling picker", WAIT,
+                SystemClock::elapsedRealtime, { SystemClock.sleep(100) },
+                find = {
+                    requirePicker("wait for drawer dismissal")
+                    if (!device.hasObject(By.res(PICKER, "roots_list"))) true else null
+                }, capture = ::captureMissingUi)
+        }
+        // Framework ActionMenuPresenter overflow has no resource ID. Resolve its platform
+        // accessibility string and constrain it to DocumentsUI's main toolbar.
+        val overflow = By.clazz("android.widget.ImageButton").pkg(PICKER)
+            .desc(systemString("android", "action_menu_overflow_description"))
+            .hasAncestor(By.res(PICKER, "toolbar"))
+        requirePicker("inspect overflow availability")
+        if (!device.hasObject(overflow)) {
+            captureMissingUi("checkpoint: picker overflow unavailable: $overflow")
+        }
+        clickPicker(requirePickerUi(overflow), "open picker overflow menu")
+        val show = By.res("android:id/title").pkg(PICKER)
+            .text(systemString(PICKER, "menu_advanced_show"))
+        requirePicker("inspect internal storage menu availability")
+        if (!device.hasObject(show)) {
+            captureMissingUi("checkpoint: show-internal-storage menu unavailable: $show")
+        }
+        clickPicker(requirePickerUi(show), "enable internal storage in real picker")
+    }
+
     private fun pickFolder() {
         device.wakeUp()
         context.startActivity(Intent(context, SafGrantAcceptanceActivity::class.java)
@@ -257,29 +345,33 @@ class SafLocalE2eTest {
         } catch (failure: AssertionError) {
             failUi(failure)
         }
-        // API 26 DocumentsUI exposes its roots through the standard navigation drawer.
-        if (!device.hasObject(By.res(PICKER, "roots_list"))) {
-            requireUi(By.desc("Show roots")).click()
-        }
-        // Show internal storage is a persistent DocumentsUI preference; use its menu if needed.
-        fun storageRoot(): UiObject2? {
-            val roots = requireUi(By.res(PICKER, "roots_list"))
-            return roots.wait(Until.findObject(By.text(
-                Pattern.compile("Internal storage|" + Pattern.quote(Build.MODEL)))), 2000)
-        }
-        var root = storageRoot()
-        if (root == null) {
-            device.pressBack()
-            requireUi(By.desc("More options")).click()
-            requireUi(By.text("Show internal storage")).click()
-            requireUi(By.desc("Show roots")).click()
-            root = storageRoot() ?: failUi(AssertionError("Internal storage root is unavailable"))
-        }
-        root.click()
-        // Navigate by hierarchy/text, not coordinates; fresh AVD has a bounded directory list.
-        requireUi(By.res("android:id/title").text("Download")).click()
-        requireUi(By.res("android:id/title").text(directory)).click()
-        requireUi(By.res("android:id/button1").pkg(PICKER)).click()
+        selectSafPrimaryRoot(
+            foreground = { device.currentPackageName == PICKER },
+            showRoots = ::showPickerRoots,
+            findRoot = {
+                requirePicker("discover primary root")
+                val title = primaryRootTitle()
+                val deadline = SystemClock.elapsedRealtime() + 2000
+                var match: UiObject2? = null
+                do {
+                    requirePicker("read primary root title")
+                    val roots = requirePickerUi(By.res(PICKER, "roots_list"))
+                    val matches = roots.findObjects(By.res("android:id/title").text(title))
+                    if (matches.size > 1) failUi(AssertionError("Ambiguous primary storage root title"))
+                    match = matches.singleOrNull()
+                    if (match != null) break
+                    SystemClock.sleep(100)
+                } while (SystemClock.elapsedRealtime() < deadline)
+                match
+            },
+            showInternalStorage = ::showInternalStorage,
+            selectRoot = { clickPicker(it, "select primary storage root") },
+            capture = ::captureMissingUi,
+        )
+        // Real folder navigation, scoped to DocumentsUI; no coordinate taps or fabricated results.
+        clickPicker(requirePickerUi(By.res("android:id/title").pkg(PICKER).text("Download")), "open Download")
+        clickPicker(requirePickerUi(By.res("android:id/title").pkg(PICKER).text(directory)), "open owned fixture folder")
+        clickPicker(requirePickerUi(By.res("android:id/button1").pkg(PICKER)), "confirm real tree selection")
         // API 26 SELECT returns the grant; wait for the real activity-result callback.
         val deadline = SystemClock.elapsedRealtime() + WAIT
         while (SystemClock.elapsedRealtime() < deadline) {

@@ -518,3 +518,84 @@ what is unavailable. The deliberate after-grant assertion remains a functional
 failure with existing host diagnostics; it does not synthesize a missing selector.
 An authentic SAF PASS, failure-time screenshots from a real missing-UI event, and
 Android regression-suite execution remain pending until actually run.
+
+## L01D: API 26 DocumentsUI root discovery
+
+The owner's authentic macOS Apple Silicon/API 26 ARM64 run at
+`a9d1fdf4871cfe18918d4aaf8815759cf0b4d6a5` reached DocumentsUI. After opening
+its roots drawer, the test failed to find internal storage, pressed Back and
+cancelled the picker. The later missing `More options` assertion was on the debug
+activity, whose status was `Folder selection cancelled`. This was a navigation
+defect, not evidence that DocumentsUI had never launched.
+
+The correction removes Back entirely from root discovery. It checks the foreground
+package before each picker lookup/click/gesture and stops with live evidence if
+DocumentsUI disappears. Discovery uses these API 26 properties, reviewed against
+[AOSP DocumentsUI android-8.0.0_r1](https://github.com/aosp-mirror-neo/platform_packages_apps_documentsui/tree/android-8.0.0_r1)
+and [ExternalStorageProvider](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-8.0.0_r1/packages/ExternalStorageProvider/src/com/android/externalstorage/ExternalStorageProvider.java):
+
+- Roots are under `com.android.documentsui:id/roots_list`; row titles use
+  `android:id/title`. The primary volume title is `Settings.Global.DEVICE_NAME`,
+  with the provider's localized `root_internal_storage` string only when unset.
+  It is not necessarily `Build.MODEL` or the English `Internal storage` label.
+  Duplicate matching titles fail safely rather than selecting an arbitrary root.
+- The main `toolbar` navigation `ImageButton` has DocumentsUI's localized
+  `drawer_open` description. It opens the drawer; it is not a close toggle.
+- If primary storage is missing, capture its current screen first. On sliding
+  layouts, swipe left **within the resource-identified `drawer_roots` view** and
+  wait for `roots_list` to disappear while DocumentsUI stays foreground. This is
+  a view-bounded drawer gesture, not an arbitrary coordinate tap or Back press.
+  A permanent wide-layout roots pane needs no dismissal. The runner still requires
+  the dedicated emulator's `en-US` locale (left-to-right layout).
+- The framework overflow `ImageButton` is constrained to the main `toolbar` and
+  uses Android's `action_menu_overflow_description` string. Its popup entry is
+  `android:id/title` with DocumentsUI's localized `menu_advanced_show` value.
+  Enable it through that real menu, reopen roots and discover the primary title
+  again. No missing-root fallback selects another provider or injects a grant.
+
+Missing roots generate a checkpoint **before changing screens**. Unavailable
+picker overflow/storage menu controls also generate immediate checkpoints, in
+addition to bounded selector-timeout evidence. Each capture remains a separate
+UUID event in the existing `instrumentation-failures/` report directory; successful
+configuration does not by itself turn a diagnostic checkpoint into a JUnit failure.
+Metadata now includes the expected picker package, expected primary-root title and
+visible root titles, alongside actual foreground package, timestamps and capture
+errors. Host post-test snapshots remain separate and cannot overwrite these events.
+All original read-only grant, exact provider/tree, canonical PDF, force-stop,
+revocation, reacquisition and unrelated-grant assertions remain in place.
+
+Cloud validation of this revision:
+
+- `python -m unittest discover -s scripts/tests -v`: **118 PASS**, including the
+  new missing-root/menu checkpoint metadata and retention regression.
+- `bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest :app:assembleRelease --max-workers=4 --console=plain`:
+  **PASS**; **165 JVM tests**, no failures/errors/skips; Lint has zero errors and
+  the same 20 existing warnings. Thirteen new debug-only JVM tests cover discovery,
+  drawer/configuration ordering, unexpected picker closure, missing roots/menus,
+  capture failures and the device-name/localized-fallback title rule.
+- `bash ./gradlew -I scripts/local-e2e.init.gradle :app:assembleDebugAndroidTest --max-workers=4 --console=plain`:
+  **PASS**. DEX inspection finds the opt-in class only in the opt-in test APK.
+  Rebuilding without the init script excludes it from ordinary instrumentation;
+  release APK inspection excludes the debug harness/helpers/IDs and PDF fixtures.
+- Localization **PASS** (English/Catalan/Spanish); canonical fixture validation
+  **PASS** (15 fixtures); `git diff --check` **PASS**.
+
+These host tests exercise orchestration with callbacks; APK compilation and AOSP
+source review do not prove actual drawer gestures or menu rendering. Authentic
+SAF E2E and the regular Android device suite are **NOT RUN** in this cloud
+environment: no attached device and no usable emulator acceleration. Production
+SAF sources, permissions, schemas, dependencies, coverage thresholds and CI gates
+are unchanged. No physical device, application data or existing grant was cleared.
+
+Owner verification on the **already provisioned, dedicated API 26 ARM64 AVD**:
+
+```bash
+python3 scripts/local_e2e.py doctor
+python3 scripts/local_e2e.py run --suite saf
+```
+
+Keep the printed report directory and its full instrumentation output. A genuine
+PASS requires the existing acquisition, force-stop persistence, revocation and
+reacquisition stages to execute successfully on Android. If discovery still fails,
+inspect the earliest missing-root checkpoint and subsequent menu/foreground event,
+not only the host's post-test screenshot. Do not re-provision or wipe the AVD.

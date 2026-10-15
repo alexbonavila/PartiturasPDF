@@ -430,3 +430,178 @@ workflow change, PR creation or merge is included in this task. E04 remains pend
 and human review. API27/36 final-revision compatibility, physical Android8.1 acceptance, deferred
 Phase C backup/restore/D2D acceptance and Phase E closure are not established here. E05/E06 remain
 unimplemented; no production defect has been demonstrated by these unexecuted Android tests.
+
+## E05 — host SAF grants, error boundaries and reader lifetimes
+
+E05 is separately owner-authorized on feat/app-composition-e, based on E04
+f0a89782f630467f6f2f5e948ffc49908050cea8. Changes are limited to the new
+AppSafLifecycleIntegrationTest.kt and this appended documentation. No production mediator,
+contract, adapter, UI, manifest, dependency, schema or policy change is necessary or included.
+E03/E04 tests and CanonicalPdfContentProvider remain unchanged.
+
+### Evidence carried forward
+
+On October 15, 2026 the owner reports local disposable Android8.0 / API26 AVD results:
+E03 12/12 PASS, E04 4/4 PASS, and the full E04 suite 221/221 PASS, zero failures/skips.
+These supplement the historical cloud NOT RUN entries above. They are owner-reported local
+executions, not Codex/GitHub Actions executions, coverage measurements or physical Android8.1
+tablet acceptance. No new device execution is implied for the E05 revision.
+
+### Existing host boundary is sufficient
+
+AppGraph.treeGrants already exposes the existing SafTreeGrantAccess to a controlled application
+host. Future features receive their narrow catalog/read/repository contracts from that host;
+they do not need Android permission mechanics or a global graph/provider. No production reader
+ViewModel, application-host picker flow or orchestration service is authorized for wiring in E05.
+A second mediator would duplicate existing operations without owning a concrete missing duty.
+The tests therefore exercise the current API through AppGraph/AppGraphFactory's isolated seam.
+They do not create a permission repository, background monitor or automatic reconciliation.
+Application-based production construction remains covered by E03, not the E05 injection fixture.
+
+treePickerIntent returns ACTION_OPEN_DOCUMENT_TREE without requesting WRITE. Picker **result**
+flags supply capabilities: absent READ is rejected, invalid result URIs are rejected before any
+take callback, and only FLAG_GRANT_READ_URI_PERMISSION is persisted/released even if WRITE was
+offered. A successful take callback alone is insufficient: the reported persisted READ list must
+contain the selected tree. Nested folders use that selected-tree root. No broad storage permission
+or picker UI/launcher is added.
+
+An unconfirmed tree yields Success(false) from hasPersistedReadGrant, not revocation or deletion.
+Only a host which previously confirmed persistence may use requirePreviouslyPersistedReadGrant;
+the helper stores no history itself. Known disappearance yields PERMISSION_REVOKED. Security
+rejection while taking/querying a grant yields PERMISSION_DENIED; query failure cannot establish
+revocation. An expired/invalid platform take is already covered by SafTreeGrantAccessTest.
+Grant queries and changes never edit registry/metadata automatically.
+
+### Tests, evidence levels and isolation
+
+All seven tests use an isolated real Room database e05-UUID.db shared by the production registry
+and metadata adapters in one graph. An independently owned real test DataStore supplies the graph's
+preferences slot but is never read/written; the production delegate is not invoked. Its SupervisorJob
+is cancelled/joined at teardown. Resource names are checked absent before ownership is claimed.
+The factory owns only the test Room lifetime; teardown closes owners, joins provider completions and
+store jobs, checks for temporary leaks, then removes only the owned UUID database/sidecars and cache.
+No existing grant, document, production database or preference is cleared or replaced.
+
+ControlledGrants uses instance-local callbacks for deterministic take/release/report states;
+these callbacks never call Android takePersistableUriPermission or releasePersistableUriPermission.
+Even after those tests execute, they will prove simulated transitions, **not authentic picker
+authorization/revocation**. The one real OS grant-query test only reads persistedUriPermissions;
+it compares URI/capability sets before/after without printing their potentially private contents.
+Its fresh UUID tree is ungranted and no real grant is acquired or released.
+
+Actual file reads always use the target ContentResolver and the unchanged E03 provider. Fixture01
+(direct file) and fixture02 (asynchronous pipe) come from the canonical manifest/assets. The live-copy
+test checks complete copy bytes against the canonical asset and its manifest length/page count.
+The provider's request-token completion report verifies successful delivery or producer termination
+after cancellation/failure. The exported test provider does not enforce picker grants; controlled
+grant decisions and actual resolver readability are intentionally distinct levels of evidence.
+
+| Test in AppSafLifecycleIntegrationTest | New composition assertion / evidence level | E05 Android result |
+| --- | --- | --- |
+| hostPersistsOnlyReturnedReadCapabilityAndRequiresReportedConfirmation | Existing host grant object, picker flags, invalid/missing READ rejection, take without confirmation, platform-denial seam, nested grant root, READ-only take/release and unchanged real metadata; simulated grants | BLOCKED / NOT RUN |
+| realPersistedGrantQueryDoesNotTurnRegistrationIntoAuthorization | Actual OS persisted-grant query through graph, unknown tree remains false despite real Room registration; existing OS grant set unchanged | BLOCKED / NOT RUN |
+| knownGrantLossAndRestorationPreserveMetadataUntilExplicitHostObservation | Simulated known grant loss -> revoked; no automatic unregister/metadata loss; explicit test-host observation; restored grant alone does not imply AVAILABLE; subsequent real resolver open supports a new historical AVAILABLE observation, revision remains Unknown | BLOCKED / NOT RUN |
+| graphReadFailuresKeepTypedBoundariesAndNeverReconcileRegistration | Fault-injected provider boundary preserves INVALID_DOCUMENT, PERMISSION_DENIED, PROVIDER_UNAVAILABLE and PROVIDER_IO_FAILURE; unexpected programming exception propagates; association/favorite/hint unchanged | BLOCKED / NOT RUN |
+| boundedAndPrivateCopyFailuresLeaveHistoricalMetadataAndNoPartialFile | Actual resolver pipes through graph: INPUT_LIMIT and test-owned directory obstruction -> PRIVATE_STORAGE_UNAVAILABLE, no partial copy or metadata mutation | BLOCKED / NOT RUN |
+| cancellationAtPendingResolverHandoffReleasesAcquiredDescriptorWithoutMutation | Actual resolver descriptor paused by an injected handoff gate; cancel/join, CancellationException propagation, descriptor closed, no copy or metadata mutation | BLOCKED / NOT RUN |
+| revocationAndFactoryCloseDoNotOwnTheReadersCopiedSessionOrBitmap | Actual resolver materialization/native PdfRenderer, simulated grant loss, retained registration, stale/render-limit rejection; factory closes opened Room but not reader-owned copy/session/bitmap; session close deletes copy and bitmap lease closes independently | BLOCKED / NOT RUN |
+
+Injected SecurityException models denial, DeadObjectException models explicit Binder death,
+FileNotFoundException/IOException model ambiguous provider I/O, and IllegalStateException remains
+a programming defect. No actual Binder process is killed. Expected values are the existing typed
+AppError enums, never exception text or paths. No failed open is translated to DOCUMENT_DELETED
+or proof of revocation, and no private-copy failure becomes a malformed-PDF classification.
+
+The test host, not a new production coordinator, explicitly records PERMISSION_REVOKED only after
+its controlled previously confirmed grant disappears. It records AVAILABLE only after a real read
+opens successfully; that remains an observation, not a guarantee of later access. Restoring the
+simulated grant does not itself update availability, registration or revision. Favorites and Unknown
+reading hints survive every tested transition. No VerifiedSnapshot evidence is constructed in E05.
+
+The native lifetime test never closes the transferred original ReadHandle. A copied session remains
+usable after simulated grant loss/factory shutdown because its owned bytes are already local; this
+does not authorize new provider access or prescribe future reader UI policy. Explicit session close
+is idempotent and removes its copy. The caller's live bitmap remains usable until its own lease closes,
+then recycles; calls against the closed session reject with SESSION_CLOSED. Factory reuse represents
+another host consumer, not a new Activity/UI lifecycle implementation. Cancellation uses latch
+handshakes and a joined worker, with failure watchdogs and no arbitrary sleeps.
+
+### Existing coverage reused rather than duplicated
+
+- SafTreeGrantAccessTest covers the full grant validation/release matrix, including expired takes,
+  invalid URI variants, nested roots and real unknown-tree queries. SafFinalHardeningTest covers
+  proven prior loss versus unknown grant and failed lookup, idle-pipe cancellation and Binder death.
+- SafReadRobustnessTest and SafReadCopyRecoveryTest cover mid-copy cancellation, interrupted input,
+  orphan/active-copy recovery and cleanup failures. E03 additionally cancels after actual copy progress.
+  E05 adds cancellation at the graph's pending real-descriptor handoff, not another copy algorithm.
+- SafPdfIntegrationTest preserves invalid page, stale generation, axis/area limits, closed sessions,
+  real bitmap leases and native fixture coverage. AndroidPdfFixturesInstrumentedTest and JVM PDF tests
+  retain their native/ownership/error matrices. E05 adds copied-session ownership across grant loss and
+  closing a factory with an actually opened Room database. No corrupt/encrypted native opens are added.
+- AppPersistenceIntegrationTest and C-phase suites retain durable persistence, revision, transaction,
+  concurrent-writer and corruption checks; E05 checks that access failures do not reconcile that state.
+
+### Available validation
+
+Host validation: October 15, 2026, JDK25.0.4.1, Gradle9.8.0, AGP9.4.1, SDK37; minSdk26 unchanged.
+No emulator/device is connected (adb devices -l empty; /dev/kvm absent). No E05 Android test,
+genuine grant flow or new native/cleanup assertion has executed in Codex.
+
+| Check actually run | Result |
+| --- | --- |
+| bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest --rerun --max-workers=4 --console=plain | PASS both APKs compile, Lint and explicitly rerun JVM task; existing contract coverage gate passes |
+| python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect | PASS 146 executed JVM tests, zero failures/skips |
+| python3 -m unittest discover -s scripts/tests -v | PASS 39 infrastructure tests |
+| python3 scripts/validate_localization.py | PASS English/Catalan/Spanish |
+| python3 test-fixtures/scripts/verify_fixtures.py | PASS all 15 fixture hashes, structure and host rendering |
+| Compiled signatures / Android source inventory | PASS seven void JUnit methods; 228 expected tests = 221 unchanged + 7 E05, not executed here |
+| Lint report | PASS 0 errors, 20 existing warnings |
+| Scope, unchanged E03/E04/production and git diff --check | PASS; no dependency/build/manifest/schema/CI/policy changes |
+| E05, E03/E04 regression and full Android suite at this revision | BLOCKED / NOT RUN; APK compilation is not instrumentation execution |
+
+No new production business logic or JVM tests are introduced. The 90% line / 80% branch policy,
+coverage inputs, denominators and exclusions are unchanged. No new Android execution/combined
+coverage report exists. The known full-factory JVM-only diagnostic remains 13/36 lines (36.11%)
+and 12/14 branches (85.71%); Android constructor/error-cleanup paths are not proved by that report.
+Owner-reported E03/E04 PASS results do not supply measured coverage. Do not claim this gap is closed
+by compiled E05 tests or manufacture updated persistence/native percentages.
+
+### Local API26 execution and deferred authentic grant acceptance
+
+Use a deliberately selected disposable API26 AVD and preserve each run's XML/HTML before the next:
+
+```bash
+export ANDROID_SERIAL=emulator-5554 # replace with the selected disposable AVD serial
+adb -s "$ANDROID_SERIAL" shell getprop ro.build.version.sdk # must be 26
+bash ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.app.integration.AppSafLifecycleIntegrationTest
+python3 scripts/verify_test_results.py app/build/outputs/androidTest-results/connected \
+  --required-test com.abdev.partituraspdf.app.integration.AppSafLifecycleIntegrationTest.revocationAndFactoryCloseDoNotOwnTheReadersCopiedSessionOrBitmap
+bash ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.app.integration.SafPdfIntegrationTest
+bash ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.app.integration.AppPersistenceIntegrationTest
+bash ./gradlew :app:connectedDebugAndroidTest
+python3 scripts/verify_test_results.py app/build/outputs/androidTest-results/connected \
+  --required-test com.abdev.partituraspdf.ExampleInstrumentedTest.useAppContext
+```
+
+Expect 7 E05, 12 E03, 4 E04 and 228 full-suite tests; record actual SHA, API/AVD/serial, counts,
+failures/skips and reports. Windows uses gradlew.bat and $env:ANDROID_SERIAL. Keep E03's separate
+instrumentation-invocation guidance around Android8 Pdfium failure state. No CI dispatch or new PR
+is requested by this delivery.
+
+Authentic picker grant acquisition, process-restart retention, nested real-provider access,
+OS/provider-driven revocation and recovery remain manual/device acceptance, NOT RUN here.
+The pre-existing debug-only SafGrantAcceptanceActivity can support owner-operated selection/check/
+release on a disposable installation with only a synthetic test folder. It is unchanged and is not
+launched automatically. Confirm the emulator identity and that the selected folder/grant belongs
+only to this test; never release any pre-existing user grant. Capture picker result capabilities,
+OS-reported persisted READ/WRITE bits, restart/access results and release results. Distinguish removal
+of the test app's READ grant from document deletion; test genuine external revocation separately
+where the platform/provider supports it. Do not extrapolate simulated state or an exported test
+provider's access to a successful authentic permission flow. This task adds no launcher, background
+permission monitoring, reconciliation, reader UI or global session registry. E06, final API27/36 and
+physical Android8.1 acceptance, plus deferred Phase C backup/restore/D2D acceptance, remain pending.
+No production adapter defect has been demonstrated by these unexecuted tests; any such defect
+requires a separately authorized correction. Stop for owner review after publishing E05.

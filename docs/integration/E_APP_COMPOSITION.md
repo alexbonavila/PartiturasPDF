@@ -605,3 +605,323 @@ permission monitoring, reconciliation, reader UI or global session registry. E06
 physical Android8.1 acceptance, plus deferred Phase C backup/restore/D2D acceptance, remain pending.
 No production adapter defect has been demonstrated by these unexecuted tests; any such defect
 requires a separately authorized correction. Stop for owner review after publishing E05.
+
+## E06 — final integration audit and PR readiness
+
+Audit date: October 15, 2026. Repository alexbonavila/PartiturasPDF, branch
+feat/app-composition-e. Approved code/test baseline: 3131d65a6ba5d93e2074419d51fde30be388951c.
+Fetched main remains 89075908b236f8342df46f9621a79136653c1c9c, matching authorization; no
+merge/rebase/reset is needed or performed. The worktree was clean at audit start. E06 changes
+only this document; the final documentation commit SHA is recorded in the delivery report/PR.
+No newer Android execution is inferred from this documentation commit.
+
+**Overall Phase E acceptance: BLOCKED.** Implementation review and local functional evidence
+are distinct from coverage, final hosted/compatibility checks, manual acceptance and owner approval.
+This audit does not waive any criterion or authorize the next development phase or merge.
+
+### Complete branch inventory and architecture audit
+
+The full main...feature comparison contains exactly these 11 paths, with no unexpected change:
+
+```text
+app/src/main/java/com/abdev/partituraspdf/app/di/AppGraph.kt
+app/src/main/java/com/abdev/partituraspdf/app/di/AppGraphFactory.kt
+app/src/main/java/com/abdev/partituraspdf/app/di/AppRuntimeLimits.kt
+app/src/test/java/com/abdev/partituraspdf/app/di/AppGraphFactoryTest.kt
+app/src/test/java/com/abdev/partituraspdf/app/di/AppRuntimeLimitsTest.kt
+app/src/androidTest/java/com/abdev/partituraspdf/app/integration/CanonicalPdfContentProvider.java
+app/src/androidTest/java/com/abdev/partituraspdf/app/integration/SafPdfIntegrationTest.kt
+app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppPersistenceIntegrationTest.kt
+app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppSafLifecycleIntegrationTest.kt
+app/src/androidTest/AndroidManifest.xml
+docs/integration/E_APP_COMPOSITION.md
+```
+
+The source-only changes are three composition files, two JVM test classes, four Android test/provider
+files and the test manifest. There are no deletions or changes to A1 contracts, existing SAF/PDF/data
+adapters, Room schema, DataStore delegate, MainActivity, navigation/UI, localization, production/debug
+manifests, Gradle/catalog, CI, policies or licenses. Canonical PDFs/manifest remain immutable.
+Historical architecture documents describe earlier design stages; actual compiled A1 contracts are
+the implementation authority. No new public contract is needed to compose existing adapters.
+
+AppGraph is an internal, explicitly passed typed dependency collection. It stores DocumentCatalog,
+DocumentReadAccess, DocumentRegistry, DocumentMetadataRepository, PreferencesRepository and
+PdfReadEngine contracts, immutable AppRuntimeLimits, and controlled host-only SafTreeGrantAccess.
+There is no global accessor, mutable singleton, startup hook, Activity/Compose reference or navigation
+dependency. Future features receive individual contracts rather than locating a global graph.
+
+AppGraphFactory's production constructor accepts Application and explicit limits, retains one shared
+Room instance for both metadata adapters, reuses the existing process-owned DataStore delegate and
+constructs existing SAF/PDF adapters. Synchronized get() lazily caches a successful Resources value;
+failed creation is not cached. Synchronized close() permanently rejects future get(), releases its
+Room owner once and does not close caller-owned readers or the process DataStore. Construction
+failure attempts Room cleanup while preserving the original exception and suppressing a distinct
+cleanup exception. That native failure-cleanup branch remains an explicit test/coverage gap below.
+
+KISS/DRY review: one module, one configuration value object, existing interfaces and delegate reused;
+no DI framework, duplicate permission manager, extra repository or production copy/render algorithm.
+Small isolated persistence/graph helpers repeat test assembly deliberately to avoid production file
+access; they do not create another production composition root. No speculative refactoring is justified.
+
+### Ownership matrix
+
+| Resource | Creator / retainer | Release / boundary |
+| --- | --- | --- |
+| AppGraphFactory | Future application host, one owner per application lifetime | Host explicitly closes off main after repository work is quiescent; not Activity recreation/onTerminate |
+| AppGraph | Factory, returned to host consumers | Borrowed typed references, no close; no global graph provider |
+| Room database | Production factory | Same instance injected into registry/metadata; factory releases once; tests own UUID-named on-disk files |
+| Production DataStore | Existing applicationPreferencesStore AndroidX delegate | Process-owned scope; factory borrows it and never creates a second delegate or cancels it |
+| Test DataStore | Isolated test factory and scope | Test cancels/joins scope before reopen/delete; no production preferences access |
+| SAF ReadHandle | DocumentReadAccess for each operation | One owner; unused handle closes locally; PdfReadEngine entry transfers ownership, invalidating old wrapper |
+| PdfReadSession | Engine after adopting input/native renderer | Reader caller closes off main; session closes renderer/input idempotently, independently of graph |
+| RenderedPage bitmap | Engine render then caller/cache lease | Caller closes after use; session/factory closure does not recycle a live caller lease |
+| Temporary SAF copy | Existing bounded non-seekable materialization | Copy resource owns deletion; failures/cancellation discard incomplete data; session release deletes completed copy |
+| Persisted SAF READ grant | Android following authentic picker result and READ-only persistence request | OS retains it; controlled host checks prior-known status/release, never touches unrelated user grants |
+
+Runtime limits remain explicit 64MiB per non-seekable copy, 4096 pixels per axis and 4,194,304 pixels
+per bitmap. Direct seekable input need not be copied; limits are not a universal file-size, concurrent
+cache/disk quota, native peak-memory or physical-tablet performance guarantee. Those observations
+do not certify a provider's current content revision.
+
+### Requirement-to-test and evidence matrix
+
+The owner reports real local Android8.0/API26 execution on **Tablet2 AVD, emulator-5554**, October
+15, 2026: E03 12/12, E04 4/4, E05 7/7, full E05 suite 228/228, zero failures/skips. The reported
+code revision is 3131d65a6ba5d93e2074419d51fde30be388951c. This is owner-provided emulator evidence,
+not Codex or GitHub Actions execution, not raw coverage evidence, and not a physical tablet result.
+E06 changes no code/tests. Latest-documentation-SHA hosted execution remains pending nonetheless.
+
+| Requirement | Implementation / supporting test | Execution evidence | Current criterion status |
+| --- | --- | --- | --- |
+| E01 typed dependencies and constructor boundary | AppGraph/Factory; exposesInjectedContractsWithoutReplacingOrInvokingThem, productionEntryAcceptsApplicationAndExplicitLimitsRatherThanActivityContext | Codex JVM AppGraphFactoryTest 12/12; owner E03 realApplicationFactoryReusesGraphAndDoesNotOwnPdfLeases | PASS functional evidence; full-source coverage unresolved |
+| E01 lazy/thread-safe reuse and isolated lifetime | Factory get/close; concurrentConsumersShareOneConstructionAndOneRelease, closingUnusedFactoryDoesNotAllocateAnyResources, separateOwnersHaveIndependentLimitSelectionsAndCleanup | Codex JVM PASS; owner E03/E04/E05 reuse/lifecycle PASS | PASS lifecycle evidence; native constructor-failure cleanup unmeasured |
+| E01 failure/cancellation propagation | Factory; constructionFailuresPropagateAndDoNotCacheAnIncompleteGraph, releaseFailurePropagatesWithoutAllowingReuseOrDoubleRelease, factoryDoesNotTranslateCancellationDuringConstruction | Codex JVM PASS through injection seam | BLOCKED full Android-constructor negative-path evidence |
+| E02 limits and ownership selection | AppRuntimeLimits and factory; AppRuntimeLimitsTest 6 methods, factory configuration propagation tests | Codex JVM PASS; owner E03 render/read limits PASS | PASS configuration evidence, not performance acceptance |
+| E03 real seekable/pipe input, canonical bytes, native pages/bitmaps | Existing SAF/PDF adapters via test resolver/provider; SafPdfIntegrationTest 12 methods | Owner local API26 12/12 PASS | PASS reported native integration at code baseline |
+| E04 explicit identity, shared Room, metadata/revision/rebind and persistence | Existing C adapters via isolated graph; AppPersistenceIntegrationTest 4 methods | Owner local API26 4/4 PASS | PASS reported persistence composition at code baseline |
+| E04 preferences fields, independence and store reopen | graphPreferencesAreIndependentAndPersistAfterStoreAndRoomOwnersReopen | Owner local API26 PASS within 4/4 | PASS real isolated DataStore evidence, not production-file mutation |
+| E05 READ-only host grant contract and unknown versus known loss | Existing SafTreeGrantAccess; hostPersistsOnlyReturnedReadCapabilityAndRequiresReportedConfirmation, realPersistedGrantQueryDoesNotTurnRegistrationIntoAuthorization | Owner local API26 PASS within 7/7; acquisition/revocation callbacks simulated, query real | PASS contract/query evidence; authentic grant acceptance NOT RUN |
+| E05 metadata survives current access failures | knownGrantLossAndRestorationPreserveMetadataUntilExplicitHostObservation, graphReadFailuresKeepTypedBoundariesAndNeverReconcileRegistration | Owner local API26 PASS within 7/7; grant/fault injection explicitly scoped | PASS simulated transition/error boundary evidence |
+| E05 copy/cancellation and independent graph/reader/bitmap owners | Remaining three AppSafLifecycleIntegrationTest methods; existing SAF hardening and E03 ownership tests | Owner local API26 PASS within 7/7 | PASS reported local resource assertions; no new physical/native stress measurements |
+| E06 complete comparison, security/assets and evidence consolidation | This audit; unchanged policies/workflow, APK/class/schema inspection | Codex host checks below | PASS available audit; publication/hosted/manual gates remain BLOCKED |
+
+### Error and recovery matrix
+
+Expected failures remain existing Outcome/AppError values; cancellation/programming defects propagate.
+This table describes contracts and evidence, not a newly implemented retry/reconciliation service.
+
+| Error/state | Evidence needed / existing producer | Supported interpretation and host boundary |
+| --- | --- | --- |
+| NOT_REGISTERED | Room lookup/metadata operation has no logical registration | Not document deletion; explicit ID registration is a separate authorized operation |
+| PERMISSION_DENIED | SecurityException or rejected/missing READ picker result | Denial does not establish prior revocation, PDF corruption or deletion |
+| PERMISSION_REVOKED | requirePreviouslyPersistedReadGrant used only after prior confirmation; known grant disappears | No automatic unregister/metadata erase; unknown tree's hasPersistedReadGrant=false alone is insufficient |
+| PROVIDER_UNAVAILABLE | Explicit Binder death/provider unavailability evidence | Distinct from permission rejection or confirmed deletion; no automatic metadata rewrite |
+| PROVIDER_IO_FAILURE | Ambiguous FileNotFoundException, IOException, invalid provider result/read failure | Not proof of deletion or revocation; preserve historical association and allow separately approved recheck |
+| DOCUMENT_DELETED | Requires independently confirmed deletion under existing core semantics | E03/E05 do not confirm deletion; current read adapter does not infer it from failed open |
+| INPUT_LIMIT | Actual materialized bytes exceed positive selected copy bound | No partial copy returned; future host may select an approved limit/input, never silently remove the bound |
+| PRIVATE_STORAGE_UNAVAILABLE | Private materialization/storage cannot be used | Distinct from provider I/O/malformed PDF; failed copy cleanup is attempted before returning failure |
+| REVISION_CHANGED | Verified expected metadata revision differs from registered revision | No silent overwrite; Unknown positions stay hints, historical metadata may remain after rebind |
+| STALE_SESSION | Wrong session/source generation supplied to PdfReadSession | Reject before native work; caller uses the correct session/generation rather than relabelling stale output |
+| SESSION_CLOSED | Session retired/closed | Reject requests; reopening and separate ownership are explicit caller work |
+
+SafReadCopyRecovery protects active copies within this process and retries abandoned managed-file
+cleanup on a subsequent read. It is not a cross-process durable transaction journal or a universal
+disk quota. Direct provider input can change externally; no VerifiedSnapshot is fabricated from
+provider metadata or ordinary read-copy integrity checks. Exact editing/snapshot operations remain
+outside Phase E. Native malformed/encrypted test ordering guidance remains unchanged for Android8.
+
+### Security, permission and package audit
+
+Scope: cumulative handwritten diff, compiled debug/release/instrumentation APKs, decoded manifests,
+fixture hashes, schema bytes and dependency/configuration identity. No new broad-storage permission,
+WRITE acquisition, network client/INTERNET permission, private user path, credential, PDF mutation or
+production export was introduced. This is a scoped review, not a penetration/dependency security audit.
+MainActivity remains the existing exported launcher. The existing AndroidX ProfileInstallReceiver is
+exported with android.permission.DUMP; startup provider/Room service remain non-exported. No Phase E
+production provider exists. The existing exported debug-only manual grant Activity remains debug-only.
+
+The CanonicalPdfContentProvider is exported only in the test APK, under a distinct authority, exposing
+fixed synthetic assets read-only. File delivery opens then unlinks unique cache copies; pipes produce
+asynchronously. No storage permission, picker protocol, arbitrary path or write operation is added.
+Completion records are per UUID request and consumed by tests. This is not an adversarial provider/
+authentic Android grant test. Do not install instrumentation tooling as a production distribution.
+
+APK ZIP/dex and aapt2 inspection: debug and release contain zero PDFs and none of the canonical
+provider/E03/E04/E05 integration classes or provider registration. The test APK contains all 15 PDFs
+with exact manifest hashes/lengths and the expected AndroidJUnitRunner/provider registrations.
+Release also excludes SafGrantAcceptanceActivity. Assets are not duplicated in source control.
+Room v1 schema is byte-identical to main; SHA256:
+bc23cfd06a96945472317645e1b681911c213f38001ffa0e27e9f48f8b15f32e.
+Root license and independent CC0 fixtures remain unchanged. No license/dependency update is proposed.
+
+### Host verification performed in E06
+
+Environment: managed Linux cloud, JDK25.0.4.1, wrapper9.8.0, AGP9.4.1, SDK37, JaCoCo0.8.14;
+source/target Java11 and minSdk26 unchanged. No /dev/kvm; adb devices -l has no connected device.
+
+| Exact command/check | Result / actual evidence |
+| --- | --- |
+| bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest --rerun --max-workers=4 --console=plain | PASS both APKs compile, Lint and explicitly re-executed JVM task; approved contract coverage gate passes |
+| python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect | PASS 146 executed JVM tests, zero failures/skips; includes 12 factory and 6 limits methods |
+| python3 -m unittest discover -s scripts/tests -v | PASS 39 infrastructure tests |
+| python3 scripts/validate_localization.py | PASS en/ca/es, no resource changes |
+| python3 test-fixtures/scripts/verify_fixtures.py | PASS all 15 immutable hashes, structure and host rendering |
+| bash ./gradlew :app:assembleRelease --max-workers=4 --console=plain | PASS unsigned release APK construction, including release vital lint |
+| Lint report | PASS 0 errors, 20 existing warnings; no new high/critical finding demonstrated by this review |
+| Compiled test discovery | PASS 23 integration void JUnit signatures: E03=12, E04=4, E05=7; total Android source inventory 228 |
+| Full branch scope/schema/license/asset/manifest/whitespace review | PASS exact 11-file accumulated scope, E06 documentation only, no binary or unrelated change |
+| Android execution in Codex | BLOCKED / NOT RUN; no local device run, no new Android count claimed |
+| UI screenshots/accessibility, PDF save/edit scenarios | NOT APPLICABLE to this unchanged-UI read-only composition task; future applicable requirements are not waived |
+
+Local logs, decoded manifests and diagnostic reports remain outside Git under
+/workspace/partituras-tools/e06-*. No generated coverage/test/build artifacts are published as source.
+
+### Coverage investigation and unresolved acceptance
+
+Existing automatic scopes are A1 core/storage.api/pdf.api JVM contracts, optional PDF-adapter
+combined reporting, and independently validated Room/DataStore package/source combined reporting.
+None of those report scopes includes app/di. enableAndroidTestCoverage is enabled, so a genuine
+Android run can generate app/di probes in the raw .ec, but a passing persistence gate is not a Phase E
+composition report. CI retains .ec/JVM .exec and persistence classes; app/di original class files are
+not included in that artifact's explicit retained class paths. Retain exact matching app/di bytecode
+from the producer build for a reproducible additional report; do not reconstruct mismatched classes
+and assume identical IDs. No workflow/artifact/configuration change is made in E06.
+
+The external uncommitted E02 diagnostic was rerun in E06 with all app/di handwritten source included,
+no new class/source exclusions:
+
+```bash
+bash ./gradlew -I /workspace/partituras-tools/e02-coverage.init.gradle \
+  :app:e02CompositionJvmCoverage --max-workers=4 --console=plain
+```
+
+| Measured JVM-only source | LINE | BRANCH |
+| --- | --- | --- |
+| AppGraph.kt | 9/9, 100% | NOT APPLICABLE, no reportable branches |
+| AppRuntimeLimits.kt | 7/7, 100% | NOT APPLICABLE |
+| Entire AppGraphFactory.kt | 13/36, 36.11% | 12/14, 85.71% |
+
+Factory get()/close() remain fully covered by JVM tests. The full source misses Android-constructor
+normal assembly/release binding at lines30-45 and constructor-failure cleanup at lines47-55; both
+branches at line51 (distinct cleanup exception versus same exception) are unexecuted in this report.
+The injection-seam failure tests do not exercise that actual production constructor catch block.
+E03 supplies positive real-constructor functional evidence, but no supplied test/report establishes
+coverage of its negative cleanup/suppression paths. Combined coverage must be measured; do not
+predict a passing percentage from the positive constructor test alone.
+
+An external JaCoCo input inspection found five matching app/di class identities in current JVM
+execution data. The existing ignored local coverage.ec was only 49 bytes, dated October14, and
+ExecFileLoader rejected it with IOException. It has no fresh Android JUnit/provenance evidence;
+it was preserved and **not** merged, labelled zero coverage, or presented as an emulator run.
+No trustworthy matching Android .ec was available from the owner's local reports. Consequently
+combined Phase E coverage is BLOCKED / NOT RUN. This is invalid/stale generated evidence, not a
+demonstrated production adapter defect. The 90% line / 80% branch criterion remains unresolved;
+no denominator, threshold, policy or exclusion is changed to hide it.
+
+For fresh reproducible API26 input, use the existing approved sequence on the exact final checkout:
+preparePersistenceCoverageRun, testDebugUnitTest --no-build-cache, connectedDebugAndroidTest,
+verifyPersistenceCoverage. Preserve raw JVM .exec, Android .ec, successful XML, original app/di class
+files, run SHA, versions, timestamps and class hashes before rebuilding/cleaning. The existing
+persistence validator checks API26, same-build provenance, class IDs, probes and real test evidence
+for its own scopes. An additional temporary app/di JacocoReport can consume those compatible inputs
+and all five app/di classes; validate their IDs and report full source counters/missed branches.
+That would be a diagnostic, not an automatic new policy gate. Any needed production test seam,
+negative-path test or permanent coverage/CI change requires separately approved scope.
+
+### Hosted CI, Draft PR and compatibility
+
+Open-PR API queries (GraphQL and REST) currently fail with Forbidden. The public GitHub search
+is:pr is:open head:feat/app-composition-e shows no matching PR at audit time. Avoid duplication
+if one appears before publication. A Draft PR targeting main is authorized only after this audit
+is committed; PR creation/verification and workflow dispatch remain BLOCKED until the API is usable.
+No PR number, Draft flag or CI run is invented. The prepared PR body follows the repository template.
+The final delivery report records the actual publication attempts and refs.
+
+The running cloud allowlist does not include api.github.com. A minimal addition was saved in the
+environment configuration draft for review; saving that draft has not activated or published the
+network change. Existing Git HTTPS access works. Review/save/publish the environment settings to
+activate API access, or execute the prepared PR/dispatch commands from an authorized local session.
+No token value was read, printed, replaced or requested. No repository CI configuration was changed.
+
+| Required hosted check at final PR revision/current main | Audit-time status |
+| --- | --- |
+| build | BLOCKED / NOT RUN verified for final PR |
+| lint | BLOCKED / NOT RUN verified for final PR |
+| unit-tests | BLOCKED / NOT RUN verified for final PR |
+| instrumented-api26 | BLOCKED / NOT RUN verified for final PR |
+| localization | BLOCKED / NOT RUN verified for final PR |
+| pdf-fixtures | BLOCKED / NOT RUN verified for final PR |
+| quality-gate | BLOCKED / NOT RUN verified for final PR |
+
+The workflow triggers PRs to main, pushes to main, manual dispatch and schedule, not feature-only
+pushes. Local PASS does not imply hosted success. All seven checks must pass at the latest PR SHA
+against current main, without skipped/failed mandatory jobs or bypasses. Branch-protection state was
+not independently verified through the blocked API; this audit does not change it.
+
+For final compatibility, GitHub Actions -> CI -> Run workflow -> select feat/app-composition-e ->
+enable compatibility -> Run. First confirm its tip equals the final published documentation SHA.
+Equivalent authorized local command:
+
+```bash
+gh workflow run ci.yml --repo alexbonavila/PartiturasPDF \
+  --ref feat/app-composition-e -f compatibility=true
+gh run list --repo alexbonavila/PartiturasPDF --workflow ci.yml \
+  --branch feat/app-composition-e \
+  --json databaseId,headSha,url,status,conclusion
+```
+
+Record the matching final headSha, run ID/URL, all seven jobs, compatibility-api27 and
+compatibility-api36 results, executed XML counts and reports. Images stay API27 google_apis x86
+and API36 google_apis x86_64. Both final-revision compatibility executions are NOT RUN here;
+historical Phase0 success is not Phase E evidence. No dispatch/run ID is claimed before success.
+
+### Authentic SAF grant and physical-device acceptance
+
+Manual SAF status: NOT RUN. On a deliberately selected disposable installation/AVD, create a
+synthetic folder containing only canonical test copies. Verify serial/API and absence of user data.
+Manually open the existing debug-only SafGrantAcceptanceActivity; no automatic launch is performed.
+Select that test folder through the genuine Android picker, capture result READ capability and OS
+persisted READ/WRITE bits, then check listing/read access. Restart the process and re-open the manual
+Activity to check grant retention and a nested synthetic document. Release only the grant acquired
+for this test, check the OS list/access result and retain the known-prior-grant distinction. Repeat
+genuine selection/restoration; test OS/provider-driven revocation separately where supported.
+Never release any pre-existing grant or treat an access error as deletion. The debug harness has
+existing dedicated manual SharedPreferences; it does not exercise production AppGraph reconciliation.
+Record final SHA, AVD/provider, synthetic folder, flags, before/after/restart results and limitations.
+E05's callback states and exported fixture provider do not replace this authentic authorization flow.
+
+Physical Android8.1 status: NOT RUN; Tablet2 is an AVD, not a physical tablet. Outstanding applicable
+items include installation/compatibility, real SAF grant/restart/revocation, source survival, repeated
+open/render/close and constrained-device resource behavior. No latency, memory or tablet suitability
+measurement is invented. UI/reader performance budgets and feature interaction tests require their
+own approved consumers; physical acceptance still blocks functional phase closure under current policy.
+
+### Outstanding work and final status
+
+1. **Demonstrated acceptance defects:** none newly reproduced in production or tests by this audit.
+   No P0/P1 or concrete current-phase implementation defect was found in the scoped review; this is
+   not proof of absence. A future failure needs reproduction, owner severity assessment and separately
+   authorized correction, not a silent E06 refactor.
+2. **Blocking missing evidence/delivery:** reliable full-source app/di combined coverage, including
+   native constructor cleanup paths; Draft PR creation/verification; seven latest-revision hosted
+   checks; final API27/36; authentic grants; applicable physical Android8.1 acceptance and explicit
+   owner decision. These are not relabelled implementation bugs or waived because API26 passed.
+3. **Feature work outside this delivery:** library/reader/settings UI, navigation, application startup,
+   editing/annotations/Drive and future integration F/G/H/I remain unimplemented and require their
+   own explicit task authorization. Deferred Phase C backup/restore/D2D acceptance remains separate.
+4. **Nonblocking future considerations:** test-helper sharing only if a concrete maintenance need
+   arises; additional measured cache/concurrency/performance policy with approved consumers. None
+   is implemented here or used to defer a mandatory acceptance gate.
+
+| Stage | Explicit evidence/acceptance status |
+| --- | --- |
+| E01 | BLOCKED final full-factory coverage/negative native cleanup evidence; JVM lifecycle and positive API26 functional evidence PASS |
+| E02 | PASS configuration/JVM evidence within scope; provisional values are not device performance acceptance |
+| E03 | PASS owner-reported API26 functional evidence at code baseline; final hosted/compatibility gates pending |
+| E04 | PASS owner-reported API26 functional evidence at code baseline; final hosted/compatibility gates pending |
+| E05 | BLOCKED authentic grant/manual acceptance; seven owner-reported API26 composition tests PASS |
+| E06 | BLOCKED PR/hosted/coverage/compatibility/manual evidence; available audit checks PASS |
+| Overall Phase E | BLOCKED; not fully accepted, not merge-ready, no subsequent phase authorized |
+
+Only the human owner may make the final approval and merge decision after applicable evidence is
+complete. No merge, auto-merge, main push, protection change or further implementation is authorized.

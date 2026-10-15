@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in local Android E2E. No device reset, functional retries, or physical devices."""
+"""Opt-in local regression orchestration. No device reset, functional retries, or physical devices."""
 from __future__ import annotations
 
 import argparse
@@ -22,6 +22,9 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
+
+import local_test_evidence as evidence
+from verify_test_results import verify as verify_junit
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOME = ROOT / "build/local-e2e"
@@ -468,6 +471,9 @@ class Runner:
         self._initial_child_transport = False
         self.summary["adb_transport"] = []
         self.summary["setting_changes"] = []
+        self.summary["commands"] = []
+        self.summary["os"] = {"system": platform.system(), "machine": platform.machine(), "python": platform.python_version()}
+        self.summary["backup_acceptance"] = "NOT RUN"
         self.record("adb-transport.json", "[]")
 
     def record(self, name, value):
@@ -656,19 +662,33 @@ class Runner:
                 entry["state"] = "restoration unverified"
             self.summary["cleanup"].append(result)
 
-    def gradle(self, name, tasks, properties=(), timeout=900, *, instrumentation=False):
-        script = ROOT / ("gradlew.bat" if os.name == "nt" else "gradlew")
-        command = ([str(script)] if os.name == "nt" else ["bash", str(script)])
-        command += ["-I", str(ROOT / "scripts/local-e2e.init.gradle"), *tasks,
-                    "--console=plain", "--max-workers=4", *properties]
-        env = dict(os.environ, LOCAL_E2E_ADB=str(self.adb or ""))
+    def command(self, name, command, *, timeout=900, env=None):
+        started = time.monotonic()
+        entry = {"command": [str(x) for x in command], "log": name}
+        self.summary["commands"].append(entry)
         try:
             result = execute(command, timeout=timeout, env=env)
         except Blocked as error:
             self.record(name, str(error))
+            entry.update(exit=None, error=str(error), elapsed_seconds=time.monotonic() - started)
             raise
+        self.record(name, result.stdout + "\n" + result.stderr)
+        entry.update(exit=result.returncode, elapsed_seconds=time.monotonic() - started)
+        return result
+
+    def gradle(self, name, tasks, properties=(), timeout=900, *, instrumentation=False, mode="saf"):
+        script = ROOT / ("gradlew.bat" if os.name == "nt" else "gradlew")
+        command = ([str(script)] if os.name == "nt" else ["bash", str(script)])
+        if mode == "saf":
+            command += ["-I", str(ROOT / "scripts/local-e2e.init.gradle")]
+        elif mode != "normal":
+            raise Blocked("Unsupported instrumentation build mode")
+        command += [*tasks, "--console=plain", "--max-workers=4", *properties]
+        if ":app:assembleDebugAndroidTest" in tasks:
+            command += ["--rerun-tasks", "--no-build-cache"]
+        env = dict(os.environ, LOCAL_E2E_ADB=str(self.adb or ""))
+        result = self.command(name, command, timeout=timeout, env=env)
         output = result.stdout + "\n" + result.stderr
-        self.record(name, output)
         # The instrumentation parser is also required: adb can return 0 for failed tests.
         if result.returncode and not instrumentation:
             raise Blocked(f"Gradle failed ({result.returncode}); see {name}")
@@ -902,8 +922,278 @@ class Runner:
     def remote_folder(self):
         return "/sdcard/Download/PartiturasE2E-" + safe_run_id(self.run_id)
 
+    def verify_apk_mode(self, apk, mode, inventory=()):
+        name = str(apk.relative_to(self.out)) + ".manifest.txt"
+        tool = sdk_tool(self.sdk, "build-tools/37.0.0/aapt2")
+        result = self.command(name, [tool, "dump", "xmltree", apk, "--file", "AndroidManifest.xml"], timeout=30)
+        if result.returncode:
+            raise Blocked(f"Cannot inspect compiled test manifest; see {name}")
+        try:
+            return evidence.inspect_apk(apk, result.stdout, mode, inventory)
+        except (ValueError, OSError, zipfile.BadZipFile) as error:
+            raise Blocked(str(error)) from error
+
+    def workflow_host(self):
+        directory = self.out / "host"
+        directory.mkdir(exist_ok=True)
+        checks = []
+        self.summary["host_checks"] = checks
+        wrapper = ROOT / ("gradlew.bat" if os.name == "nt" else "gradlew")
+        gradle = [str(wrapper)] if os.name == "nt" else ["bash", str(wrapper)]
+        commands = [(name, gradle + [task, "--console=plain", "--max-workers=4"] +
+                     (["--rerun-tasks"] if name == "jvm" else [])) for name, task in (
+                         ("jvm", ":app:testDebugUnitTest"), ("lint", ":app:lintDebug"),
+                         ("debug", ":app:assembleDebug"), ("release", ":app:assembleRelease"))]
+        # Dependencies are checked, never installed. Use the verifier's declared environment.
+        commands += [("fixture-dependencies", [sys.executable, "scripts/local_test_evidence.py",
+                                               "fixture-dependencies", "test-fixtures/requirements-fixtures.txt"]),
+            ("python", [sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-v"]),
+            ("localization", [sys.executable, "scripts/validate_localization.py"]),
+            ("fixtures", [sys.executable, "test-fixtures/scripts/verify_fixtures.py"])]
+        for name, command in commands:
+            item = {"name": name, "status": "BLOCKED", "tests": None, "log": f"host/{name}.log"}
+            checks.append(item)
+            if name == "fixtures" and any(c["name"] == "fixture-dependencies" and c["status"] != "PASS" for c in checks):
+                item.update(status="NOT RUN", detail="Declared fixture dependencies unavailable; verification is blocked")
+                self.record(item["log"], item["detail"])
+                continue
+            source = ROOT / "app/build/test-results/testDebugUnitTest"
+            previous_xml = {p.name: p.stat().st_mtime_ns for p in source.glob("TEST-*.xml")} if name == "jvm" else {}
+            try:
+                result = self.command(item["log"], command)
+                output = result.stdout + "\n" + result.stderr
+                missing = re.search(r"ModuleNotFoundError|No module named|PackageNotFoundError|Missing compatible fixture dependency|"
+                                    r"JAVA_HOME.*(?:invalid|not set)|SDK location not found|Android SDK.*not found|"
+                                    r"(?:Could not|Cannot) find a Java installation|Failed to find Platform SDK|"
+                                    r"Build Tools.*not found|licenses?.*not accepted", output, re.I)
+                item["status"] = "BLOCKED" if missing else "FAIL" if result.returncode else "PASS"
+                if name == "fixture-dependencies" and result.returncode:
+                    item["status"] = "BLOCKED"
+                if name == "jvm":
+                    destination = directory / "jvm-xml"
+                    destination.mkdir(exist_ok=True)
+                    for report in source.glob("TEST-*.xml"):
+                        if report.stat().st_mtime_ns != previous_xml.get(report.name):
+                            shutil.copy2(report, destination / report.name)
+                    fresh = list(destination.glob("TEST-*.xml"))
+                    if fresh:
+                        item["tests"] = sum(len(list(ET.parse(p).getroot().iter("testcase"))) for p in fresh)
+                    if item["status"] == "PASS":
+                        item["tests"] = verify_junit(destination)
+                    if "verifyContractCoverage" not in output and item["status"] == "PASS":
+                        raise Blocked("Scoped JVM contract coverage task not evidenced")
+                elif name == "python":
+                    count = re.search(r"Ran (\d+) tests?", output)
+                    if count:
+                        item["tests"] = int(count[1])
+                    if item["status"] == "PASS" and (not count or int(count[1]) == 0 or
+                            not re.search(r"(?m)^OK\s*$", output)):
+                        raise Blocked("Missing complete unskipped Python test evidence")
+                if item["status"] != "PASS":
+                    item["detail"] = f"{name}: exit {result.returncode}; inspect {item['log']}"
+            except (Blocked, ValueError, OSError, ET.ParseError) as error:
+                item.update(status="BLOCKED", detail=str(error))
+        evidence.write_junit(directory / "junit.xml", "host-checks", checks)
+        if any(c["status"] == "FAIL" for c in checks):
+            raise FunctionalFailure("Host validation failed: " + ", ".join(c["name"] for c in checks if c["status"] == "FAIL"))
+        if any(c["status"] != "PASS" for c in checks):
+            raise Blocked("Host prerequisite/evidence blocked: " + ", ".join(c["name"] for c in checks if c["status"] != "PASS"))
+
+    def workflow_android(self):
+        directory = self.out / "android"
+        directory.mkdir(exist_ok=True)
+        self.summary["host"] = doctor(self.home, self.sdk)
+        self.record("android/doctor.json", json.dumps(self.summary["host"], indent=2))
+        if self.summary["host"]["status"] != "PASS":
+            raise Blocked("Android host preflight blocked: " + "; ".join(self.summary["host"]["blockers"]))
+        try:
+            expected = evidence.android_inventory(ROOT / "app/src/androidTest")
+        except (ValueError, OSError) as error:
+            raise Blocked(str(error)) from error
+        self.record("android/inventory.json", json.dumps(sorted(expected), indent=2))
+        self.gradle("android/gradle-build.log", [":app:assembleDebug", ":app:assembleDebugAndroidTest"], mode="normal")
+        apks = []
+        for relative in ("debug/app-debug.apk", "androidTest/debug/app-debug-androidTest.apk"):
+            source = ROOT / "app/build/outputs/apk" / relative
+            destination = directory / source.name
+            if not source.is_file():
+                raise Blocked(f"Missing ordinary APK: {source}")
+            shutil.copy2(source, destination)
+            apks.append(destination)
+        self.summary["ordinary_apk"] = self.verify_apk_mode(apks[1], "normal", expected)
+        self.summary["ordinary_apk"]["sha256"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in apks}
+        if not self.identified:
+            self.connect()
+        else:
+            self.identify(boot=True)
+        for apk in apks:
+            self.adb_command("install", "-r", str(apk), timeout=120)
+        registered = self.adb_command("shell", "pm", "list", "instrumentation")
+        component = APP + ".test/" + evidence.NORMAL_RUNNER
+        matches = re.findall(r"instrumentation:(\S+) \(target=" + re.escape(APP) + r"\)", registered)
+        if matches != [component]:
+            raise Blocked("Installed instrumentation runner identity is ambiguous or incorrect")
+        self.identify(boot=True)
+        command = [self.adb, "-s", self.serial, "shell", "am", "instrument", "-w", "-r", component]
+        cases, blocker = [], None
+        try:
+            result = self.command("android/instrumentation.log", command, timeout=1200)
+            cases = evidence.parse_android(result.stdout + "\n" + result.stderr, expected)
+            self.summary["android_cases"] = cases
+            if any(c["status"] == "FAIL" for c in cases):
+                raise FunctionalFailure("Executed ordinary Android assertion failed; see android/junit.xml")
+            if result.returncode:
+                raise Blocked(f"Android tests completed but ADB exited {result.returncode}")
+            verify_path = directory / "junit.xml"
+            evidence.write_junit(verify_path, "ordinary-android", cases)
+            verify_junit(directory, required_test=evidence.SMOKE)
+        except evidence.IncompleteInstrumentation as error:
+            cases, blocker = error.cases, str(error)
+            raise Blocked(blocker) from error
+        except Blocked as error:
+            blocker = str(error)
+            raise
+        finally:
+            self.summary["android_cases"] = cases
+            evidence.write_junit(directory / "junit.xml", "ordinary-android", cases, blocker)
+
+    def workflow_backup_preflight(self):
+        required = ("scripts/Invoke-BackupPolicyAcceptance.ps1", "scripts/backup-acceptance.init.gradle",
+                    "docs/C06_BACKUP_RESTORE_ACCEPTANCE.md", "docs/C06_PERSISTENCE_ACCEPTANCE_AUDIT.md")
+        if not all((ROOT / name).is_file() for name in required):
+            raise Blocked("Existing C06 procedure or documentation is unavailable; no replacement is provided")
+        serial = self.backup_serial
+        if not re.fullmatch(r"emulator-\d+", serial):
+            raise Blocked("C06 discovery requires an explicit emulator-NNNN, never a physical device")
+        reserved = 5580
+        if (self.home / "device.json").exists():
+            reserved = json.loads((self.home / "device.json").read_text())["port"]
+        if serial == f"emulator-{reserved}":
+            raise Blocked("C06 requires a separate disposable emulator, not the SAF E2E AVD")
+        adb = sdk_tool(self.sdk, "platform-tools/adb")
+        directory = self.out / "backup-preflight"
+        directory.mkdir(exist_ok=True)
+        def query(label, *args):
+            result = self.command(f"backup-preflight/{label}.log", [adb, "-s", serial, *args], timeout=30)
+            if result.returncode:
+                raise Blocked(f"C06 read-only query failed: {label}")
+            return (result.stdout + "\n" + result.stderr).strip() if label == "help" else result.stdout.strip()
+        if query("state", "get-state") != "device":
+            raise Blocked("Explicit backup discovery emulator is not online")
+        names = query("avd", "emu", "avd", "name").splitlines()
+        if not names:
+            raise Blocked("Cannot identify backup discovery AVD")
+        name = names[0]
+        if name.startswith("PartiturasPDF_E2E_API26_"):
+            raise Blocked("Refusing SAF-owned AVD for destructive-acceptance discovery")
+        qemu = query("qemu", "shell", "getprop", "ro.kernel.qemu")
+        hardware = query("hardware", "shell", "getprop", "ro.hardware")
+        api = query("api", "shell", "getprop", "ro.build.version.sdk")
+        if qemu != "1" or hardware not in ("ranchu", "goldfish") or not api.isdigit() or int(api) < 26:
+            raise Blocked("Unsupported backup-acceptance emulator")
+        if query("boot", "shell", "getprop", "sys.boot_completed") != "1":
+            raise Blocked("Backup discovery emulator has not completed boot")
+        transports = query("transports", "shell", "bmgr", "list", "transports")
+        supported = {"android/com.android.internal.backup.LocalTransport", "com.android.localtransport/.LocalTransport",
+                     "com.android.localtransport/.LocalTransportService"}
+        available = sorted({line.strip().lstrip("*").strip() for line in transports.splitlines()} & supported)
+        enabled = query("enabled", "shell", "bmgr", "enabled")
+        auto = query("auto-restore", "shell", "settings", "get", "secure", "backup_auto_restore")
+        # API 26 prints usage to stderr with no arguments; "bmgr help" is an unknown command.
+        help_text = query("help", "shell", "bmgr")
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        shell_version, shell_supported = None, False
+        if shell:
+            version = self.command("backup-preflight/powershell.log", [shell, "-NoLogo", "-NoProfile",
+                "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()"], timeout=30)
+            shell_version = version.stdout.strip()
+            parsed = re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)*", shell_version)
+            minimum = (5, 1) if platform.system() == "Windows" else (7, 0)
+            shell_supported = version.returncode == 0 and bool(parsed) and tuple(map(int, parsed.groups())) >= minimum
+        self.summary["backup_discovery"] = dict(serial=serial, avd=name, api=int(api), transports=available,
+            backup_enabled=enabled, auto_restore=auto, powershell=shell, powershell_version=shell_version,
+            acceptance="NOT RUN", device_transfer="NOT RUN", consent="NOT REQUESTED", mode="READ_ONLY")
+        if (not available or auto not in ("0", "1") or not shell_supported or
+                not re.search(r"Backup Manager (?:is )?currently (?:enabled|disabled)", enabled, re.I) or
+                not all(w in help_text for w in ("backupnow", "restore", "list sets"))):
+            raise Blocked("C06 prerequisites unavailable; see backup_discovery and read-only query logs")
+        # No acceptance script, init script, install, marker, bmgr enable/transport, wipe or restore is invoked.
+
     def workflow(self):
-        if self.suite != "saf":
+        if self.suite == "saf":
+            return self.workflow_saf()
+        actions = {"host": self.workflow_host, "android": self.workflow_android, "saf": self.workflow_saf,
+                   "backup-preflight": self.workflow_backup_preflight}
+        if self.suite not in ("host", "android", "full", "backup-preflight"):
+            raise Blocked(f"Suite {self.suite!r} is not implemented. No tests executed.")
+        names = ("host", "android", "saf") if self.suite == "full" else (self.suite,)
+        groups = [{"name": n, "status": "NOT RUN", "tests": None,
+                   "evidence": "." if n == "saf" else n + "/"} for n in names]
+        self.summary["groups"] = groups
+        for group in groups:
+            if group["name"] == "saf" and any(g["name"] == "android" and g["status"] == "BLOCKED" for g in groups):
+                group["detail"] = "Not run after Android infrastructure failure; preserve evidence and restore owned state first"
+                self.group_reports()
+                continue
+            started = time.monotonic()
+            try:
+                actions[group["name"]]()
+                group["status"] = "PASS"
+            except FunctionalFailure as error:
+                group.update(status="FAIL", detail=str(error))
+            except Exception as error:
+                group.update(status="BLOCKED", detail=f"{type(error).__name__}: {error}")
+                self.record(group["name"] + "-error.log", traceback.format_exc())
+            finally:
+                group["elapsed_seconds"] = time.monotonic() - started
+                if group["name"] == "host":
+                    measured = [c["tests"] for c in self.summary.get("host_checks", []) if c.get("tests") is not None]
+                    group["tests"] = sum(measured) if measured else None
+                elif group["name"] == "android":
+                    group["tests"] = len(self.summary["android_cases"]) if "android_cases" in self.summary else None
+                elif group["name"] == "saf":
+                    group["tests"] = sum(c["status"] in ("PASS", "FAIL") for c in self.summary["tests"])
+                if group["status"] != "PASS" and self.identified:
+                    self.collect(prefix=group["name"] + "-")
+                self.group_reports()  # Independent group evidence survives subsequent failure/cleanup.
+        if any(g["status"] == "FAIL" for g in groups):
+            raise FunctionalFailure("One or more local validation groups failed")
+        if any(g["status"] != "PASS" for g in groups):
+            raise Blocked("One or more local validation groups are blocked or unexecuted")
+        self.summary["status"] = "PASS"
+
+    def group_reports(self):
+        groups = self.summary["groups"]
+        self.summary["counts"] = {s: sum(g["status"] == s for g in groups) for s in ("PASS", "FAIL", "BLOCKED", "NOT RUN")}
+        executed = [t for t in self.summary["tests"] if t["status"] in ("PASS", "FAIL")]
+        self.summary["android_e2e"] = "NOT RUN" if not executed else (
+            "FAIL" if any(t["status"] == "FAIL" for t in executed) else
+            "PASS" if len(executed) == len(STAGES) and len(self.summary["tests"]) == len(STAGES) else "INCOMPLETE")
+        aggregate = "FAIL" if any(g["status"] == "FAIL" for g in groups) else (
+            "PASS" if all(g["status"] == "PASS" for g in groups) else "BLOCKED")
+        if aggregate != "PASS" or not (self.summary["status"] == "BLOCKED" and self.summary.get("detail")):
+            self.summary["status"] = aggregate
+        self.summary["saf_e2e"] = self.summary["android_e2e"]
+        self.summary["android_instrumentation"] = next((g["status"] for g in groups if g["name"] == "android"), "NOT RUN")
+        saf_group = next((g for g in groups if g["name"] == "saf"), None)
+        if saf_group and saf_group["status"] != "NOT RUN":
+            saf_cases = [dict(t, name=CLASS + "." + t["name"]) for t in self.summary["tests"]]
+            evidence.write_junit(self.out / "saf-junit.xml", "authentic-saf", saf_cases,
+                saf_group.get("detail", "Incomplete SAF execution") if saf_group["status"] == "BLOCKED" else None)
+        cases = [dict(g) for g in groups]
+        if any(c["status"] != "PASS" for c in self.summary["cleanup"]) or self.summary["diagnostics"]:
+            if self.summary["status"] == "PASS":
+                self.summary["status"] = "BLOCKED"
+            cases.append({"name": "evidence-or-cleanup", "status": "BLOCKED", "detail": "Inspect cleanup/diagnostics"})
+        if self.summary["status"] == "BLOCKED" and all(c["status"] == "PASS" for c in cases):
+            cases.append({"name": "infrastructure", "status": "BLOCKED", "detail": self.summary.get("detail", "Incomplete")})
+        evidence.write_junit(self.out / "junit.xml", "local-orchestration-groups", cases)
+        self.record("summary.json", json.dumps(self.summary, indent=2))
+        self.record("index.html", "<!doctype html><meta charset='utf-8'><title>Local validation</title><pre>" +
+                    html.escape(json.dumps(self.summary, indent=2)) + "</pre>")
+
+    def workflow_saf(self):
+        if self.suite not in ("saf", "full"):
             raise Blocked(f"Suite {self.suite!r} is not implemented. No tests executed.")
         self.summary["host"] = doctor(self.home, self.sdk)
         self.record("doctor.json", json.dumps(self.summary["host"], indent=2))
@@ -928,7 +1218,11 @@ class Runner:
                     raise Blocked("Opt-in SAF class is absent from the test APK; no device was modified")
         except zipfile.BadZipFile as error:
             raise Blocked("Invalid instrumentation APK") from error
-        self.connect()
+        self.summary["saf_apk"] = self.verify_apk_mode(self.out / apks[1].name, "saf")
+        if not self.identified:
+            self.connect()
+        else:
+            self.identify(boot=True)
         for apk in apks:
             self.adb_command("install", "-r", str(self.out / apk.name), timeout=120)
         self.installed = True
@@ -952,6 +1246,8 @@ class Runner:
         self.summary.update(status="PASS", android_e2e="PASS")
 
     def reports(self):
+        if self.summary.get("groups") is not None:
+            return self.group_reports()
         tests = self.summary["tests"]
         self.summary["counts"] = {status: sum(x["status"] == status for x in tests)
                                   for status in ("PASS", "FAIL", "BLOCKED")}
@@ -1031,8 +1327,10 @@ def main(argv=None):
     setup = commands.add_parser("provision", help="Explicitly create a new private API 26 AVD; never overwrite")
     setup.add_argument("--port", type=int, default=5580)
     run = commands.add_parser("run")
-    run.add_argument("--suite", choices=("saf", "reader", "library", "full", "coverage"), required=True)
+    run.add_argument("--suite", choices=("saf", "host", "android", "reader", "library", "full", "coverage"), required=True)
     run.add_argument("--inject-failure", action="store_true", help="Deliberate assertion failure after real picker authorization")
+    backup = commands.add_parser("backup-preflight", help="Read-only C06 discovery on a separate explicit emulator")
+    backup.add_argument("--serial", required=True)
     args = parser.parse_args(argv)
     sdk = discover_sdk(args.sdk)
     if args.command == "doctor":
@@ -1046,6 +1344,12 @@ def main(argv=None):
         except Blocked as error:
             print(f"BLOCKED: {error}", file=sys.stderr)
             return 2
+    if args.command == "backup-preflight":
+        runner = Runner(args.home, sdk, "backup-preflight")
+        runner.backup_serial = args.serial
+        return runner.run()
+    if args.inject_failure and args.suite not in ("saf", "full"):
+        parser.error("--inject-failure is supported only for saf/full")
     return Runner(args.home, sdk, args.suite, args.inject_failure).run()
 
 

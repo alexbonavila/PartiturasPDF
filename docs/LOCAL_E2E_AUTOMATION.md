@@ -5,8 +5,14 @@
 This opt-in infrastructure exercises real API 26 DocumentsUI and production SAF
 adapters through the existing debug-only `SafGrantAcceptanceActivity`. It does
 not implement a reader/library UI, change storage contracts, request broad storage
-permissions, or replace ordinary CI. Only `saf` is implemented. `reader`, `library`,
-`full`, and `coverage` return **BLOCKED / exit 2**, without executing substitute tests.
+permissions, or replace ordinary CI. L02 adds `host`, ordinary `android`, and `full`
+while preserving authentic `saf`. `reader`, `library` and `coverage` remain
+**BLOCKED / exit 2**, without substitute tests. See
+[the L02 suite, isolation, evidence and C06 guide](LOCAL_REGRESSION_AUTOMATION.md).
+
+The owner reports L01 accepted on macOS Apple Silicon/API 26 ARM64 at the L02
+baseline. Historical L01 notes below describe evidence available at each delivery;
+L02 Android/full execution still requires separate real-device verification.
 
 The cloud implementation validation compiles the opt-in test APK and tests the
 host failure contracts with mocks. **Real unattended SAF success, the deliberate

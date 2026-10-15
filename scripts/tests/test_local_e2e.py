@@ -4,6 +4,7 @@ import json
 import base64
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -12,6 +13,8 @@ import zipfile
 
 X86_IMAGE = "system-images;android-26;google_apis;x86_64"
 ARM_IMAGE = "system-images;android-26;google_apis;arm64-v8a"
+
+sys.path.insert(0, str(Path(__file__).parents[1]))
 
 SPEC = importlib.util.spec_from_file_location("local_e2e", Path(__file__).parents[1] / "local_e2e.py")
 e2e = importlib.util.module_from_spec(SPEC)
@@ -266,6 +269,7 @@ class HostTests(unittest.TestCase):
              patch.object(self.runner, "gradle"), patch.object(self.runner, "connect"), \
              patch.object(self.runner, "adb_command", side_effect=adb), \
              patch.object(self.runner, "stage", side_effect=stage), \
+             patch.object(self.runner, "verify_apk_mode"), \
              patch.object(e2e, "doctor", return_value={"status": "PASS"}):
             self.runner.workflow()
         self.assertEqual([x[1] for x in events if x[0] == "stage"], list(e2e.STAGES))

@@ -291,3 +291,142 @@ not established by the deterministic copy-cancellation test or small fixture ren
 DataStore acceptance and E06 phase closure remain unimplemented. No production defect has been
 demonstrated by these unexecuted tests. Publication is delivery for review, not E03 acceptance;
 no PR creation, merge or next-phase work is included.
+
+## E04 — persistence through application composition
+
+E04 is owner-authorized on feat/app-composition-e, based on E03
+e6911b044991d36436feacc710c25b5ed378b343. Only AppPersistenceIntegrationTest.kt and this
+documentation are added/updated. Production composition, adapters, contracts, Room schema,
+manifests, dependencies, E03 provider/tests, CI and coverage policies remain unchanged.
+
+### E03 device evidence supplied by the owner
+
+The owner reports successful local execution on October 15, 2026, using a disposable
+Android8.0 / API26 AVD at the E03 baseline:
+
+| Owner-reported execution | Result |
+| --- | --- |
+| Filtered SafPdfIntegrationTest | PASS 12/12, zero failures/skips, Gradle successful |
+| Complete Android instrumentation suite | PASS 217/217, zero failures/skips, Gradle successful |
+
+This supplements the earlier historical cloud NOT RUN entries; it is local owner-reported
+evidence, not an execution performed by Codex, a GitHub Actions result, a measured coverage
+report, or physical Android8.1 tablet acceptance. No AVD identifier or raw reports were supplied
+with E04. Those E03 test/provider files remain byte-for-byte unchanged. Their regression execution
+at the E04 revision, including the expanded full suite, remains pending.
+
+### Real adapter composition and isolation
+
+All four E04 methods use the existing AppGraphFactory(limits, createResources) injection seam
+and the existing AppGraph constructor. They do **not** invoke the production Application-based
+factory constructor; that separate path is the subject of E03's
+realApplicationFactoryReusesGraphAndDoesNotOwnPdfLeases test. This distinction prevents E04
+writes from reaching the production default database or applicationPreferencesStore delegate.
+No fake registry, metadata repository, preferences repository or in-memory persistence replaces
+the real Android adapters.
+
+The test-only Composition helper constructs one real, on-disk MetadataDatabase for each graph
+lifetime and injects that exact instance into RoomDocumentRegistry and
+RoomDocumentMetadataRepository. The default SQLite backend and production schema are retained.
+Its name is e04-composition-UUID.db; the test checks the actual SQLite path against its intended
+test-owned file. Closing the factory closes its owned Room instance, rejects subsequent get(),
+and is idempotent. A reopened lifetime uses a genuinely new Room instance and new graph on the
+same unique test database, with no destructive fallback or migration.
+
+One real PreferenceDataStoreFactory store uses cache/e04-composition-UUID/preferences/
+e04.preferences_pb and a test-owned SupervisorJob/IO scope. Both graph repositories and additional
+repository objects borrow that one store. The factory releases only Room; it must leave this
+separately owned store usable. Before opening a replacement store on the same file, the old
+scope is cancelled and joined; construction checks that every earlier scope has completed.
+The production app_preferences delegate, file and process lifetime are never used or modified.
+
+The other graph slots contain the existing SAF catalog/read/grant and Android PDF adapters.
+They perform no provider calls, rendering or grant mutation in E04. SAF read cache would be
+contained in the test UUID directory. Registry constructors receive only Room; successful
+registration of an opaque, deliberately unresolved provider/location records the exact strings
+without decoding a URI, opening a provider or claiming current access.
+
+Tests issue UUID DocumentIds independently from storage strings, filenames, bytes and hashes.
+Before explicit registration, findRegistration and resolve return NOT_REGISTERED, metadata
+observation yields Loading then Failed(NOT_REGISTERED), and metadata writes cannot create an
+identity. Duplicate ID/location writes produce REGISTRATION_CHANGED and preserve the association.
+Recorded availability remains a historical observation, independent from permission or existence.
+
+Finite observation helpers require Loading then Ready and end their collection before disposal.
+The live Room collector uses a channel handshake and distinctUntilChanged, receives each expected
+transaction result, and is cancelled/joined in finally. Timeouts are failure watchdogs; there are
+no arbitrary delays, polling loops or global mutable test state. Teardown closes all factories and
+tracked databases even after an assertion/construction failure, joins store jobs, then deletes only
+the exact UUID-named database and its SQLite auxiliary files plus the UUID cache directory.
+No production name, real user data, external PDF, SAF grant or preference is cleared/deleted.
+
+### Focused test inventory
+
+The class is com.abdev.partituraspdf.app.integration.AppPersistenceIntegrationTest. These are
+composition sequences across real adapters, not another exhaustive adapter/concurrency/corruption
+suite. Existing C and E03 tests are retained. All four JUnit methods use block bodies returning void.
+
+| Test | Implemented assertions | Android result in Codex |
+| --- | --- | --- |
+| graphConsumersShareExplicitRegistrationWithoutInventingStorageIdentity | Same graph/contracts/configuration for two consumers; real persistence adapters; missing registration/metadata; explicit UUID identity and exact opaque association; duplicate conflicts; actual on-disk SQLite path; factory closes database once | BLOCKED / NOT RUN |
+| sharedRoomObservationAndMetadataSurviveACompletelyNewGraphAndDatabase | Live Loading/Failed -> registration/default Ready -> favorite -> Unknown position -> favorite toggle without losing position; joined collector; new graph/database recovers the same registration and both metadata fields | BLOCKED / NOT RUN |
+| recordedAvailabilityRevisionAndRebindRemainSeparateFromHistoricalMetadata | UNKNOWN/AVAILABLE/PERMISSION_REVOKED/PROVIDER_UNAVAILABLE preserve association and metadata; stale expected location and foreign ownership reject mutation; exact revision matching; rebind resets registration revision/access while preserving historical favorite/position; reopen retains them | BLOCKED / NOT RUN |
+| graphPreferencesAreIndependentAndPersistAfterStoreAndRoomOwnersReopen | Successful-read defaults; theme, page fit, English/Catalan/Spanish changes preserve other fields and Room metadata; another repository shares the same store; factory closure leaves store alive; cancelled/joined old scope and new store/graph recover all preferences and Room data | BLOCKED / NOT RUN |
+
+Unknown reading positions remain resume hints after reopening. The revision/rebind test uses
+explicitly synthetic SnapshotEvidence (constant test digest/byte count), solely to exercise existing
+contract persistence and comparison. It is not evidence captured by a snapshot adapter, not a
+canonical PDF hash, and not proof that any current provider bytes match. A digest mismatch or
+rebind-invalidated verified position returns REVISION_CHANGED without destroying historical metadata;
+revision.document mismatches propagate IllegalArgumentException rather than storage failures.
+
+### E04 validation and remaining acceptance
+
+Cloud validation date: October 15, 2026. Existing JDK25.0.4.1, Gradle9.8.0, AGP9.4.1, SDK37
+toolchain and minSdk26 are unchanged. No Android emulator/device is available in Codex;
+adb devices -l is empty and /dev/kvm is unavailable. No E04 persistence or cleanup assertion has
+been observed on Android yet. APK compilation and host PDF rendering do not establish those results.
+
+| Available check | Result |
+| --- | --- |
+| bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest --rerun --max-workers=4 --console=plain | PASS; app/test APK compilation, Lint, explicitly rerun JVM task and existing contract coverage gate |
+| JVM XML verifier retaining ExampleUnitTest.addition_isCorrect | PASS 146 executed tests, no failures/skips |
+| python3 -m unittest discover -s scripts/tests -v | PASS 39 infrastructure tests |
+| python3 scripts/validate_localization.py | PASS English/Catalan/Spanish |
+| python3 test-fixtures/scripts/verify_fixtures.py | PASS all 15 immutable PDFs: hashes, structure and host rendering |
+| Compiled JUnit signatures, source inventory and scope/whitespace review | PASS four void methods, 221 expected Android tests (217 unchanged + 4), no unauthorized files |
+| Filtered E04 / E03 regression / complete Android suite at E04 revision | BLOCKED / NOT RUN; no device execution in Codex |
+
+There is no new production business logic or coverage exclusion. Existing 90% line / 80% branch
+requirements and all quality gates remain unchanged. No new Android execution data or combined
+coverage report was generated. The last JVM-only app/di diagnostic remains AppRuntimeLimits 7/7
+lines, AppGraph 9/9, full AppGraphFactory 13/36 lines and 12/14 branches; those figures do not
+measure native constructor coverage. The owner's E03 PASS report does not supply coverage counts.
+Do not claim an updated factory/persistence coverage percentage or threshold achievement from
+compiled E04 tests. Existing C coverage evidence is historical and does not replace E04 execution.
+
+Use a deliberately selected disposable API26 AVD for local acceptance (PowerShell uses
+$env:ANDROID_SERIAL and gradlew.bat):
+
+```bash
+export ANDROID_SERIAL=emulator-5554 # replace with the selected disposable API26 emulator
+adb -s "$ANDROID_SERIAL" shell getprop ro.build.version.sdk # must be 26
+bash ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.app.integration.AppPersistenceIntegrationTest
+python3 scripts/verify_test_results.py app/build/outputs/androidTest-results/connected \
+  --required-test com.abdev.partituraspdf.app.integration.AppPersistenceIntegrationTest.sharedRoomObservationAndMetadataSurviveACompletelyNewGraphAndDatabase
+# Preserve each run's XML/HTML before the next invocation.
+bash ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.app.integration.SafPdfIntegrationTest
+bash ./gradlew :app:connectedDebugAndroidTest
+python3 scripts/verify_test_results.py app/build/outputs/androidTest-results/connected \
+  --required-test com.abdev.partituraspdf.ExampleInstrumentedTest.useAppContext
+```
+
+Expect four E04 tests, 12 E03 tests and 221 full-suite tests, all without failures/skips; these are
+expected counts, not execution claims. Record revision, API/AVD/serial, reports and actual counts.
+Keep E03's separate-process guidance for Android8 Pdfium negative-fixture state. No CI dispatch,
+workflow change, PR creation or merge is included in this task. E04 remains pending device evidence
+and human review. API27/36 final-revision compatibility, physical Android8.1 acceptance, deferred
+Phase C backup/restore/D2D acceptance and Phase E closure are not established here. E05/E06 remain
+unimplemented; no production defect has been demonstrated by these unexecuted Android tests.

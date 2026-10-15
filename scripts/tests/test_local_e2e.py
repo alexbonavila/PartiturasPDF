@@ -533,8 +533,9 @@ class DoctorTests(unittest.TestCase):
     def test_versioned_command_line_tools_and_windows_suffixes(self):
         self.system = "Windows"
         report = self.diagnose()
-        self.assertTrue(report["tools"]["avdmanager"].endswith("19.0/bin/avdmanager.bat"))
-        self.assertTrue(report["tools"]["adb"].endswith("adb.exe"))
+        self.assertEqual(Path(report["tools"]["avdmanager"]),
+                         self.sdk / "cmdline-tools" / "19.0" / "bin" / "avdmanager.bat")
+        self.assertEqual(Path(report["tools"]["adb"]), self.sdk / "platform-tools" / "adb.exe")
 
     def test_corrupt_ownership_is_blocked_without_device_probes(self):
         self.home.mkdir()

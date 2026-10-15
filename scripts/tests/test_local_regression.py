@@ -1,5 +1,6 @@
 """Local orchestration contracts. Device/subprocess responses are simulated here."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,6 +13,9 @@ import local_test_evidence as evidence
 
 SMOKE = evidence.SMOKE
 OTHER = e2e.APP + '.storage.Test.example'
+# Fixed, whole-second epochs a minute apart: no dependency on wall-clock advancement.
+JVM_XML_OLD_NS = 1_600_000_000_000_000_000
+JVM_XML_FRESH_NS = JVM_XML_OLD_NS + 60_000_000_000
 
 
 def protocol(statuses=None, complete=True):
@@ -152,7 +156,7 @@ class OrchestrationTests(unittest.TestCase):
         if name == 'host/jvm.log':
             path = self.root / 'app/build/test-results/testDebugUnitTest/TEST-one.xml'
             if path.exists():
-                path.touch()  # Simulate newly written Gradle XML, never stale evidence.
+                os.utime(path, ns=(JVM_XML_FRESH_NS, JVM_XML_FRESH_NS))
         log = '> Task :app:verifyContractCoverage\n' if name == 'host/jvm.log' else (
             'Ran 2 tests in 0.1s\n\nOK\n' if name == 'host/python.log' else 'PASS')
         self.runner.record(name, log)
@@ -162,6 +166,7 @@ class OrchestrationTests(unittest.TestCase):
         path = self.root / 'app/build/test-results/testDebugUnitTest/TEST-one.xml'
         path.parent.mkdir(parents=True)
         path.write_text('<testsuite><testcase classname="sample" name="actual"/></testsuite>')
+        os.utime(path, ns=(JVM_XML_OLD_NS, JVM_XML_OLD_NS))
 
     def test_host_suite_requires_no_device_and_retains_actual_jvm_xml(self):
         self.prepare_jvm()
@@ -175,6 +180,40 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(self.runner.summary['groups'][0]['tests'], 3)
         self.assertTrue((self.runner.out / 'host/jvm-xml/TEST-one.xml').exists())
         self.assertEqual(self.runner.summary['backup_acceptance'], 'NOT RUN')
+
+    def test_fresh_jvm_fixture_survives_coarse_clock_and_nonadvancing_touch(self):
+        real_utime = os.utime
+        def coarse_utime(path, *, ns, **kwargs):
+            quantum = 2_000_000_000  # Simulate two-second filesystem timestamp resolution.
+            real_utime(path, ns=tuple(value // quantum * quantum for value in ns), **kwargs)
+        with patch.object(Path, 'touch', return_value=None), patch.object(os, 'utime', side_effect=coarse_utime):
+            self.prepare_jvm()
+            path = self.root / 'app/build/test-results/testDebugUnitTest/TEST-one.xml'
+            before = path.stat().st_mtime_ns
+            with patch.object(e2e, 'ROOT', self.root), patch.object(self.runner, 'command', side_effect=self.host_command):
+                self.runner.workflow_host()
+            self.assertNotEqual(path.stat().st_mtime_ns, before)
+        self.assertEqual(self.runner.summary['host_checks'][0]['status'], 'PASS')
+        self.assertEqual(self.runner.summary['host_checks'][0]['tests'], 1)
+        self.assertEqual(e2e.verify_junit(self.runner.out / 'host/jvm-xml'), 1)
+
+    def test_nonadvancing_touch_cannot_promote_stale_jvm_xml_to_fresh(self):
+        self.prepare_jvm()
+        path = self.root / 'app/build/test-results/testDebugUnitTest/TEST-one.xml'
+        before = path.stat().st_mtime_ns
+        def unchanged(name, command, **kwargs):
+            if name == 'host/jvm.log':
+                path.touch()  # Simulated timestamp collision, not evidence of a new report.
+                return subprocess.CompletedProcess(command, 0, '> Task :app:verifyContractCoverage', '')
+            return self.host_command(name, command, **kwargs)
+        with patch.object(Path, 'touch', return_value=None), patch.object(e2e, 'ROOT', self.root), \
+             patch.object(self.runner, 'command', side_effect=unchanged):
+            with self.assertRaises(e2e.Blocked):
+                self.runner.workflow_host()
+        self.assertEqual(path.stat().st_mtime_ns, before)
+        self.assertEqual(self.runner.summary['host_checks'][0]['status'], 'BLOCKED')
+        self.assertTrue(all(c['status'] == 'PASS' for c in self.runner.summary['host_checks'][1:]))
+        self.assertEqual(list((self.runner.out / 'host/jvm-xml').glob('*.xml')), [])
 
     def test_missing_host_dependency_is_blocked_and_other_checks_still_execute(self):
         self.prepare_jvm()

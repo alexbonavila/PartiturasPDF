@@ -122,3 +122,172 @@ and 90% LINE / 80% BRANCH policy remain unchanged. Reports/logs are local diagno
 
 No PR creation, merge, E03-E06 implementation, new device defaults based on unmeasured claims,
 or changes to deferred Phase C acceptance are authorized by this E02 delivery.
+
+## E03 — real SAF-to-PdfRenderer integration tests
+
+E03 is separately owner-authorized on feat/app-composition-e, based on approved E02
+7f4efc7dba5e4fa9e43c220d1e5e599500d86912. The earlier E01/E02 evidence above is historical
+and remains intact. This delivery adds test code and documentation only. **E03's principal
+acceptance criterion, real Android execution, is BLOCKED / NOT RUN in this cloud environment.**
+Compilation does not establish that the integration or its cleanup assertions pass at runtime.
+
+### Architecture and isolation
+
+CanonicalPdfContentProvider is a Java, test-APK-only ContentProvider registered under
+com.abdev.partituraspdf.test.integration.pdf. Java avoids target Kotlin runtime dependencies
+during early provider initialization, as in the existing SAF fixture provider. Stable document
+paths are /document/file-ID and /document/pipe-ID; a per-open UUID query token isolates completion
+evidence. Only IDs 01, 02, 08, 10 and 11 map to fixed canonical assets. No arbitrary asset/file
+path, storage permission, DocumentsProvider, picker, grant orchestration or write API is added.
+The provider is exported so the target resolver can access the separate test package, but exposes
+only these synthetic test assets. It is absent from the production APK.
+
+The file path copies an asset to a unique provider-cache file, opens it read-only, then unlinks
+the pathname before returning the descriptor. The descriptor keeps the bytes alive until its
+owner closes it. The pipe path uses createReliablePipe and a separate producer thread; openFile
+never fills a pipe synchronously. Asset streams and producer descriptors close in try-with-resources.
+A per-request CountDownLatch completion handshake reports delivered bytes, errors and unlinking;
+the test waits for each producer to finish, then removes its report. The 10-second wait is a
+failure watchdog, not an arbitrary scheduling delay or performance assertion. Early reader
+closure may produce a recorded broken-pipe error in limit/cancellation cases. A separate broken
+delivery mode reports an intentional I/O error after an initial canonical chunk, without feeding
+truncated bytes to native Pdfium.
+
+Each ordinary test uses a UUID target-cache directory supplied through a ContextWrapper to the
+real SafDocumentReadAccess constructor. The resolver is real; no hand-built ReadHandle, fake PDF,
+fake native renderer or new copy algorithm substitutes for the integration under test:
+
+```text
+test APK canonical asset -> test provider -> target ContentResolver
+  -> SafDocumentReadAccess.openSeekable(document, AppRuntimeLimits.provisional().read)
+  -> ReadHandle -> PdfReadSource -> AndroidPdfReadEngine -> native PdfRenderer
+  -> page information -> bounded RenderRequest -> real caller-owned Bitmap
+```
+
+The real factory test obtains the actual target Application and calls AppGraphFactory(application,
+limits). It refuses non-emulator hardware and installations with an existing default Room database,
+preferences file or SAF read-copy contents. Use a fresh disposable google_apis emulator (ranchu or
+goldfish). It never clears/deletes application persistence and never invokes registry, metadata or
+preferences operations. Room is constructed and closed lazily without opening/querying database
+rows; this is not E04 persistence acceptance. Only a direct provider input is used for this graph,
+avoiding materialization into its normal application cache. Repeated get(), selected-limit identity,
+actual adapter types, renderer use, idempotent factory close and rejection of get() after close
+are asserted. Factory close occurs with no active repository work and must leave the caller's
+open PDF session and bitmap alive. No Application subclass, singleton or MainActivity wiring exists.
+
+### Canonical inputs and integrity
+
+The tests read status, path, byte count, hash and page count from the existing manifest in test
+assets. They check exact resolver-delivered bytes with pread (without moving the native input
+offset), SHA-256 and equality to the canonical asset. Temporary materializations additionally
+check their file length/hash. These checks do not fabricate VerifiedSnapshot provenance: the
+test association remains DocumentRevision.Unknown and the native session has no verified revision.
+
+All five entries have manifest status valid; the following hashes were verified on the host and
+against packaged test assets, **not yet through Android provider execution**:
+
+| Fixture | Bytes | Pages | SHA-256 |
+| --- | ---: | ---: | --- |
+| pdf/basic/01-single-a4.pdf | 42,384 | 1 | 301340714954d3821e94558c524a44ab92b08b3e3db91e463b38c3985506c642 |
+| pdf/basic/02-two-pages.pdf | 46,034 | 2 | 50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512 |
+| pdf/page-sizes/08-mixed-sizes.pdf | 58,505 | 5 | 1e04cdf19cefc7fa04388a1998822607b69229e4d8dff0421adedfbe70be3b61 |
+| pdf/complex/10-scanned-score.pdf | 221,317 | 2 | c049743af7075819d49550342bcc4a55b4f5dc29b504d1236b22102a24700dd0 |
+| pdf/complex/11-vector-score.pdf | 47,215 | 2 | 2ce44d7c54cfa6c494a4757dba695d03a11565468477b3f248a12ed0e2cc4b91 |
+
+### Android test inventory and expected evidence
+
+All methods belong to com.abdev.partituraspdf.app.integration.SafPdfIntegrationTest. Each uses
+a block body returning JVM void; javap confirms all 12 signatures. Every row below is compiled
+but **NOT RUN** on Android; no PASS, FAIL or resource-lifecycle observation is inferred from that.
+
+| Test | Assertions awaiting device execution | Result |
+| --- | --- | --- |
+| directA4UsesProviderDescriptorAndRendersCanonicalPage | Seekable Provider provenance, no SAF copy, canonical bytes, 1 page, actual information/bitmap, descriptor closure | NOT RUN |
+| pipeIsReallyNonSeekableThenMaterializesTwoCanonicalPages | Raw resolver pipe reports ESPIPE, exact bytes; separate openSeekable yields TemporaryReadCopy, 2 pages, renders both, deletes copy on session close | NOT RUN |
+| mixedSizesExposeDifferentRealPageDimensions | Canonical 5 pages, differing observed sizes, all pages render | NOT RUN |
+| scannedScoreRendersThroughAsynchronousPipe | Image-heavy 221,317-byte asset exceeds ordinary pipe buffer; bounded copy, both pages render | NOT RUN |
+| vectorScoreRendersThroughResolverAndNativeEngine | Canonical vector/font asset, both pages inspect/render through direct input | NOT RUN |
+| inputLimitRejectsCopyAndLeavesNoIncompleteFile | Positive test-selected limit one byte below fixture length yields INPUT_LIMIT, no partial copy, producer terminates | NOT RUN |
+| failedProviderPipeIsIoFailureRatherThanDeletionOrInvalidPdf | Reliable-pipe failure yields PROVIDER_IO_FAILURE, not deletion/corruption; partial copy removed | NOT RUN |
+| cancellationDuringRealCopyPropagatesAndDiscardsIncompleteFile | Cancel independent Job on actual production copy-progress callback; CancellationException propagates and partial copy disappears | NOT RUN |
+| invalidPageAndE02RenderBoundsDoNotPoisonSessionAndClosedCallsFail | INVALID_PAGE, STALE_SESSION, axis/area RENDER_LIMIT before oversized allocation; subsequent valid renders; SESSION_CLOSED after closure | NOT RUN |
+| sessionCloseReleasesCopyWhileCallerRetainsBitmapUntilLeaseClose | Input copy removed at session close; separate bitmap stays usable until its lease closes, then recycled | NOT RUN |
+| realApplicationFactoryReusesGraphAndDoesNotOwnPdfLeases | Real Application constructor and production adapters, graph/configuration reuse, safe factory closure and independent session/bitmap lifetime | NOT RUN |
+| providerRejectsWritesMutationsAndUnlistedFixturePaths | rw open, insert, update, delete and unlisted asset requests rejected | NOT RUN |
+
+Shared integration assertions inspect every page and render small 128x160 outputs within E02
+limits. They check dimensions, display/request identity, non-recycled pixels, explicit lease
+closure, idempotence, recycling and use-after-close rejection. The original ReadHandle becomes
+TRANSFERRED on engine entry, denies descriptor access/another transfer, and is never closed by
+the old owner. The session owns native/input cleanup; retained descriptor wrappers must be closed
+and temporary paths absent after session disposal. Before closure an owned copy must exist.
+Teardown joins producers and checks for leaked complete/incomplete copies before deleting only
+the test's own cache directory. These are implemented assertions, not observed Android outcomes.
+
+### Available validation and coverage
+
+Host validation on 2026-10-15: JDK25.0.4.1, Gradle9.8.0, AGP9.4.1, SDK37;
+minSdk26 and all dependencies/gates unchanged.
+No emulator/device was used: /dev/kvm is absent and adb devices -l lists no device. API26,
+API27, API36 and physical-tablet execution are NOT RUN for this revision.
+
+| Command/check actually run | Result |
+| --- | --- |
+| bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest --max-workers=4 --console=plain | PASS; production/test APK compile, Lint and JVM checks |
+| bash ./gradlew :app:testDebugUnitTest --rerun :app:assembleDebugAndroidTest :app:lintDebug --max-workers=4 --console=plain | PASS; explicitly re-executed JVM task after test cleanup review |
+| python scripts/verify_test_results.py app/build/test-results/testDebugUnitTest --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect | PASS 146 executed JVM tests, zero failures/skips |
+| python -m unittest discover -s scripts/tests -v | PASS 39 infrastructure tests |
+| python scripts/validate_localization.py | PASS en/ca/es |
+| python test-fixtures/scripts/verify_fixtures.py | PASS all 15 immutable hashes, structure and host rendering checks |
+| javap on compiled SafPdfIntegrationTest | PASS 12 public void test methods; not JUnit execution |
+| APK ZIP/dex and aapt2 decoded manifests | PASS all 15 test-asset PDFs match manifest; no fixture PDFs or new provider class/registration in production APK; provider/authority appear in test APK |
+| Lint report | PASS 0 errors, 20 existing warnings; no new production logic |
+| git diff --check and scope review | PASS; production adapters, Room v1 schema, fixtures, Gradle and CI unchanged |
+| Real Android instrumentation | BLOCKED / NOT RUN; 12 E03 tests compiled, 217 total expected (205 preserved + 12), 0 executed here |
+
+The existing approved contract coverage gate passes as part of JVM validation. The same external,
+uncommitted JaCoCo diagnostic used in E02 was rerun successfully with
+`bash ./gradlew -I /workspace/partituras-tools/e02-coverage.init.gradle :app:e02CompositionJvmCoverage --max-workers=4 --console=plain`.
+It reports the whole app/di package without exclusions: AppRuntimeLimits 7/7 lines, AppGraph 9/9,
+and AppGraphFactory 13/36 lines and 12/14 branches. No production line changed and no Android
+execution data exists. JVM-only coverage still cannot
+prove production factory construction or its native construction-failure cleanup. E02's full-source
+factory limitation (13/36 lines, 12/14 branches) remains unresolved; adding unexecuted Android tests
+does not improve measured coverage. Updated combined Android/JVM coverage is BLOCKED / NOT RUN.
+No denominator, exclusion, threshold or coverage infrastructure change is included.
+
+### Reproduce on a real API26 emulator
+
+Start a fresh disposable API26 google_apis x86_64 AVD using the existing SDK/test procedure.
+Select its serial explicitly; do not use a physical device or an installation with user data.
+On Bash (Windows uses gradlew.bat and $env:ANDROID_SERIAL in PowerShell):
+
+```bash
+export ANDROID_SERIAL=emulator-5554 # replace with the deliberately selected disposable AVD
+adb -s "$ANDROID_SERIAL" shell getprop ro.build.version.sdk # must be 26
+adb -s "$ANDROID_SERIAL" shell getprop ro.kernel.qemu        # must be 1
+bash ./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.app.integration.SafPdfIntegrationTest
+# Preserve XML/HTML under app/build/outputs/androidTest-results/connected and
+# app/build/reports/androidTests/connected before running the separate full suite.
+python scripts/verify_test_results.py app/build/outputs/androidTest-results/connected \
+  --required-test com.abdev.partituraspdf.app.integration.SafPdfIntegrationTest.realApplicationFactoryReusesGraphAndDoesNotOwnPdfLeases
+bash ./gradlew :app:connectedDebugAndroidTest
+python scripts/verify_test_results.py app/build/outputs/androidTest-results/connected \
+  --required-test com.abdev.partituraspdf.ExampleInstrumentedTest.useAppContext
+```
+
+Record exact SHA, selected AVD/serial/API, all 12 E03 outcomes, full-suite count and reports.
+Run E03 as its own instrumentation invocation before the existing native negative-fixture class:
+Android8 Pdfium can retain failure state after encrypted/corrupt opens. E03 introduces no such
+native negative opens and does not depend on the existing class's method ordering. Existing
+tests remain unchanged. A separate filtered PASS would not replace the mandatory full-suite gate;
+any cross-class native failure-state interaction still needs diagnosis rather than hidden skips.
+
+Deferred to separately authorized E05: real picker/persisted grants, permission loss/provider
+death orchestration, external document changes and consumer-level lifecycle mediation. Native
+mid-render cancellation latency, near-64MiB/disk-full stress and physical-tablet performance are
+not established by the deterministic copy-cancellation test or small fixture renders. E04 Room/
+DataStore acceptance and E06 phase closure remain unimplemented. No production defect has been
+demonstrated by these unexecuted tests. Publication is delivery for review, not E03 acceptance;
+no PR creation, merge or next-phase work is included.

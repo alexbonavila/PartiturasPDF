@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="saf_accept_select_button" type="id" />
+    <item name="saf_accept_check_button" type="id" />
+    <item name="saf_accept_release_button" type="id" />
+    <item name="saf_accept_status" type="id" />
+</resources>

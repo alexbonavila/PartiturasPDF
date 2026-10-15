@@ -454,6 +454,7 @@ class Runner:
         self.process = self.emulator_log = None
         self.fixture_created = self.installed = self.identified = False
         self.settings = {}
+        self.ui_failure_cleanup = None
 
     def record(self, name, value):
         (self.out / name).write_text(value, encoding="utf-8")
@@ -580,6 +581,56 @@ class Runner:
             self.adb_command("shell", "settings", "put", namespace, key, value)
         self.summary["configuration"] = "en-US, natural orientation, animations off, 10 minute display timeout"
 
+    def collect_instrumentation_failures(self):
+        """Copy private in-process snapshots before cleanup; never overwrite post-test evidence."""
+        root = f"files/local-e2e-{safe_run_id(self.run_id)}-ui-failures"
+        roots = self.adb_command("shell", "run-as", APP, "ls", "files").splitlines()
+        if root.removeprefix("files/") not in roots:
+            return
+        events = self.adb_command("shell", "run-as", APP, "ls", root).splitlines()
+        self.ui_failure_cleanup = None
+        all_copied = bool(events)
+        for event in events:
+            safe_run_id(event)  # Only UUID event names, never arbitrary paths from device output.
+            destination = self.out / "instrumentation-failures" / event
+            if destination.exists():
+                previous = next((item for item in self.summary.get("instrumentation_failures", [])
+                                 if item["event"] == event), None)
+                if not previous or previous["errors"] or set(previous["files"]) != {"metadata.json", "screenshot.png", "hierarchy.xml"}:
+                    all_copied = False
+                continue  # Cleanup diagnostics must not replace the first failure-time snapshots.
+            destination.mkdir(parents=True)
+            entry = {"event": event, "directory": str(destination.relative_to(self.out)), "files": [], "errors": []}
+            for name in ("metadata.json", "screenshot.png", "hierarchy.xml"):
+                try:
+                    self.identify()
+                    result = execute([self.adb, "-s", self.serial, "exec-out", "run-as", APP,
+                                      "cat", f"{root}/{event}/{name}"], binary=True)
+                    if result.returncode:
+                        raise Blocked(f"Cannot retrieve live UI {name}")
+                    data = result.stdout
+                    (destination / name).write_bytes(data)  # Retain raw failure-time evidence even if validation fails.
+                    if name == "screenshot.png":
+                        validate_screenshot(data)
+                    elif name == "hierarchy.xml":
+                        hierarchy = ET.fromstring(data)
+                        if hierarchy.tag != "hierarchy" or not hierarchy.findall(".//node"):
+                            raise Blocked("Live UI hierarchy is empty or malformed")
+                    else:
+                        metadata = json.loads(data)
+                        if metadata.get("run") != self.run_id or not isinstance(metadata.get("selector"), str):
+                            raise Blocked("Live UI metadata does not match this run/selector")
+                        if metadata.get("errors"):
+                            raise Blocked(f"Live UI capture reported errors: {metadata['errors']}")
+                    entry["files"].append(name)
+                except Exception as error:
+                    all_copied = False
+                    entry["errors"].append(f"{name}: {error}")
+                    self.summary["diagnostics"].append(f"instrumentation-failures/{event}/{name}: {error}")
+            self.summary.setdefault("instrumentation_failures", []).append(entry)
+        if all_copied:
+            self.ui_failure_cleanup = root
+
     def collect(self, prefix=""):
         """Best effort; one failing capture never suppresses subsequent host/device evidence."""
         if self.adb:
@@ -589,6 +640,11 @@ class Runner:
                 self.summary["diagnostics"].append(f"adb listing: {error}")
         if not self.identified:
             return
+        if self.installed:
+            try:
+                self.collect_instrumentation_failures()
+            except Exception as error:
+                self.summary["diagnostics"].append(f"live instrumentation evidence: {error}")
         captures = {
             "logcat.txt": ("logcat", "-d", "-v", "threadtime", "-t", "2000"),
             "activity.txt": ("shell", "dumpsys", "activity", "activities"),
@@ -629,6 +685,12 @@ class Runner:
                 self.adb_command("shell", "am", "force-stop", APP)
             except Exception as error:
                 self.summary["cleanup"].append({"status": "BLOCKED", "detail": str(error)})
+        if self.ui_failure_cleanup:
+            try:
+                self.adb_command("shell", "run-as", APP, "rm", "-r", self.ui_failure_cleanup)
+                self.summary["cleanup"].append({"name": "live UI snapshots copied to host", "status": "PASS"})
+            except Exception as error:
+                self.summary["cleanup"].append({"name": "live UI snapshots", "status": "BLOCKED", "detail": str(error)})
         if self.fixture_created:
             try:
                 path = self.remote_folder()

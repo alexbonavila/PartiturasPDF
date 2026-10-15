@@ -10,12 +10,13 @@ import android.os.Process
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
-import com.abdev.partituraspdf.R
 import com.abdev.partituraspdf.core.document.FolderRef
 import com.abdev.partituraspdf.core.result.AppError
 import com.abdev.partituraspdf.core.result.Outcome
@@ -23,6 +24,7 @@ import com.abdev.partituraspdf.storage.api.ReadAccessLimits
 import java.io.File
 import java.security.MessageDigest
 import java.util.regex.Pattern
+import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -183,17 +185,78 @@ class SafLocalE2eTest {
         }
     }
 
-    private fun requireUi(selector: androidx.test.uiautomator.BySelector): UiObject2 =
-        device.wait(Until.findObject(selector), WAIT) ?: throw AssertionError("Missing UI: $selector")
+    private fun captureMissingUi(selector: String) {
+        val started = SystemClock.elapsedRealtime()
+        // This runs BEFORE the assertion escapes to AndroidJUnitRunner, not after process teardown.
+        val event = File(context.filesDir, "local-e2e-$run-ui-failures/${UUID.randomUUID().toString().replace("-", "")}")
+        check(event.mkdirs()) { "Cannot create private failure evidence directory" }
+        val errors = JSONArray()
+        try {
+            check(device.takeScreenshot(File(event, "screenshot.png"))) { "takeScreenshot returned false" }
+        } catch (error: Exception) {
+            errors.put("screenshot: $error")
+        }
+        try {
+            device.dumpWindowHierarchy(File(event, "hierarchy.xml"))
+        } catch (error: Exception) {
+            errors.put("hierarchy: $error")
+        }
+        val visiblePackage = try {
+            device.currentPackageName
+        } catch (error: Exception) {
+            errors.put("package: $error")
+            null
+        }
+        File(event, "metadata.json").writeText(JSONObject()
+            .put("run", run).put("selector", selector).put("stage", args.getString("class"))
+            .put("captureStartedElapsedRealtimeMs", started)
+            .put("elapsedRealtimeMs", SystemClock.elapsedRealtime()).put("wallTimeMs", System.currentTimeMillis())
+            .put("package", visiblePackage).put("errors", errors).toString())
+    }
+
+    private fun failUi(failure: AssertionError): Nothing {
+        try {
+            captureMissingUi(failure.message ?: "UI assertion failed")
+        } catch (captureError: Exception) {
+            failure.addSuppressed(captureError)
+        }
+        throw failure
+    }
+
+    private fun requireUi(selector: androidx.test.uiautomator.BySelector): UiObject2 = awaitSafUi(
+        selector.toString(), WAIT, SystemClock::elapsedRealtime, { SystemClock.sleep(100) },
+        find = { device.findObject(selector) }, capture = ::captureMissingUi,
+    )
+
+    private fun requireInteractiveActivity(): UiObject2 = awaitSafUi(
+        "resumed/focused SafGrantAcceptanceActivity and enabled saf_accept_select_button", WAIT,
+        SystemClock::elapsedRealtime, { SystemClock.sleep(100) },
+        find = { device.findObject(By.res(context.packageName, "saf_accept_select_button")) },
+        ready = { button ->
+            var activityReady = false
+            instrumentation.runOnMainSync {
+                activityReady = ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(Stage.RESUMED).any { activity ->
+                        activity is SafGrantAcceptanceActivity && activity.hasWindowFocus() &&
+                            activity.window.decorView.isShown
+                    }
+            }
+            activityReady && button.isEnabled && button.isClickable && !button.visibleBounds.isEmpty
+        },
+        capture = ::captureMissingUi,
+    )
 
     private fun pickFolder() {
         device.wakeUp()
-        device.pressMenu()
         context.startActivity(Intent(context, SafGrantAcceptanceActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
-        requireUi(By.text(context.getString(R.string.saf_accept_select))).click()
-        assertTrue("System DocumentsUI must appear", device.wait(
-            Until.hasObject(By.pkg(PICKER)), WAIT))
+        requireInteractiveActivity().click()
+        try {
+            assertTrue("System DocumentsUI must appear", device.wait(
+                Until.hasObject(By.pkg(PICKER)), WAIT))
+        } catch (failure: AssertionError) {
+            failUi(failure)
+        }
         // API 26 DocumentsUI exposes its roots through the standard navigation drawer.
         if (!device.hasObject(By.res(PICKER, "roots_list"))) {
             requireUi(By.desc("Show roots")).click()
@@ -210,7 +273,7 @@ class SafLocalE2eTest {
             requireUi(By.desc("More options")).click()
             requireUi(By.text("Show internal storage")).click()
             requireUi(By.desc("Show roots")).click()
-            root = storageRoot() ?: throw AssertionError("Internal storage root is unavailable")
+            root = storageRoot() ?: failUi(AssertionError("Internal storage root is unavailable"))
         }
         root.click()
         // Navigate by hierarchy/text, not coordinates; fresh AVD has a bounded directory list.
@@ -224,7 +287,7 @@ class SafLocalE2eTest {
                 grants.hasPersistedReadGrant(folder) == Outcome.Success(true)) return
             SystemClock.sleep(100)
         }
-        throw AssertionError("Real picker result did not persist the expected tree READ grant")
+        failUi(AssertionError("Real picker result did not persist the expected tree READ grant"))
     }
 
     private companion object {

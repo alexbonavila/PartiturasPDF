@@ -736,6 +736,87 @@ class DoctorTests(unittest.TestCase):
         self.assertNotIn("-wipe-data", args)
         runner.emulator_log.close()
 
+class LiveUiEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.runner = e2e.Runner(Path(self.temp.name), Path(self.temp.name) / "sdk")
+        self.runner.adb, self.runner.serial = "adb", "emulator-5580"
+        self.event = "a" * 32
+        self.root = f"files/local-e2e-{self.runner.run_id}-ui-failures"
+        self.png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+        self.payloads = {"metadata.json": json.dumps({"run": self.runner.run_id, "selector": "stable-button-id", "errors": []}).encode(),
+                         "screenshot.png": self.png, "hierarchy.xml": b'<hierarchy><node text="failure-time"/></hierarchy>'}
+
+    def listing(self, *args, **kwargs):
+        return self.root.removeprefix("files/") if args[-1] == "files" else self.event
+
+    def read(self, command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, self.payloads[command[-1].rsplit("/", 1)[-1]], b"")
+
+    def collect(self):
+        with patch.object(self.runner, "identify"), patch.object(self.runner, "adb_command", side_effect=self.listing), \
+             patch.object(e2e, "execute", side_effect=self.read):
+            self.runner.collect_instrumentation_failures()
+
+    def test_live_snapshots_are_separate_from_post_test_and_survive_cleanup(self):
+        self.runner.record("screenshot.png", "post-test screenshot")
+        self.collect()
+        destination = self.runner.out / "instrumentation-failures" / self.event
+        self.assertEqual((destination / "screenshot.png").read_bytes(), self.png)
+        self.assertEqual(json.loads((destination / "metadata.json").read_bytes())["selector"], "stable-button-id")
+        with patch.object(self.runner, "adb_command") as cleanup:
+            self.runner.clean()
+        cleanup.assert_called_once_with("shell", "run-as", e2e.APP, "rm", "-r", self.root)
+        self.assertTrue((destination / "hierarchy.xml").is_file())
+        self.assertEqual((self.runner.out / "screenshot.png").read_text(), "post-test screenshot")
+
+    def test_recollection_never_overwrites_first_snapshots(self):
+        self.collect()
+        self.payloads["metadata.json"] = b"replacement"
+        self.collect()
+        saved = self.runner.out / "instrumentation-failures" / self.event / "metadata.json"
+        self.assertEqual(json.loads(saved.read_bytes())["selector"], "stable-button-id")
+        self.assertEqual(len(self.runner.summary["instrumentation_failures"]), 1)
+
+    def test_partial_or_corrupt_capture_is_retained_and_never_deleted_from_device(self):
+        self.payloads["screenshot.png"] = b"truncated screenshot"
+        self.collect()
+        self.collect()  # A later cleanup capture must not promote partial evidence to complete.
+        self.assertIsNone(self.runner.ui_failure_cleanup)
+        self.assertTrue(self.runner.summary["diagnostics"])
+        destination = self.runner.out / "instrumentation-failures" / self.event
+        self.assertEqual((destination / "screenshot.png").read_bytes(), b"truncated screenshot")
+        self.assertTrue((destination / "hierarchy.xml").exists())
+
+    def test_capture_errors_keep_raw_metadata_and_preserve_device_originals(self):
+        self.payloads["metadata.json"] = json.dumps({"run": self.runner.run_id, "selector": "missing-control",
+                                                    "errors": ["screenshot unavailable"]}).encode()
+        self.collect()
+        saved = self.runner.out / "instrumentation-failures" / self.event / "metadata.json"
+        self.assertEqual(json.loads(saved.read_bytes())["selector"], "missing-control")
+        self.assertIsNone(self.runner.ui_failure_cleanup)
+        self.assertTrue(self.runner.summary["diagnostics"])
+
+    def test_foreign_run_metadata_is_not_marked_safe_to_clean(self):
+        self.payloads["metadata.json"] = json.dumps({"run": "other", "selector": "button"}).encode()
+        self.collect()
+        self.assertIsNone(self.runner.ui_failure_cleanup)
+        self.assertIn("does not match", self.runner.summary["diagnostics"][0])
+
+    def test_path_traversal_event_is_rejected_before_reading_or_writing(self):
+        self.event = "../../unrelated"
+        with self.assertRaises(e2e.Blocked):
+            self.collect()
+        self.assertFalse((self.runner.out / "instrumentation-failures").exists())
+
+    def test_missing_live_directory_does_not_change_success_or_touch_user_files(self):
+        with patch.object(self.runner, "adb_command", return_value="unrelated-file"), patch.object(e2e, "execute") as read:
+            self.runner.collect_instrumentation_failures()
+            read.assert_not_called()
+        self.assertIsNone(self.runner.ui_failure_cleanup)
+        self.assertEqual(self.runner.summary["diagnostics"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

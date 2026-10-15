@@ -441,3 +441,80 @@ an actual ARM64 SAF PASS and `run --suite saf --inject-failure` returning **1** 
 screenshot, hierarchy, logcat, stage protocol, revision and native AVD identity.
 A BLOCKED run or mocked host fixture is not that evidence. The same manual command
 and report-inspection steps above apply after successful ARM64 provisioning.
+
+## L01C: activity readiness and live missing-UI evidence
+
+A real owner API 26 ARM64 run at `2238edc` failed in `acquire`, looking for the
+localized “Choose folder” button before DocumentsUI opened. The activity was
+reported launched/resumed. Logcat recorded `pressMenu()` before launch, and a
+later host screenshot showed launcher customization; that later screenshot does
+**not** establish what was visible at the original assertion. Menu is unnecessary
+for this flow and has been removed; the change does not claim that it alone was
+the confirmed cause. The disposable AVD must remain unlocked as documented above.
+
+Debug controls now have resource IDs (`saf_accept_select_button`,
+`saf_accept_check_button`, `saf_accept_release_button`, `saf_accept_status`). Their
+existing en/ca/es strings and grant behavior are unchanged. The opt-in test waits
+for the target `SafGrantAcceptanceActivity` to be RESUMED, shown and focused and
+for the ID-selected button to be enabled, clickable and have visible bounds
+before clicking. It does not send a Menu key, match a localized application label,
+or retry failed functional assertions. System DocumentsUI selectors and all real
+persisted-grant, force-stop, loss, reacquisition and PDF-hash assertions remain.
+The small readiness wait lives only in debug code, with debug-only JVM tests;
+release code and release unit-test source sets do not depend on it.
+
+Immediately before a missing-selector/readiness assertion is reported, the running
+instrumentation attempts screenshot and hierarchy capture. Missing picker/root
+and grant-result UI failures also capture before escaping to JUnit. Each event
+gets its own UUID directory in the target debug app's private files:
+`files/local-e2e-<run-id>-ui-failures/<event-id>/`. It contains `screenshot.png`,
+`hierarchy.xml` and `metadata.json` (selector/readiness description, instrumentation
+class/method argument, timestamps, current UI package and capture errors).
+Capture errors cannot replace the original assertion failure. No grant is faked
+or released for diagnostic purposes.
+
+Before normal cleanup, the serial/ownership-checked host retrieves only those
+run-owned files via `run-as` into:
+
+```text
+<printed report directory>/instrumentation-failures/<event-id>/metadata.json
+<printed report directory>/instrumentation-failures/<event-id>/screenshot.png
+<printed report directory>/instrumentation-failures/<event-id>/hierarchy.xml
+```
+
+These are **failure-time instrumentation snapshots**. Root-level `screenshot.png`
+and `hierarchy.xml` remain **post-test host snapshots**, and `cleanup-*` diagnostics
+remain separate. Recollection never overwrites the first event. JSON records the
+relative event paths and copy errors. Partial/corrupt raw event payloads are kept
+for inspection and are not marked valid; original private snapshots are deleted
+only after all three files validate and are copied. If copying fails, the original
+run-owned directory remains on the disposable emulator. No unrelated private file,
+existing grant or production data is deleted. Host evidence survives cleanup.
+
+L01C validation: **117 Python tests PASS** (7 new retention/isolation regressions)
+and **152 JVM tests PASS** (6 new readiness/failure-reporting tests). The JVM tests
+exercise missing/disabled controls, activity/window readiness predicates, bounded
+waiting, capture-before-report ordering and preservation of the assertion when
+capture fails. They are deterministic callback-based tests, not real UI execution.
+Debug and opt-in instrumentation build and Lint PASS; localization and 15 PDF
+fixtures PASS. Ordinary instrumentation packaging excludes the opt-in test class;
+release packaging excludes the debug harness/readiness helper and its IDs. No
+production sources, dependencies, policies, coverage gates or CI settings changed.
+
+Real Android execution of this correction is **NOT RUN** in cloud (no usable
+emulator acceleration). On the owner's **already provisioned** disposable API 26
+ARM64 AVD, update to this branch commit and execute:
+
+```bash
+python3 scripts/local_e2e.py doctor && python3 scripts/local_e2e.py run --suite saf
+# Only after an actual normal run, exercise the deliberate functional failure:
+python3 scripts/local_e2e.py run --suite saf --inject-failure
+```
+
+Do not re-provision, wipe or clear the existing application. Keep the exact printed
+report directory. A missing-UI failure must retain the live event files separately
+from the root post-test captures, or an explicit capture/copy error explaining
+what is unavailable. The deliberate after-grant assertion remains a functional
+failure with existing host diagnostics; it does not synthesize a missing selector.
+An authentic SAF PASS, failure-time screenshots from a real missing-UI event, and
+Android regression-suite execution remain pending until actually run.

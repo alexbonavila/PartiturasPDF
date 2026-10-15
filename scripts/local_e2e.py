@@ -1073,6 +1073,11 @@ class Runner:
             self.summary["android_cases"] = cases
             evidence.write_junit(directory / "junit.xml", "ordinary-android", cases, blocker)
 
+    def workflow_coverage(self):
+        from local_coverage import CoverageRun
+        self.coverage_run = CoverageRun(self, globals())
+        return self.coverage_run.run()
+
     def workflow_backup_preflight(self):
         required = ("scripts/Invoke-BackupPolicyAcceptance.ps1", "scripts/backup-acceptance.init.gradle",
                     "docs/C06_BACKUP_RESTORE_ACCEPTANCE.md", "docs/C06_PERSISTENCE_ACCEPTANCE_AUDIT.md")
@@ -1139,8 +1144,8 @@ class Runner:
         if self.suite == "saf":
             return self.workflow_saf()
         actions = {"host": self.workflow_host, "android": self.workflow_android, "saf": self.workflow_saf,
-                   "backup-preflight": self.workflow_backup_preflight}
-        if self.suite not in ("host", "android", "full", "backup-preflight"):
+                   "backup-preflight": self.workflow_backup_preflight, "coverage": self.workflow_coverage}
+        if self.suite not in ("host", "android", "full", "backup-preflight", "coverage"):
             raise Blocked(f"Suite {self.suite!r} is not implemented. No tests executed.")
         names = ("host", "android", "saf") if self.suite == "full" else (self.suite,)
         groups = [{"name": n, "status": "NOT RUN", "tests": None,
@@ -1167,6 +1172,8 @@ class Runner:
                     group["tests"] = sum(measured) if measured else None
                 elif group["name"] == "android":
                     group["tests"] = len(self.summary["android_cases"]) if "android_cases" in self.summary else None
+                elif group["name"] == "coverage":
+                    group["tests"] = sum(self.summary.get("coverage", {}).get(k) or 0 for k in ("jvm_tests", "android_tests")) or None
                 elif group["name"] == "saf":
                     group["tests"] = sum(c["status"] in ("PASS", "FAIL") for c in self.summary["tests"])
                 if group["status"] != "PASS" and self.identified:
@@ -1191,6 +1198,8 @@ class Runner:
             self.summary["status"] = aggregate
         self.summary["saf_e2e"] = self.summary["android_e2e"]
         self.summary["android_instrumentation"] = next((g["status"] for g in groups if g["name"] == "android"), "NOT RUN")
+        if self.suite == "coverage":
+            self.summary["android_instrumentation"] = self.summary.get("coverage", {}).get("android_status", "NOT RUN")
         saf_group = next((g for g in groups if g["name"] == "saf"), None)
         if saf_group and saf_group["status"] != "NOT RUN":
             saf_cases = [dict(t, name=CLASS + "." + t["name"]) for t in self.summary["tests"]]
@@ -1262,6 +1271,16 @@ class Runner:
         self.summary.update(status="PASS", android_e2e="PASS")
 
     def reports(self):
+        if hasattr(self, "coverage_run"):
+            coverage = self.coverage_run
+            coverage.result["orchestration_status"] = self.summary["status"]
+            if self.summary["status"] != "PASS":
+                coverage.result["status"] = self.summary["status"]
+            for item in self.summary["diagnostics"] + [c.get("detail", "Cleanup incomplete")
+                    for c in self.summary["cleanup"] if c["status"] != "PASS"]:
+                if item not in coverage.result["blockers"]:
+                    coverage.result["blockers"].append(item)
+            coverage.save()
         if self.summary.get("groups") is not None:
             return self.group_reports()
         tests = self.summary["tests"]

@@ -13,7 +13,7 @@ SAF_CLASS = APP + ".storage.saf.SafLocalE2eTest"
 SMOKE = APP + ".ExampleInstrumentedTest.useAppContext"
 
 
-def android_inventory(directory):
+def android_inventory(directory, smoke=SMOKE):
     """Inventory the repository's existing plain JUnit 4 Kotlin/Java tests; reject unknown forms."""
     tests = set()
     for path in sorted(Path(directory).rglob("*")):
@@ -32,7 +32,7 @@ def android_inventory(directory):
             package = declaration[1]
             for method in methods:
                 tests.add(f"{package}.{path.stem}.{method}")
-    if SMOKE not in tests:
+    if smoke is not None and smoke not in tests:
         raise ValueError("Required smoke test absent from ordinary source inventory")
     return tests
 
@@ -59,6 +59,16 @@ def inspect_apk(apk, manifest_dump, mode, inventory=()):
         if ("L" + class_name.replace(".", "/") + ";").encode() not in dex or method.encode() + b"\0" not in dex:
             raise ValueError(f"Ordinary test missing from APK: {test}")
     return {"mode": mode, "runner": NORMAL_RUNNER, "target": APP, "opt_in_saf": has_saf}
+
+
+def inspect_coverage_apk(apk):
+    """Build flags alone do not prove the installed debug APK carries probes/runtime."""
+    with zipfile.ZipFile(apk) as archive:
+        dex = b"".join(archive.read(n) for n in archive.namelist() if n.endswith(".dex"))
+    if not all(marker in dex for marker in (b"$jacocoInit", b"$jacocoData", b"Lcom/vladium/emma/rt/RT;",
+                                            b"Lorg/jacoco/agent/rt/internal_")):
+        raise ValueError("APK lacks genuine Android JaCoCo probes/coverage runtime")
+    return {"probes": True, "emma_bridge": True, "jacoco_runtime": True}
 
 
 class IncompleteInstrumentation(ValueError):

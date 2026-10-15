@@ -144,7 +144,7 @@ class OrchestrationTests(unittest.TestCase):
             e2e.main(['run', '--suite', 'host', '--inject-failure'])
 
     def test_unimplemented_placeholders_remain_blocked_without_build_or_device(self):
-        for suite in ('reader', 'library', 'coverage'):
+        for suite in ('reader', 'library'):
             self.runner.suite = suite
             with patch.object(self.runner, 'connect') as connect, patch.object(self.runner, 'gradle') as build:
                 with self.assertRaises(e2e.Blocked):

@@ -82,6 +82,40 @@ public class PersistenceCoverageInputsTest {
             @SuppressWarnings("unchecked") var merged = (Map<String, Object>) records.get(preferences);
             if (((Number)merged.get("coveredProbes")).intValue() != 2) throw new AssertionError("Compatible dumps must union probes");
             tests++;
+            write(jvm, true, correct);
+            write(android, true, new ExecutionData(correct.getId(), correct.getName(), different));
+            PersistenceCoverageInputs.readInputs(inventory, new String[]{jvm.toString(), android.toString()});
+            var mergedFiles = new org.jacoco.core.tools.ExecFileLoader();
+            mergedFiles.load(jvm.toFile()); mergedFiles.load(android.toFile());
+            int coveredAcrossFiles = 0;
+            for (boolean probe : mergedFiles.getExecutionDataStore().get(correct.getId()).getProbes())
+                if (probe) coveredAcrossFiles++;
+            if (coveredAcrossFiles != 2) throw new AssertionError("Real JaCoCo loader must union complementary runtime probes");
+            tests++;
+            if (args.length > 1) {
+                System.setProperty("local.coverage.sources", args[1]);
+                try {
+                    var all = PersistenceCoverageInputs.inventory(Path.of(args[0]));
+                    String shared = "com/abdev/partituraspdf/core/document/DocumentId";
+                    String debug = "com/abdev/partituraspdf/storage/saf/SafGrantAcceptanceActivity";
+                    @SuppressWarnings("unchecked") var handwritten = (Map<String, Object>) all.get(shared);
+                    @SuppressWarnings("unchecked") var debugOnly = (Map<String, Object>) all.get(debug);
+                    if (handwritten == null || !Boolean.TRUE.equals(handwritten.get("production")) ||
+                        debugOnly == null || !Boolean.FALSE.equals(debugOnly.get("production")))
+                        throw new AssertionError("Handwritten main/debug inventories must remain distinct");
+                    tests++;
+                    write(jvm, true, record(all, shared, 0));
+                    PersistenceCoverageInputs.readInputs(all, new String[]{jvm.toString()}); tests++;
+                    write(android, true, record(all, shared, 1));
+                    rejected(() -> PersistenceCoverageInputs.readInputs(all, new String[]{android.toString()}));
+                    ExecutionData sharedRecord = record(all, shared, 0);
+                    write(android, true, new ExecutionData(sharedRecord.getId(), shared,
+                        new boolean[sharedRecord.getProbes().length + 1]));
+                    rejected(() -> PersistenceCoverageInputs.readInputs(all, new String[]{android.toString()}));
+                } finally {
+                    System.clearProperty("local.coverage.sources");
+                }
+            }
             System.out.println("PASS " + tests + " JaCoCo parser/identity infrastructure cases; synthetic data not retained");
         } finally {
             try (var paths = Files.walk(root)) {

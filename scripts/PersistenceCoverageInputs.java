@@ -11,7 +11,9 @@ import org.objectweb.asm.Opcodes;
 public class PersistenceCoverageInputs {
     static final String ROOT = "com/abdev/partituraspdf/data/";
     static boolean scoped(String name) {
-        return (name.startsWith(ROOT + "metadata/") || name.startsWith(ROOT + "preferences/"))
+        return (System.getProperty("local.coverage.sources") != null
+                ? name.startsWith("com/abdev/partituraspdf/")
+                : (name.startsWith(ROOT + "metadata/") || name.startsWith(ROOT + "preferences/")))
             && !name.substring(name.lastIndexOf('/') + 1).equals("DocumentDao_Impl")
             && !name.substring(name.lastIndexOf('/') + 1).startsWith("DocumentDao_Impl$")
             && !name.substring(name.lastIndexOf('/') + 1).equals("MetadataDatabase_Impl")
@@ -47,6 +49,11 @@ public class PersistenceCoverageInputs {
                 entry.put("sha256", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
                 entry.put("path", directory.relativize(path).toString());
                 entry.put("source", source[0]);
+                if (System.getProperty("local.coverage.sources") != null) {
+                    Path sourceRoot = Path.of(System.getProperty("local.coverage.sources"));
+                    String pkg = raw.getClassName().substring(0, raw.getClassName().lastIndexOf('/') + 1);
+                    entry.put("production", source[0] != null && Files.isRegularFile(sourceRoot.resolve(pkg + source[0])));
+                }
                 entry.put("reported", c != null); // Only JaCoCo's supplied class filter determines this.
                 entry.put("probes", probes[0]);
                 entry.put("branches", c == null ? 0 : c.getBranchCounter().getTotalCount());

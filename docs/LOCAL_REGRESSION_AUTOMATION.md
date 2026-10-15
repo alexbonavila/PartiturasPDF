@@ -272,3 +272,14 @@ SAF stages PASS, owned grant/fixture cleanup and settings restoration PASS, no
 unresolved diagnostics, overall PASS and exit 0. Retain the printed report path
 and transport events, including any timeout/recovered attempts. The prior Windows
 Android PASS is baseline evidence, not proof that this correction has executed.
+
+## L03: separate opt-in authentic coverage
+
+Use `python scripts/local_e2e.py run --suite coverage` (macOS/Linux: `python3`).
+See [Local code coverage](LOCAL_CODE_COVERAGE.md) for serial-isolated capture,
+existing A1/B5/C05 gates, evidence, informational source inventory and limitations.
+`full` retains the accepted host/ordinary Android/authentic SAF semantics; it does
+not automatically run coverage or manual backup acceptance. L02 at `27cef9f` was
+accepted by the owner on native Windows: host 204 Python/165 JVM, ordinary Android
+228, SAF four stages, cleanup/settings restoration PASS and no diagnostics. This
+is prior owner-reported evidence, not an independently executed cloud L03 result.

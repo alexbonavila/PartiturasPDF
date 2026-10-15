@@ -91,7 +91,7 @@ class HostTests(unittest.TestCase):
         self.assertEqual(ET.parse(self.runner.out / "junit.xml").getroot().get("errors"), "1")
 
     def test_unknown_suite_never_builds_or_connects(self):
-        self.runner.suite = "coverage"
+        self.runner.suite = "reader"
         with patch.object(self.runner, "gradle") as gradle, patch.object(self.runner, "connect") as connect:
             with self.assertRaisesRegex(e2e.Blocked, "not implemented"):
                 self.runner.workflow()

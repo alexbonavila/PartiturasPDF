@@ -1,5 +1,7 @@
 # L03: authentic local JVM and Android coverage
 
+> **Current-status note (2026-10-16):** The sections below retain original delivery-time findings and their exact test SHAs. L01–L04 was subsequently validated natively on macOS and in API 26/27/36 hosted CI; consult [PROJECT_STATUS.md](PROJECT_STATUS.md) and [L04D](LOCAL_COMPATIBILITY_VALIDATION.md). Historical `NOT RUN` and `BLOCKED` observations are not claims about the later verified run. Physical Android 8.1 acceptance remains deferred.
+
 L03 is a separate **opt-in** consumer of the existing A1/B5/C05 JaCoCo infrastructure.
 It does not change `full`, CI, production code, thresholds or release instrumentation.
 L01 macOS ARM64 and L02 Windows API26 acceptance at `27cef9f` are owner-reported

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate en/ca/es resource parity and Java Formatter argument contracts."""
+"""Validate completed translations and explicitly staged Spanish-first resources."""
 
 from __future__ import annotations
 
@@ -112,7 +112,8 @@ def read_resources(directory: Path) -> dict:
 def validate(root: Path) -> list[str]:
     errors = []
     bundles = {}
-    for locale in LOCALES:
+    locales = LOCALES + (("values-en",) if (root / "values-en").is_dir() else ())
+    for locale in locales:
         try:
             bundles[locale] = read_resources(root / locale)
         except (OSError, ET.ParseError, ValueError) as exc:
@@ -120,11 +121,32 @@ def validate(root: Path) -> list[str]:
     base = bundles.get("values")
     if base is None:
         return errors
-    for locale in LOCALES[1:]:
+    if errors:
+        return errors
+    staged = set()
+    spanish_text = {}
+    for path in sorted((root / "values").glob("*_spanish_first.xml")):
+        for element in ET.parse(path).getroot():
+            if element.tag in ("string", "plurals", "string-array"):
+                staged.add(element.get("name"))
+                spanish_text[element.get("name")] = [(e.tag, tuple(sorted(e.attrib.items())), (e.text or "").strip(), (e.tail or "").strip()) for e in element.iter()]
+    if staged & {"app_name", "starter_recipient", "starter_greeting"}:
+        errors.append("completed starter resources cannot be reclassified as Spanish-first")
+    spanish = bundles.get("values-es", {})
+    for name in sorted(staged):
+        if name not in spanish:
+            continue  # The required Spanish parity check below reports this.
+        candidates = [e for path in (root / "values-es").glob("*.xml")
+                      for e in ET.parse(path).getroot() if e.get("name") == name]
+        if len(candidates) == 1:
+            content = [(e.tag, tuple(sorted(e.attrib.items())), (e.text or "").strip(), (e.tail or "").strip()) for e in candidates[0].iter()]
+            if content != spanish_text[name]:
+                errors.append(f"values: {name}: Spanish-first fallback must match Spanish copy")
+    for locale in locales[1:]:
         translated = bundles.get(locale)
         if translated is None:
             continue
-        for name in sorted(base.keys() - translated.keys()):
+        for name in sorted((base.keys() - translated.keys()) - (staged if locale in ("values-ca", "values-en") else set())):
             errors.append(f"{locale}: missing translation: {name}")
         for name in sorted(translated.keys() - base.keys()):
             errors.append(f"{locale}: resource absent from English fallback: {name}")
@@ -155,7 +177,7 @@ def main() -> int:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS English, Catalan and Spanish resources and format arguments")
+    print("PASS completed translations, required Spanish and format arguments; Spanish-first resources may await translation")
     return 0
 
 

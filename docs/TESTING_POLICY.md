@@ -64,7 +64,7 @@ tests, not application business-logic coverage.
 - Recent Android: weekly API 36 emulator tests initially; update the chosen
   recent API through approved infrastructure change as runner support evolves.
 - UI changes: portrait and landscape when affected, light and dark themes,
-  English/Catalan/Spanish, large font scales, contrast, touch targets and
+  Spanish and completed translations, large font scales, contrast, touch targets and
   accessibility semantics. Record screenshots and TalkBack/device observations
   where relevant. Automated checks do not replace these reviews.
 
@@ -74,26 +74,17 @@ launch acceptance is implied by that test.
 
 ## Localization validation
 
-English is the default/fallback in `res/values/strings.xml`; Catalan and Spanish
-must provide `values-ca/strings.xml` and `values-es/strings.xml`. All user-visible
-text and accessibility descriptions require resources in all three languages.
-Technical documentation, comments and identifiers remain English.
+### Approved Spanish-first transition
 
-The validator uses Python's standard library, scans string/plural/array resources
-in each base language directory, and rejects missing/extra names, duplicate or
-empty entries, resource type mismatches and inconsistent argument indices,
-conversions or multiplicity. Explicit indexed arguments may be reordered.
-Plural categories may vary by language; every form must preserve the English
-`other` argument contract. Arrays retain element order and count. Use `%%` for
-formatted literal percent signs, or `formatted="false"` for literal text.
-Resource aliases and `translatable="false"` exemptions fail until explicitly
-supported by a reviewed validator change. Additional qualified resources require
-Android Lint and review; this script checks the three authoritative base bundles.
+Current `values/strings.xml` contains English; this policy change does not migrate production resources. All existing completed en/ca/es resources retain their checks. New feature copy must be Spanish, resource-backed and present in both default `values/*_spanish_first.xml` and `values-es` with identical Spanish content. Only resources explicitly declared in those staged default files may temporarily omit Catalan. Their untranslated English/Catalan state is mandatory deferred translation work, not a claim of translation completeness. Never move completed resources into staged files to evade validation.
 
-The validator does not assess linguistic quality or prove arbitrary Compose text
-is resource-backed. Review source and translations, and keep Lint enabled.
-Phase 0A deliberately leaves the existing app/resources unchanged: missing
-Catalan/Spanish files fail the gate. No bootstrap exemption is authorized.
+The validator rejects missing Spanish, missing completed translations, unknown translated keys, duplicate names across files, malformed XML/format tokens, empty/aliased values, wrong resource types, array/plural inconsistencies and mismatched staged Spanish fallback copy. Present translations must match argument contracts; staged status exempts no syntax, Spanish, accessibility or safety check. Spanish linguistic correctness still requires human review; a validator cannot prove the language of arbitrary text.
+
+I/localization alone owns a separately approved default-resource migration: preserve today's English as `values-en`, make the full Android default `values` Spanish and retain existing Spanish/Catalan translations. Until the host migration and delivery-locale policy are implemented, the starter's existing language behavior remains historical, not Spanish-first runtime acceptance. New feature implementation depends on the approved host/resource transition; do not mask missing resources through literals or generic exclusions.
+
+The later separately approved translation branch must supply complete English and Catalan bundles, remove staged translation debt only after parity/format tests and human review, and verify automatic device-language selection (es/ca/en) plus Spanish fallback on unsupported locales. First functional-stage host policy selects Spanish even on en/ca devices until those feature translations are explicitly delivered. No manual language selector or Android13-only locale assumption. Persisted legacy language values are not active host configuration.
+
+Technical documentation remains English. UI acceptance covers Spanish and all completed translations; full English/Catalan product acceptance remains deferred mandatory work, never silently waived. All non-localization CI, coverage, data safety and physical-device requirements remain unchanged.
 
 ## Permanent PDF dataset
 

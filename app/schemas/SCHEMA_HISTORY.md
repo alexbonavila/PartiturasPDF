@@ -4,7 +4,7 @@ The Room Gradle plugin exports database schema JSON to this directory through
 KSP. Commit each generated database/version JSON when C01 introduces the first
 database, and retain earlier versions for migration tests. Future databases must
 keep schema export enabled (`exportSchema = true`). No database or generated
-schema exists in C00.
+schema existed during C00; C01 subsequently added and committed version 1.
 
 This directory is an `androidTest` asset source for Room's migration test helper;
 it is not a production asset source. Keep schema history here rather than under
@@ -25,7 +25,8 @@ invalid identities, invalid booleans/pages and inconsistent snapshot evidence;
 SQL constraints enforce identity/location uniqueness and referential integrity.
 Value validation does not establish the truth of a digest: verified evidence must
 come from a trusted snapshot caller. No repository adapters or startup wiring are
-provided in C01, and there is no destructive migration fallback.
+provided in C01; repository adapters were implemented later in Phase C and composition
+wiring in Phase E. There is no destructive migration fallback.
 
 This document has a distinct asset filename because instrumentation also includes
 `test-fixtures/README.md`; two root `README.md` assets fail Android asset merging.

@@ -1,5 +1,7 @@
 # L02 unified local regression orchestration
 
+> **Current-status note (2026-10-16):** The sections below retain original delivery-time findings and their exact test SHAs. L01–L04 was subsequently validated natively on macOS and in API 26/27/36 hosted CI; consult [PROJECT_STATUS.md](PROJECT_STATUS.md) and [L04D](LOCAL_COMPATIBILITY_VALIDATION.md). Historical `NOT RUN` and `BLOCKED` observations are not claims about the later verified run. Physical Android 8.1 acceptance remains deferred.
+
 This extends [the opt-in local runner](LOCAL_E2E_AUTOMATION.md), on
 `test/local-e2e-automation`, from baseline `a886d847251e35ea64801de035c8bbdbc8c55e04`.
 The owner reports L01 accepted on macOS Apple Silicon/API 26 ARM64, including normal
@@ -27,8 +29,7 @@ executed in this cloud environment**. Linux host checks actually executed here.
 `--inject-failure` also works with `full`, affecting only its SAF group. It does
 **not** redefine FAIL as PASS: the ordinary application regression group remains
 separate, and the deliberately failing full run returns 1. Injection on host or
-ordinary Android is rejected. `reader`, `library` and `coverage` remain explicitly
-BLOCKED/2. L03 and a new native adapter coverage suite are not implemented.
+ordinary Android is rejected. `reader` and `library` remain explicitly BLOCKED/2 because their product-facing features are unimplemented. The separate L03 `coverage` suite **is implemented and verified**; see [L04D](LOCAL_COMPATIBILITY_VALIDATION.md).
 
 Global `--home` / `--sdk` options still precede the subcommand. Existing `doctor`,
 `provision`, owned AVD manifests, native image/ABI selection, cold-start recovery,
@@ -65,7 +66,7 @@ resuming. Python and JVM counts are distinct from the count of validator command
 
 No thresholds, finalizers or CI tasks changed. JVM contract coverage is enforced;
 this is not a claim of newly measured combined Android PDF/Room/DataStore coverage.
-The existing hosted/native coverage obligations remain. `coverage` stays BLOCKED.
+The existing hosted/native coverage obligations remain. The later opt-in L03 `coverage` suite is implemented and has verified results recorded in [L04D](LOCAL_COMPATIBILITY_VALIDATION.md).
 
 ## Ordinary Android execution and APK mode separation
 

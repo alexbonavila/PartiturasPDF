@@ -4,7 +4,7 @@
 **Report date:** 2026-10-16 (Europe/Madrid)  
 **Repository:** https://github.com/alexbonavila/PartiturasPDF  
 **Branch:** `test/local-e2e-automation`  
-**Current reviewed HEAD:** `87b864de296563649a4f80e15b55e30f75e26836`  
+**Latest validated code/test revision (evidence baseline, before subsequent documentation-only commits):** `87b864de296563649a4f80e15b55e30f75e26836`  
 **Production changes in latest portability correction:** None; only `scripts/tests/test_local_coverage.py` and `scripts/tests/test_local_e2e.py` changed relative to `9d10739d21fc718b7dcec7d2941b6e346f3aa1b6`.
 
 ## 1. Scope and boundaries
@@ -86,6 +86,7 @@ The approved-scope denominators are A1 188 lines/176 branches, B5 218/72, Room 2
 ## 5. Deferred and out-of-scope requirements
 
 - **L04C: Physical Android 8.1 / API 27 tablet:** **DEFERRED / NOT RUN** at owner's direction until a physical device is purchased. This is not replaced by the passing Android API27 emulator. `docs/TESTING_POLICY.md` and `docs/DEFINITION_OF_DONE.md` still require applicable real-device acceptance for a functional phase's unconditional formal closure. Deferral does not waive those policies.
+- **Future physical-tablet workstream — recorded owner plan (2026-10-16):** After the physical Android 8.1 (API 27) tablet is purchased, create a **new, short-lived, task-specific branch** from the then-current `main` (suggested name: `test/physical-android81-acceptance`) for preparing the physical-device test procedure and any approved test-only instrumentation. Do **not** create it now or keep the L01–L04 automation branch open solely to wait for hardware. First approve precise scope, safety boundaries and acceptance criteria; run actual physical-device checks for applicable SAF, PDF, persistence, lifecycle, locale, UI and performance scenarios using synthetic documents; record device model/build, test/app commit, results and evidence. Never wipe, uninstall, clear data or attempt real backup/restore/D2D on the owner's tablet without separately authorized safeguards and an appropriate disposable environment. Any tracked changes go through the ordinary PR, latest-head CI and owner approval. This is a **future plan, not executed acceptance or a waiver**; C06 backup/D2D remains independently deferred.
 - **C06 real backup/uninstall/restore and device-to-device transfer:** **DEFERRED / NOT RUN**, separately controlled and potentially destructive. Not part of L04 and not authorized by a local regression PASS.
 - **Authentic external SAF grant manual acceptance:** separately documented, and not treated as performed merely because normal instrumentation/SAF synthetic E2E passed.
 - **Unimplemented reader/library/editor/annotation/Drive E2E:** not applicable to this infrastructure-only cross-platform report; design their tests when the associated features are approved and exist.

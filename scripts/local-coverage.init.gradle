@@ -1,0 +1,91 @@
+// Opt-in consumer of existing JaCoCo scopes. Never invokes connectedDebugAndroidTest.
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.afterEvaluate {
+                def destination = project.providers.gradleProperty('localCoverageOutput').get()
+                def serial = project.providers.gradleProperty('localCoverageSerial').get()
+                def python = project.providers.gradleProperty('localCoveragePython').get()
+                def output = project.file(destination)
+                if (!(serial ==~ /emulator-[0-9]+/) || output.name != 'coverage' ||
+                    !(output.parentFile.name ==~ /[0-9]{8}T[0-9]{6}Z-[0-9a-f]{32}/) ||
+                    !output.toPath().toAbsolutePath().normalize().startsWith(project.rootDir.toPath())) {
+                    throw new GradleException('Unsafe local coverage directory/serial')
+                }
+                def libs = project.extensions.getByType(VersionCatalogsExtension).named('libs')
+                def versions = [gradle: project.gradle.gradleVersion,
+                    agp: libs.findVersion('agp').get().requiredVersion,
+                    jacoco: libs.findVersion('jacoco').get().requiredVersion,
+                    jdk: System.getProperty('java.version')]
+                def jvm = project.layout.buildDirectory.file('jacoco/testDebugUnitTest.exec')
+                def android = project.fileTree(new File(output, 'inputs/android')) { include '**/*.ec' }
+                ['preparePersistenceCoverageRun', 'validatePersistenceCoverageInputs',
+                 'verifyPersistenceCoverage', 'auditPersistenceCoverage', 'testPersistenceCoverageInputs'].each { name ->
+                    project.tasks.named(name, Exec).configure {
+                        executable = python
+                        environment 'LOCAL_PERSISTENCE_SERIAL', serial
+                        environment 'LOCAL_PERSISTENCE_OUTPUT', output.absolutePath
+                    }
+                }
+                ['metadata', 'preferences'].each { scope ->
+                    project.tasks.named(scope + 'PersistenceCoverageReport', JacocoReport).configure {
+                        executionData.setFrom(jvm, android)
+                        reports.xml.outputLocation.set(new File(output, "persistence/${scope}.xml"))
+                        reports.html.outputLocation.set(new File(output, "persistence/${scope}.html"))
+                    }
+                }
+                project.tasks.register('localCoverageConfiguration') {
+                    dependsOn 'assembleDebug', 'assembleDebugAndroidTest', 'compileDebugUnitTestJavaWithJavac',
+                              'testPersistenceCoverageInputs'
+                    doLast {
+                        if (!project.android.buildTypes.debug.enableAndroidTestCoverage)
+                            throw new GradleException('Genuine debug Android coverage must be enabled')
+                        output.mkdirs()
+                        new File(output, 'configuration.json').text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                            versions: versions, androidCoverage: true,
+                            jacocoClasspath: project.configurations.jacocoAnt.asPath,
+                            contractPatterns: project.tasks.contractCoverageReport.classDirectories.asFileTree.files.collect { it.absolutePath }.sort(),
+                            pdfPatterns: project.tasks.pdfAdapterCoverageReport.classDirectories.asFileTree.files.collect { it.absolutePath }.sort()
+                        ]))
+                    }
+                }
+                project.tasks.register('localPdfCoverageReport', JacocoReport) {
+                    dependsOn 'validatePersistenceCoverageInputs'
+                    classDirectories.setFrom(project.tasks.pdfAdapterCoverageReport.classDirectories)
+                    sourceDirectories.setFrom(project.tasks.pdfAdapterCoverageReport.sourceDirectories)
+                    executionData.setFrom(jvm, android)
+                    outputs.upToDateWhen { false }
+                    reports.xml.required.set(true)
+                    reports.html.required.set(true)
+                    reports.xml.outputLocation.set(new File(output, 'pdf.xml'))
+                    reports.html.outputLocation.set(new File(output, 'pdf.html'))
+                }
+                project.tasks.register('localProductionCoverageReport', JacocoReport) {
+                    dependsOn 'validatePersistenceCoverageInputs'
+                    sourceDirectories.setFrom(project.file('src/main/java'))
+                    executionData.setFrom(jvm, android)
+                    outputs.upToDateWhen { false }
+                    classDirectories.setFrom(project.provider {
+                        def runFile = new File(output, 'persistence/run.json')
+                        // Dependency discovery may run before input validation. Missing provenance
+                        // still fails in the mandatory validator; an empty report never passes analysis.
+                        if (!runFile.isFile()) return []
+                        def inventory = new JsonSlurper().parse(runFile).classes
+                        def classes = project.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes').get().asFile
+                        inventory.findAll { name, value -> value.production }.collect {
+                            name, value -> new File(classes, value.path)
+                        }
+                    })
+                    reports.xml.required.set(true)
+                    reports.html.required.set(true)
+                    reports.xml.outputLocation.set(new File(output, 'production.xml'))
+                    reports.html.outputLocation.set(new File(output, 'production.html'))
+                }
+            }
+        }
+    }
+}

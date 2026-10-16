@@ -1,7 +1,8 @@
 # C04 application preferences
 
-The future composition root obtains `applicationPreferencesStore(applicationContext)` once and
-injects that store into `DataStorePreferencesRepository`. The private top-level AndroidX delegate
+The implemented E application-composition factory obtains `applicationPreferencesStore(application)`
+and injects it into `DataStorePreferencesRepository`. The main user interface does not yet
+consume this graph; an implemented factory is not a completed settings screen. The private top-level AndroidX delegate
 returns the same store across calls and contexts. AndroidX owns its process-lifetime IO scope;
 the repository neither launches jobs nor closes the shared store. Do not open the same file with
 another delegate or factory. This is single-process storage, not a multi-process contract.
@@ -29,8 +30,14 @@ explicitly excluded. Other failures propagate, including wrong types, invalid va
 defects. Cancellation takes precedence over I/O classification. Failed observations terminate;
 recollection starts Loading. A cancelled update may have committed: reconcile by observing.
 
-Backup audit: the current manifest allows backup and the existing backup/extraction rules have no
-exclusions. This ordinary `files/` preference file can therefore be backed up/transferred. It
-contains only the three non-sensitive settings above. C04 does not alter application-wide rules;
-future sensitive persistence and incompatible formats require separately approved backup/migration
-policies. Never reset/delete a corrupt file automatically.
+Backup policy (updated after C04): the manifest enables backup but the implemented **Policy B**
+uses an exact-file allowlist in `backup_rules.xml` (API 26–30) and
+`data_extraction_rules.xml` (API 31+ cloud backup and device transfer). Only
+`file:datastore/app_preferences.preferences_pb` is eligible; Room databases,
+SQLite sidecars and other private files are excluded. The whole protobuf, including
+the three non-sensitive settings above, is selected rather than individual keys.
+Policy XML/APK validation passed; actual backup, restore and device-to-device
+transfer remain **DEFERRED / NOT RUN**. See `docs/PHASE_C_DEFERRED_ACCEPTANCE.md`.
+Do not add secrets or document references to this file without reviewing Policy B.
+Future incompatible formats require an approved migration policy. Never reset/delete
+a corrupt file automatically.

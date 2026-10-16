@@ -1,8 +1,8 @@
 # PartiturasPDF - PDF regression test fixtures
 
-This directory is intended to be copied to the root of the
-[`alexbonavila/PartiturasPDF`](https://github.com/alexbonavila/PartiturasPDF)
-repository as `test-fixtures/`.
+This is the committed authoritative `test-fixtures/` directory of
+[`alexbonavila/PartiturasPDF`](https://github.com/alexbonavila/PartiturasPDF).
+Keep exactly one source-controlled dataset; do not duplicate it in production assets.
 
 Contains **15 original, synthetic score PDFs** (not real compositions) with
 identifiable page labels and musical notation. The PDFs are deliberately kept
@@ -87,7 +87,7 @@ expectation changes.
 
 ## Regeneration
 
-The test PDFs are already generated and ready to commit. **Normally there is
+The test PDFs are already generated, committed and verified. **Normally there is
 no need to regenerate them.** If you must regenerate, install the fixture
 requirements and run:
 

@@ -38,16 +38,17 @@ def write_json(path: Path, value: dict) -> None:
 
 
 def java(args, mode: str, *paths: Path) -> dict:
-    command = ["java", "-cp", args.jacoco_classpath, str(ROOT / "scripts/PersistenceCoverageInputs.java"),
+    command = ["java", *(["-Dlocal.coverage.sources=" + str(ROOT / "app/src/main/java")]
+                        if getattr(args, "local_output", None) else []), "-cp", args.jacoco_classpath, str(ROOT / "scripts/PersistenceCoverageInputs.java"),
                mode, str(CLASSES), *(str(p) for p in paths)]
-    result = subprocess.run(command, text=True, capture_output=True)
+    result = subprocess.run(command, text=True, capture_output=True, timeout=120)
     if result.returncode:
         raise ValueError("JaCoCo input/identity validation failed: " + result.stderr.strip())
     return json.loads(result.stdout)
 
 
-def api(adb: str) -> int:
-    result = subprocess.run([adb, "shell", "getprop", "ro.build.version.sdk"], text=True,
+def api(adb: str, serial: str | None = None) -> int:
+    result = subprocess.run([adb, *(["-s", serial] if serial else []), "shell", "getprop", "ro.build.version.sdk"], text=True,
                             capture_output=True, timeout=30, check=True)
     level = int(result.stdout.strip())
     if level != 26:
@@ -56,24 +57,37 @@ def api(adb: str) -> int:
 
 
 def current_build(args) -> dict:
-    return {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+    metadata = {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
             "gradle": args.gradle_version, "agp": args.agp_version,
             "jdk": args.jdk_version, "jacoco": args.jacoco_version,
             "ci": {name: os.environ.get(name) for name in
                    ["GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB", "GITHUB_SHA"]}}
+    if getattr(args, "local_output", None):
+        metadata["sourceHashes"] = {str(p.relative_to(ROOT)): digest(p) for p in sorted((ROOT / "app/src").rglob("*")) if p.is_file()}
+        metadata["buildFiles"] = {name: digest(ROOT / name) for name in [
+            "app/build.gradle.kts", "build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml",
+            "gradle/wrapper/gradle-wrapper.properties", "scripts/local_e2e.py", "scripts/local_test_evidence.py",
+            "scripts/local_coverage.py", "scripts/local-coverage.init.gradle", "scripts/persistence_coverage.py",
+            "scripts/PersistenceCoverageInputs.java"] if (ROOT / name).is_file()}
+        metadata["localCapture"] = json.loads((Path(args.local_output) / "capture.json").read_text())
+        metadata["workingTree"] = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True)
+    return metadata
 
 
 def prepare(args) -> None:
     # Check device and class inventory first; never destroy evidence when prerequisites fail.
-    level = api(args.adb)
+    level = api(args.adb, getattr(args, "serial", None))
     classes = java(args, "inventory")
     tests = java(args, "test-inventory")
     metadata = current_build(args)
     for path in [JVM, ANDROID, JVM_XML, ANDROID_XML, OUTPUT]:
-        if not path.resolve().is_relative_to(BUILD.resolve()):
+        if not (path.resolve().is_relative_to(BUILD.resolve()) or
+                (getattr(args, "local_output", None) and
+                 path.resolve().is_relative_to(Path(args.local_output).resolve()))):
             raise ValueError("Generated evidence path escapes app/build")
         if path.is_symlink():
             raise ValueError("Generated evidence paths must not be symlinks")
+    for path in [JVM, ANDROID, JVM_XML, ANDROID_XML, OUTPUT]:
         if path.is_dir():
             shutil.rmtree(path)
         elif path.exists():
@@ -92,6 +106,20 @@ def check_provenance(run: dict, build: dict, classes: dict, level: int) -> None:
         raise ValueError("Invalid run timestamp")
 
 
+def check_execution(run: dict, entry: dict, now: int) -> None:
+    """The same session/freshness policy for a single input or combined capture."""
+    path = Path(entry["path"])
+    if not path.is_file() or path.stat().st_mtime_ns // 1_000_000 < run["started"]:
+        raise ValueError("Missing or stale execution file")
+    if not entry.get("sessions") or not entry.get("records"):
+        raise ValueError("Missing JaCoCo sessions/classes")
+    for session in entry["sessions"]:
+        # Emulator/device wall clocks may differ slightly; hashes and class IDs also bind inputs.
+        if (not session.get("id") or not run["started"] - 5000 <= session.get("start", 0)
+                <= session.get("end", 0) <= now + 5000):
+            raise ValueError("Stale/invalid execution session")
+
+
 def check_inputs(run: dict, evidence: dict, jvm: Path, android: list[Path], now: int) -> None:
     if not android or not jvm.is_file():
         raise ValueError("Missing JVM or Android execution data")
@@ -102,15 +130,7 @@ def check_inputs(run: dict, evidence: dict, jvm: Path, android: list[Path], now:
     android_records = set()
     for entry in entries:
         path = Path(entry["path"])
-        if not path.is_file() or path.stat().st_mtime_ns // 1_000_000 < run["started"]:
-            raise ValueError("Missing or stale execution file")
-        if not entry.get("sessions") or not entry.get("records"):
-            raise ValueError("Missing JaCoCo sessions/classes")
-        for session in entry["sessions"]:
-            # Emulator/device wall clocks may differ slightly; file hashes and class IDs also bind inputs.
-            if (not session.get("id") or not run["started"] - 5000 <= session.get("start", 0)
-                    <= session.get("end", 0) <= now + 5000):
-                raise ValueError("Stale/invalid execution session")
+        check_execution(run, entry, now)
         if path != jvm:
             android_records.update(name for name, record in entry["records"].items()
                                    if record.get("coveredProbes", 0) > 0)
@@ -134,7 +154,7 @@ def test_evidence(directory: Path, smoke: str, minimum: int, started: int) -> di
 
 def validate(args) -> None:
     run = json.loads((OUTPUT / "run.json").read_text())
-    check_provenance(run, current_build(args), java(args, "inventory"), api(args.adb))
+    check_provenance(run, current_build(args), java(args, "inventory"), api(args.adb, getattr(args, "serial", None)))
     if run.get("testClasses") != java(args, "test-inventory"):
         raise ValueError("Compiled test-class provenance changed")
     files = sorted(ANDROID.rglob("*.ec"))
@@ -142,6 +162,13 @@ def validate(args) -> None:
         raise ValueError("Missing JVM or Android execution data; no JVM-only fallback")
     evidence = java(args, "validate", JVM, *files)
     check_inputs(run, evidence, JVM, files, int(time.time() * 1000))
+    if getattr(args, "local_output", None):
+        native = {"com/abdev/partituraspdf/pdf/android/" + name for name in
+                  ["AndroidNativePdfDocument", "AndroidNativePdfPage", "AndroidRenderBuffer"]}
+        executed = {name for entry in evidence["inputs"] if Path(entry["path"]) != JVM
+                    for name, record in entry["records"].items() if record["coveredProbes"] > 0}
+        if not native.issubset(executed):
+            raise ValueError("Missing actual Android execution of native PDF classes")
     run["tests"] = {
         "jvm": test_evidence(JVM_XML, "com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect", 128, run["started"]),
         "android": test_evidence(ANDROID_XML, "com.abdev.partituraspdf.ExampleInstrumentedTest.useAppContext", 203, run["started"])}
@@ -166,14 +193,16 @@ def counter(node, kind: str, expected: int) -> dict:
             "percent": 100 * covered / expected if expected else None}
 
 
-def report(path: Path, scope: str, classes: dict) -> dict:
+def report(path: Path, scope: str, classes: dict, *, package_prefix: str | None = None) -> dict:
     root = ET.parse(path).getroot()
     packages = root.findall("package")
-    prefix = PREFIX + scope
+    prefix = package_prefix or PREFIX + scope
     if root.tag != "report" or len(packages) != 1 or packages[0].get("name") != prefix:
         raise ValueError("Missing/unexpected coverage scope")
     package = packages[0]
-    expected = {n: c for n, c in classes.items() if n.startswith(prefix + "/") and c.get("reported", True)}
+    expected = {n: c for n, c in classes.items() if
+                (n.rsplit("/", 1)[0] == prefix if package_prefix else n.startswith(prefix + "/"))
+                and c.get("reported", True)}
     nodes = package.findall("class")
     if len(nodes) != len(expected) or {n.get("name") for n in nodes} != set(expected):
         raise ValueError("Missing/unexpected/duplicate analyzed class")
@@ -233,7 +262,7 @@ def thresholds(scopes: dict) -> list[str]:
 def verify(args) -> None:
     path = OUTPUT / "provenance.json"
     run = json.loads(path.read_text())
-    check_provenance(run, current_build(args), java(args, "inventory"), api(args.adb))
+    check_provenance(run, current_build(args), java(args, "inventory"), api(args.adb, getattr(args, "serial", None)))
     if run.get("testClasses") != java(args, "test-inventory"):
         raise ValueError("Compiled test-class provenance changed")
     if run.get("result") != "INPUTS_VALIDATED_NOT_YET_VERIFIED":
@@ -275,7 +304,9 @@ def audit(args) -> None:
     paths = []
     for entry in run["inputs"]:
         path = ROOT / entry["relativePath"]
-        if not path.resolve().is_relative_to(BUILD.resolve()) or digest(path) != entry["sha256"]:
+        allowed = path.resolve().is_relative_to(BUILD.resolve()) or (
+            getattr(args, "local_output", None) and path.resolve().is_relative_to(Path(args.local_output).resolve()))
+        if not allowed or digest(path) != entry["sha256"]:
             raise ValueError("Retained execution input hash/path mismatch")
         paths.append(path)
     parsed = java(args, "validate", *paths)
@@ -311,7 +342,23 @@ def test_inputs(args) -> None:
                         str(ROOT / "scripts/PersistenceCoverageInputs.java"),
                         str(ROOT / "scripts/tests/PersistenceCoverageInputsTest.java")], check=True)
         subprocess.run(["java", "-cp", directory + os.pathsep + args.jacoco_classpath,
-                        "PersistenceCoverageInputsTest", str(CLASSES)], check=True)
+                        "PersistenceCoverageInputsTest", str(CLASSES), str(ROOT / "app/src/main/java")], check=True)
+
+
+def configure_local(directory: Path, serial: str) -> None:
+    """Explicit opt-in capture layout; CI defaults and connected-result paths stay unchanged."""
+    import re
+    global OUTPUT, ANDROID, ANDROID_XML
+    directory = Path(directory).absolute()
+    if (not serial or not re.fullmatch(r"emulator-[0-9]+", serial) or
+            directory.name != "coverage" or
+            not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{32}", directory.parent.name) or
+            not directory.resolve().is_relative_to(ROOT.resolve()) or
+            any(p.is_symlink() for p in [directory, *directory.parents])):
+        raise ValueError("Unsafe local coverage output/explicit emulator serial")
+    OUTPUT = directory / "persistence"
+    ANDROID = directory / "inputs/android"
+    ANDROID_XML = directory / "android-junit"
 
 
 def main() -> int:
@@ -319,7 +366,11 @@ def main() -> int:
     parser.add_argument("mode", choices=["prepare", "validate", "verify", "test-inputs", "audit"])
     for option in ["jacoco-classpath", "gradle-version", "agp-version", "jdk-version", "jacoco-version", "adb"]:
         parser.add_argument("--" + option, required=True)
+    parser.add_argument("--serial", default=os.environ.get("LOCAL_PERSISTENCE_SERIAL"))
+    parser.add_argument("--local-output", type=Path, default=os.environ.get("LOCAL_PERSISTENCE_OUTPUT"))
     args = parser.parse_args()
+    if args.local_output:
+        configure_local(args.local_output, args.serial)
     try:
         {"prepare": prepare, "validate": validate, "verify": verify, "test-inputs": test_inputs, "audit": audit}[args.mode](args)
     except (OSError, ValueError, KeyError, TypeError, ET.ParseError, subprocess.SubprocessError) as exc:

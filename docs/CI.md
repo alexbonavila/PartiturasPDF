@@ -1,5 +1,7 @@
 # CI execution and troubleshooting
 
+> **Current-evidence note (2026-10-16):** The Phase 0 runs below are historical. L04 hosted [CI run #38857215346](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38857215346) at `87b864de` verified 165 JVM and 228 Android tests each on API26/27/36, with all nine jobs passing. This is not a claim that later documentation-only commits have their own CI run. See [current project status](PROJECT_STATUS.md) and [L04D](LOCAL_COMPATIBILITY_VALIDATION.md).
+
 The workflow in [ci.yml](../.github/workflows/ci.yml) runs for every PR targeting
 `main`, every push to `main`, manual dispatch and Mondays at **04:23 UTC**.
 Schedules run the default branch and become available after the workflow is

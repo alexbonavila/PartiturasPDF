@@ -13,8 +13,10 @@ jacoco = "0.8.14"
 room = "2.8.5"
 datastore = "1.2.1"
 ksp = "2.3.10"
+uiautomator = "2.3.0"
 
 [libraries]
+androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }

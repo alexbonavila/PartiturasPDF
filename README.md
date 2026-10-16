@@ -4,7 +4,7 @@
 
 Partituras PDF is a tablet-first project designed to turn an Android device into a practical digital music stand and a manageable library of musical scores. Its goal is to keep scores in ordinary PDF files, provide distraction-free reading with simple page turns, and make common changes without requiring a desktop PDF editor.
 
-> **Project status: Phase 0 completed, merged and accepted by the project owner.** The repository contains the Android starter with its Material 3 theme, English/Catalan/Spanish resources and established quality infrastructure. No product features are implemented; the capabilities below remain **planned**. Future work requires separate owner approval.
+> **Project status (2026-10-16):** Phase 0 and the backend architecture/contracts, SAF/PDF read adapters, Room/DataStore and E composition have been implemented; the main screen is still a starter greeting. The optional L01–L04 cross-platform testing infrastructure is awaiting PR integration into `main`. Read [the current status index](docs/PROJECT_STATUS.md) for exact scope, evidence, revisions and deferred acceptance. Product-facing library/reader/editor features remain planned; future work requires separate owner approval.
 
 ## Planned capabilities
 
@@ -25,10 +25,10 @@ The core library, reader, and editor are intended to work **offline**. Internet 
 | Minimum Android version | Android 8.0 (API 26); Android 8.1 (API 27) tablet compatibility is essential |
 | UI | Jetpack Compose, Material Design 3 |
 | App structure | Initially one `app` module; MVVM/repositories as features are added |
-| PDF reading | Android `PdfRenderer` plus a custom Compose reading interface |
+| PDF reading | Android `PdfRenderer` backend implemented; custom Compose reading interface planned |
 | PDF manipulation | PDFBox-Android candidate, subject to format and annotation compatibility testing |
 | Local files | Android Storage Access Framework (SAF) |
-| Metadata and settings | Room and DataStore when their respective features are introduced |
+| Metadata and settings | Room and DataStore installed and used by current persistence repositories |
 | Cloud | Google Drive REST API with user consent, planned for a later phase |
 
 The exact build-tool versions are defined by the files in this repository. Do not assume that a dependency described as *planned* has already been added.
@@ -77,7 +77,8 @@ See the CI guide for the exact evidence; passing CI does not authorize future wo
 - [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md): automated, manual and final human acceptance.
 - [`docs/PHASE_0A_REPORT.md`](docs/PHASE_0A_REPORT.md): historical audit, initial verification and then-unresolved gates.
 - [`docs/TECH_STACK.md`](docs/TECH_STACK.md): current toolchain, theme/locales and candidate dependency risks.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md): Phase 0 status and future scope requiring separate approval.
+- [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md): current implementation, validation and deferred-acceptance status.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): completed technical milestones and future product scope.
 - [`LICENSE`](LICENSE): the repository's restrictive Creative Commons license text.
 
 Development is controlled through feature branches, pull requests, automated checks, and **explicit approval by the project owner**. Automated agents may propose changes but must never merge them into `main` without authorization.
@@ -86,7 +87,7 @@ Development is controlled through feature branches, pull requests, automated che
 
 ```text
 PartiturasPDF/
-├── app/                         Android app (starter project)
+├── app/                         Android app, backend adapters and integration tests
 ├── gradle/                      Gradle wrapper and dependency catalog
 ├── docs/
 │   ├── PROJECT_SPECIFICATION.md Product and engineering specification
@@ -101,11 +102,7 @@ PartiturasPDF/
 
 The PDF dataset is present and immutable. Install its declared Python dependencies
 and run `python test-fixtures/scripts/verify_fixtures.py`; never regenerate it in
-CI. The owner merged Phase 0A, Phase 0B and the API 27 correction (PRs #1, #2 and
-#3) and accepted Phase 0. No product features are implemented. Architectural
-design and shared contract definition are the next planned activities; neither
-is implemented or authorized by this documentation. They require separate owner
-approval. Failed mandatory checks still block integration.
+CI. The owner merged Phase 0A, Phase 0B, API27 compatibility fixes and subsequent approved backend phases. A0/A1, SAF/PDF reading adapters, C persistence and E composition now exist; user-facing library, reader and editor flows remain unimplemented. See [current status](docs/PROJECT_STATUS.md). Failed mandatory checks still block integration.
 
 ## License and reuse
 

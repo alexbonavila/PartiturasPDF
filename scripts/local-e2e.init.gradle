@@ -1,0 +1,34 @@
+// Explicit local-only source set and single-device execution. Ordinary CI never loads this file.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.extensions.getByName('androidComponents').finalizeDsl { android ->
+                android.sourceSets.getByName('androidTest').kotlin.srcDir(
+                    project.rootProject.file('scripts/local-e2e/androidTest'))
+            }
+            project.tasks.register('localE2eStage', Exec) {
+                def adbPath = project.providers.environmentVariable('LOCAL_E2E_ADB').getOrElse('')
+                def parameters = ['Serial', 'Stage', 'Run', 'Sha256', 'Failure'].collectEntries { suffix ->
+                    [(suffix): project.providers.gradleProperty('localE2e' + suffix).getOrElse('')]
+                }
+                doFirst {
+                    def required = { key ->
+                        def value = parameters[key]
+                        if (!value || !(value ==~ /[a-zA-Z0-9_.:#-]+/)) {
+                            throw new GradleException("Missing/invalid local E2E property: ${key}")
+                        }
+                        value
+                    }
+                    if (!adbPath) throw new GradleException('LOCAL_E2E_ADB is required')
+                    commandLine(adbPath, '-s', required('Serial'),
+                        'shell', 'am', 'instrument', '-w', '-r',
+                        '-e', 'class', 'com.abdev.partituraspdf.storage.saf.SafLocalE2eTest#' + required('Stage'),
+                        '-e', 'localE2eRun', required('Run'),
+                        '-e', 'localE2eSha256', required('Sha256'),
+                        '-e', 'localE2eFailure', required('Failure'),
+                        'com.abdev.partituraspdf.test/androidx.test.runner.AndroidJUnitRunner')
+                }
+            }
+        }
+    }
+}

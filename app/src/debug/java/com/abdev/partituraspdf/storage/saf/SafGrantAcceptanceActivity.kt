@@ -60,8 +60,9 @@ class SafGrantAcceptanceActivity : ComponentActivity() {
         val info = TextView(this).apply { text = getString(R.string.saf_accept_instructions) }
         info.setTextColor(android.graphics.Color.WHITE)
         layout.addView(info)
-        fun addAction(title: Int, action: () -> Unit) {
+        fun addAction(viewId: Int, title: Int, action: () -> Unit) {
             val button = Button(this).apply {
+                id = viewId
                 setText(title)
                 setOnClickListener { action() }
             }
@@ -69,10 +70,13 @@ class SafGrantAcceptanceActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
-        addAction(R.string.saf_accept_select) { picker.launch(grants.treePickerIntent()) }
-        addAction(R.string.saf_accept_check) { checkAccess() }
-        addAction(R.string.saf_accept_release) { releaseAccess() }
-        status = TextView(this).apply { text = getString(R.string.saf_accept_ready) }
+        addAction(R.id.saf_accept_select_button, R.string.saf_accept_select) { picker.launch(grants.treePickerIntent()) }
+        addAction(R.id.saf_accept_check_button, R.string.saf_accept_check) { checkAccess() }
+        addAction(R.id.saf_accept_release_button, R.string.saf_accept_release) { releaseAccess() }
+        status = TextView(this).apply {
+            id = R.id.saf_accept_status
+            text = getString(R.string.saf_accept_ready)
+        }
         status.setTextColor(android.graphics.Color.WHITE)
         layout.addView(status)
         setContentView(ScrollView(this).apply { addView(layout) })

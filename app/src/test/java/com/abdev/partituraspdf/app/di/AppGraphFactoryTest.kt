@@ -42,7 +42,10 @@ class AppGraphFactoryTest {
         val created = AtomicInteger()
         val released = AtomicInteger()
         val graph = inputs.graph()
-        val factory = AppGraphFactory(limits) { created.incrementAndGet(); AppGraphFactory.Resources(graph) { released.incrementAndGet() } }
+        val factory = AppGraphFactory(limits) {
+            created.incrementAndGet()
+            AppGraphFactory.constructOwnedResources({ released.incrementAndGet() }) { graph }
+        }
         assertEquals(0, created.get())
         assertSame(graph, factory.get())
         assertSame(factory.get().registry, factory.get().registry)
@@ -89,15 +92,59 @@ class AppGraphFactoryTest {
     @Test fun constructionFailuresPropagateAndDoNotCacheAnIncompleteGraph() {
         val defect = IllegalArgumentException("construction failure")
         val attempts = AtomicInteger()
+        val releases = mutableListOf<Int>()
         val graph = Inputs(limits).graph()
         val factory = AppGraphFactory(limits) {
-            if (attempts.incrementAndGet() == 1) throw defect
-            AppGraphFactory.Resources(graph) {}
+            val acquired = attempts.incrementAndGet()
+            AppGraphFactory.constructOwnedResources({ releases.add(acquired) }) {
+                if (acquired == 1) throw defect
+                graph
+            }
         }
         assertSame(defect, assertThrows(IllegalArgumentException::class.java) { factory.get() })
+        assertEquals(listOf(1), releases)
+        assertSame(graph, factory.get())
         assertSame(graph, factory.get())
         assertEquals(2, attempts.get())
+        assertEquals(listOf(1), releases)
         factory.close()
+        factory.close()
+        assertEquals(listOf(1, 2), releases)
+    }
+
+    @Test fun assemblyFailureReleasesOwnershipOnceAndPreservesPrimaryFailure() {
+        val defect = IllegalArgumentException("assembly failure")
+        var releases = 0
+        val thrown = assertThrows(IllegalArgumentException::class.java) {
+            AppGraphFactory.constructOwnedResources({ releases++ }) { throw defect }
+        }
+        assertSame(defect, thrown)
+        assertEquals(1, releases)
+        assertTrue(thrown.suppressed.isEmpty())
+    }
+
+    @Test fun assemblyFailureSuppressesDistinctCleanupFailureWithoutReplacingPrimary() {
+        val defect = IllegalArgumentException("assembly failure")
+        val cleanup = IllegalStateException("cleanup failure")
+        var releases = 0
+        val thrown = assertThrows(IllegalArgumentException::class.java) {
+            AppGraphFactory.constructOwnedResources({ releases++; throw cleanup }) { throw defect }
+        }
+        assertSame(defect, thrown)
+        assertEquals(1, releases)
+        assertEquals(1, thrown.suppressed.size)
+        assertSame(cleanup, thrown.suppressed.single())
+    }
+
+    @Test fun assemblyFailureDoesNotSuppressItselfWhenCleanupThrowsSameInstance() {
+        val defect = IllegalArgumentException("assembly and cleanup failure")
+        var releases = 0
+        val thrown = assertThrows(IllegalArgumentException::class.java) {
+            AppGraphFactory.constructOwnedResources({ releases++; throw defect }) { throw defect }
+        }
+        assertSame(defect, thrown)
+        assertEquals(1, releases)
+        assertTrue(thrown.suppressed.isEmpty())
     }
 
     @Test fun releaseFailurePropagatesWithoutAllowingReuseOrDoubleRelease() {
@@ -113,9 +160,17 @@ class AppGraphFactoryTest {
 
     @Test fun factoryDoesNotTranslateCancellationDuringConstruction() {
         val cancelled = CancellationException("cancel construction")
-        val factory = AppGraphFactory(limits) { throw cancelled }
+        val cleanup = IllegalStateException("cleanup failure")
+        var releases = 0
+        val factory = AppGraphFactory(limits) {
+            AppGraphFactory.constructOwnedResources({ releases++; throw cleanup }) { throw cancelled }
+        }
         assertSame(cancelled, assertThrows(CancellationException::class.java) { factory.get() })
+        assertEquals(1, releases)
+        assertEquals(1, cancelled.suppressed.size)
+        assertSame(cleanup, cancelled.suppressed.single())
         factory.close()
+        assertEquals(1, releases)
     }
 
     @Test fun isolatedOwnersNeverShareGraphsOrDisposeBorrowedContracts() {

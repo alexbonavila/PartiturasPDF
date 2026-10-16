@@ -30,29 +30,35 @@ internal class AppGraphFactory internal constructor(
     constructor(application: Application, runtimeLimits: AppRuntimeLimits) : this(runtimeLimits, { limits ->
         val resolver = application.contentResolver
         val database = MetadataDatabase.open(application)
-        try {
-            Resources(
-                AppGraph(
-                    runtimeLimits = limits,
-                    catalog = SafDocumentCatalog(resolver),
-                    readAccess = SafDocumentReadAccess(resolver, application),
-                    registry = RoomDocumentRegistry(database),
-                    metadata = RoomDocumentMetadataRepository(database),
-                    preferences = DataStorePreferencesRepository(applicationPreferencesStore(application)),
-                    pdfEngine = AndroidPdfReadEngine(limits.render),
-                    treeGrants = SafTreeGrantAccess(resolver),
-                ),
-                release = database::close,
+        constructOwnedResources(database::close) {
+            AppGraph(
+                runtimeLimits = limits,
+                catalog = SafDocumentCatalog(resolver),
+                readAccess = SafDocumentReadAccess(resolver, application),
+                registry = RoomDocumentRegistry(database),
+                metadata = RoomDocumentMetadataRepository(database),
+                preferences = DataStorePreferencesRepository(applicationPreferencesStore(application)),
+                pdfEngine = AndroidPdfReadEngine(limits.render),
+                treeGrants = SafTreeGrantAccess(resolver),
             )
-        } catch (failure: Throwable) {
-            try {
-                database.close()
-            } catch (cleanup: Throwable) {
-                if (cleanup !== failure) failure.addSuppressed(cleanup)
-            }
-            throw failure
         }
     })
+
+    internal companion object {
+        /** Takes ownership now; successful assembly transfers release to the returned resources. */
+        internal fun constructOwnedResources(release: () -> Unit, assemble: () -> AppGraph): Resources {
+            try {
+                return Resources(assemble(), release)
+            } catch (failure: Throwable) {
+                try {
+                    release()
+                } catch (cleanup: Throwable) {
+                    if (cleanup !== failure) failure.addSuppressed(cleanup)
+                }
+                throw failure
+            }
+        }
+    }
 
     /** Isolated tests provide their own contracts and explicit resource owner, with no Android IO. */
     internal class Resources(val graph: AppGraph, val release: () -> Unit)

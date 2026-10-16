@@ -206,7 +206,9 @@ class CoveragePolicyTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # macOS temporary paths can traverse /var -> /private/var. Use the canonical
+        # fixture root; production deliberately rejects any unresolved symlink ancestor.
+        self.root = Path(self.temp.name).resolve()
 
     def test_explicit_serial_is_backward_compatible_and_never_unqualified_locally(self):
         result = subprocess.CompletedProcess([], 0, '26', '')
@@ -228,6 +230,16 @@ class CoveragePolicyTests(unittest.TestCase):
             self.assertEqual(output / 'android-junit', pc.ANDROID_XML)
             self.assertEqual(output / 'inputs/android', pc.ANDROID)
             self.assertNotIn('connected', str(pc.ANDROID_XML))
+
+    def test_symlink_ancestor_is_still_rejected_with_canonical_fixture_root(self):
+        alias = self.root / 'alias'
+        output = alias / 'reports' / ('20261015T100000Z-' + 'a'*32) / 'coverage'
+        original = Path.is_symlink
+        # Simulate a symlink ancestor without requiring Windows symlink privileges.
+        with patch.object(pc, 'ROOT', self.root), patch.object(Path, 'is_symlink', autospec=True,
+                side_effect=lambda path: path == alias or original(path)):
+            with self.assertRaisesRegex(ValueError, 'Unsafe local coverage'):
+                pc.configure_local(output, 'emulator-5580')
 
     def test_unsafe_output_or_physical_serial_rejected(self):
         for directory, serial in [(self.root / 'coverage', 'emulator-5580'),

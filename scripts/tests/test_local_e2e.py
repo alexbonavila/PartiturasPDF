@@ -207,28 +207,47 @@ class HostTests(unittest.TestCase):
             with self.subTest(port=port), self.assertRaises(e2e.Blocked):
                 e2e.provision(self.home, self.home / "sdk", port)
 
-    def make_provision(self):
+    def make_provision(self, home=None, selection=None):
+        home = self.home if home is None else home
+        selection = e2e.host_image("Linux", "x86_64") if selection is None else selection
         state = {"version": 1, "name": "PartiturasPDF_E2E_API26_0123456789ab", "port": 5580,
-                 "image": X86_IMAGE, "avd_home": str(self.home / "avd")}
-        directory = self.home / "avd" / (state["name"] + ".avd")
+                 "image": selection["image"], "avd_home": str(home / "avd")}
+        directory = home / "avd" / (state["name"] + ".avd")
         directory.mkdir(parents=True)
-        (directory / "config.ini").write_text("image.sysdir.1=system-images/android-26/google_apis/x86_64/\n")
+        (directory / "config.ini").write_text("image.sysdir.1=" + selection["image"].replace(";", "/") + "/\n")
         (directory.parent / (state["name"] + ".ini")).write_text("path=" + str(directory) + "\n")
-        (self.home / "device.json").write_text(json.dumps(state))
+        (home / "device.json").write_text(json.dumps(state))
         return state, directory
 
+    def simulated_hosts(self):
+        return (("Darwin", "arm64"), ("Darwin", "x86_64"),
+                ("Windows", "x86_64"), ("Linux", "x86_64"))
+
     def test_owned_avd_config_and_index_must_agree(self):
-        state, directory = self.make_provision()
-        self.assertEqual(e2e.load_device(self.home), state)
-        (directory.parent / (state["name"] + ".ini")).write_text("path=/other/user/avd\n")
-        with self.assertRaisesRegex(e2e.Blocked, "outside"):
-            e2e.load_device(self.home)
+        for system, arch in self.simulated_hosts():
+            with self.subTest(system=system, arch=arch):
+                selection = e2e.host_image(system, arch)
+                home = self.home / (system + "-" + arch)
+                state, directory = self.make_provision(home, selection)
+                # An implicit host decision must never affect this simulated fixture.
+                with patch.object(e2e, "native_architecture", side_effect=AssertionError("Unexpected real host detection")):
+                    self.assertEqual(e2e.load_device(home, selection), state)
+                    (directory.parent / (state["name"] + ".ini")).write_text("path=/other/user/avd\n")
+                    with self.assertRaisesRegex(e2e.Blocked, "outside"):
+                        e2e.load_device(home, selection)
 
     def test_different_image_cannot_be_adopted(self):
-        _, directory = self.make_provision()
-        (directory / "config.ini").write_text("image.sysdir.1=system-images/android-36/google_apis/x86_64/\n")
-        with self.assertRaisesRegex(e2e.Blocked, "approved API 26"):
-            e2e.load_device(self.home)
+        for system, arch in self.simulated_hosts():
+            with self.subTest(system=system, arch=arch):
+                selection = e2e.host_image(system, arch)
+                home = self.home / (system + "-" + arch)
+                state, directory = self.make_provision(home, selection)
+                with patch.object(e2e, "native_architecture", side_effect=AssertionError("Unexpected real host detection")):
+                    self.assertEqual(e2e.load_device(home, selection), state)
+                    wrong_image = selection["image"].replace("android-26", "android-36")
+                    (directory / "config.ini").write_text("image.sysdir.1=" + wrong_image.replace(";", "/") + "/\n")
+                    with self.assertRaisesRegex(e2e.Blocked, "approved API 26"):
+                        e2e.load_device(home, selection)
 
     def test_partial_functional_run_has_an_xml_error(self):
         self.runner.summary["tests"] = [{"name": "acquire", "status": "PASS"}]

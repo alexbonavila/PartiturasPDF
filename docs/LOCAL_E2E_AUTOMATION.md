@@ -1,13 +1,14 @@
 # Local Android E2E automation
 
+> **Current-status note (2026-10-16):** The sections below retain original delivery-time findings and their exact test SHAs. L01–L04 was subsequently validated natively on macOS and in API 26/27/36 hosted CI; consult [PROJECT_STATUS.md](PROJECT_STATUS.md) and [L04D](LOCAL_COMPATIBILITY_VALIDATION.md). Historical `NOT RUN` and `BLOCKED` observations are not claims about the later verified run. Physical Android 8.1 acceptance remains deferred.
+
 ## Scope and execution status
 
 This opt-in infrastructure exercises real API 26 DocumentsUI and production SAF
 adapters through the existing debug-only `SafGrantAcceptanceActivity`. It does
 not implement a reader/library UI, change storage contracts, request broad storage
 permissions, or replace ordinary CI. L02 adds `host`, ordinary `android`, and `full`
-while preserving authentic `saf`. `reader`, `library` and `coverage` remain
-**BLOCKED / exit 2**, without substitute tests. See
+while preserving authentic `saf`. `reader` and `library` remain **BLOCKED / exit 2** because their user-facing features are unimplemented. The later L03 `coverage` suite is available and validated as documented in [L04D](LOCAL_COMPATIBILITY_VALIDATION.md). See
 [the L02 suite, isolation, evidence and C06 guide](LOCAL_REGRESSION_AUTOMATION.md).
 
 The owner reports L01 accepted on macOS Apple Silicon/API 26 ARM64 at the L02

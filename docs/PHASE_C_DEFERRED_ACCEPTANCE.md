@@ -1,5 +1,7 @@
 # Phase C — Development Closeout and Deferred Acceptance
 
+> **Current-state addendum (2026-10-16):** [PR #10](https://github.com/alexbonavila/PartiturasPDF/pull/10) was merged to `main` on 2026-10-14 (merge commit `89075908b236f8342df46f9621a79136653c1c9c`). The original instructions below to prepare/merge PR #10 are **historical and already executed**, not pending tasks. Real backup/restore, device-to-device transfer and physical Android 8.1 tablet acceptance remain **DEFERRED / NOT RUN**, with no policy waiver. After purchase, prepare physical-device acceptance on a new short-lived task branch from the then-current `main` as recorded in [L04D](LOCAL_COMPATIBILITY_VALIDATION.md). See [current status](PROJECT_STATUS.md).
+
 **Repository:** [alexbonavila/PartiturasPDF](https://github.com/alexbonavila/PartiturasPDF)<br>
 **Application:** Partituras PDF (`com.abdev.partituraspdf`)<br>
 **Recorded owner decision:** 2026-10-14<br>

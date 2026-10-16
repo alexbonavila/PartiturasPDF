@@ -90,22 +90,24 @@ required activity integration with Compose; the current `ComponentActivity`
 does not provide that integration automatically. Verify recreation, resource
 contexts and pre-33 locale persistence without blocking startup. On API 33+
 coordinate with platform per-app language settings. A newer platform-only API
-is insufficient for API 26/27. Settings persistence, migration from system
-locale, return-to-system behavior and process restart need approved tests before
-adding AppCompat/DataStore or a selector. No locale preference, locale-config
-manifest declaration, selector screen or new dependency is installed now.
+is insufficient for API 26/27. DataStore already stores a `language_selection`
+preference (`system`, `en`, `ca`, `es`), but no user-facing language selector or
+application-locale integration exists. UI integration, return-to-system behavior,
+resource-context updates, recreation and process restart still need approved
+validation before adding AppCompat or a selector. No `locale-config` manifest
+entry, language-selection screen or AppCompat dependency is installed.
 
-## Architecture and prospective dependencies
+## Architecture and installed/prospective dependencies
 
 Keep one module. As approved features arrive, use Compose UI, ViewModels/state
 holders, repositories and interfaces around SAF, PDF engines and remote services;
 use coroutines for bounded background work. PDF engine types must not leak into
 UI. Create packages/abstractions when used, rather than empty placeholders.
 
-| Candidate | Intended responsibility and adoption conditions |
+| Technology | Implemented status or adoption conditions |
 | --- | --- |
-| Platform SAF | User-controlled documents, persisted URI permissions; test revoked access, provider errors, non-seekable streams and replacement behavior. |
-| Platform `PdfRenderer` | Reading on API 26; bounded bitmap/cache memory, renderer/page closure and background execution; test protected/corrupt/complex PDFs. |
+| Platform SAF | **Implemented** provider/URI grant and read adapters; test revoked access, provider errors, non-seekable streams and any future replacement behavior. |
+| Platform `PdfRenderer` | **Implemented** native PDF read/render adapter on API 26; bounded bitmap memory, renderer/page closure and background execution; no user-facing reader UI. |
 | PDFBox-Android 2.0.27.0 | Candidate editing engine only; audit maintenance, vulnerabilities, dependencies, APK/memory impact and API 26 behavior before adoption. |
 | Room | **Installed**: metadata and registry persistence, schema v1; never authoritative PDF bytes; migration/reconciliation constraints remain. |
 | DataStore | **Installed**: application preferences, tested persistence/restart; never store authorization secrets in plain preferences. |

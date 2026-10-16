@@ -2,7 +2,7 @@
 
 **Repository:** `alexbonavila/PartiturasPDF`  
 **Application:** Partituras PDF (`com.abdev.partituraspdf`)  
-**Current stage:** Phase 0 / foundation, unless the human project owner explicitly approves a later phase.
+**Implementation status (not an authorization):** Phase 0 is complete. Later approved work added shared contracts, SAF and PDF-reading adapters, Room/DataStore persistence, and app composition; user-facing library, reader, editor, annotation and Drive flows are still not implemented. Before starting a task, verify the current `main` and its dated task-specific evidence. Only the human project owner can approve additional work.
 
 This file applies to **all agent work** in this repository, including Codex. Read it before analyzing, editing, proposing, testing, or committing changes.
 
@@ -21,10 +21,10 @@ This file applies to **all agent work** in this repository, including Codex. Rea
 
 ## 2. Required reading before coding
 
-- `README.md` — public description and current status.
+- `README.md` — public description; cross-check implementation status with current source and dated task evidence.
 - `docs/PROJECT_SPECIFICATION.md` — requirements, decision log, risks and implementation boundaries.
 - `LICENSE` — restrictive project license; do not replace or relicense it.
-- `docs/TESTING_POLICY.md`, `docs/CHANGE_CONTROL.md`, `docs/DEFINITION_OF_DONE.md` — when created during Phase 0, these govern the detailed testing and change-gate criteria.
+- `docs/TESTING_POLICY.md`, `docs/CHANGE_CONTROL.md`, `docs/DEFINITION_OF_DONE.md` — established policies governing testing, change control, and acceptance.
 - `test-fixtures/README.md` and `test-fixtures/manifest.json` — when the PDF fixture suite is present, these define immutable test inputs.
 
 If approved task instructions and repository documentation appear inconsistent, **stop and request clarification**. Do not invent permission to relax any safety or approval condition.
@@ -117,7 +117,7 @@ Strict thresholds:
 - Test on Android API 26 for PRs; API 27 in scheduled/phase-close automation and on a physical Android 8.1 tablet before accepting functional phases.
 - User-facing work requires English/Catalan/Spanish translation checks and accessible UI verification.
 
-These are project policy requirements, **not claims that their pipelines currently exist**. Phase 0 must establish honest, working initial gates. If an environment lacks Android SDK, network access, the required JDK or an emulator, report the missing prerequisites and mark dependent tests **NOT RUN / BLOCKED**, never PASS. Do not waive the gate yourself.
+These are project policy requirements. CI gates were established during Phase 0; their existence is not proof that they passed on the revision under review. Check real execution evidence at the latest required commit. If an environment lacks Android SDK, network access, the required JDK or an emulator, report the missing prerequisites and mark dependent tests **NOT RUN / BLOCKED**, never PASS. Do not waive the gate yourself.
 
 ## 8. PDF test fixtures and safety
 
@@ -138,7 +138,9 @@ For a single-maintainer repository, do **not** enable a GitHub reviewer-count re
 
 ## 10. Special restriction — Phase 0 only
 
-Until the owner explicitly authorizes a later phase, permitted work is limited to:
+**Historical Phase 0 scope:** The owner subsequently approved development beyond Phase 0. This section records the original Phase 0 restrictions; it neither prohibits already approved and implemented later work nor authorizes any new functionality. Sections 1, 6 and 9 continue to govern every new task.
+
+During Phase 0, permitted work was limited to:
 
 - Toolchain verification without unnecessary changes.
 - Material 3 theme and base string-resource groundwork.

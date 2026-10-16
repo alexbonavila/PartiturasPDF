@@ -927,3 +927,96 @@ own approved consumers; physical acceptance still blocks functional phase closur
 
 Only the human owner may make the final approval and merge decision after applicable evidence is
 complete. No merge, auto-merge, main push, protection change or further implementation is authorized.
+
+
+---
+
+## Post-Merge Phase E Evidence Reconciliation — 2026-10-16
+
+This dated reconciliation supplements the earlier current-state note and chronological E01–E06
+findings above; the complete original text, including historical commands, SHAs and BLOCKED /
+NOT RUN results, is preserved. It records later integration/evidence, not retroactive execution
+or unconditional phase acceptance. The verified `main` baseline is
+`f94841f9f1eead508dd81b670d0943f3b3ae19bb`; P01/P02 are documentation-only work on
+`chore/pre-fgh-readiness` from that baseline.
+
+### Delivery and subsequent automated evidence
+
+- [PR #12](https://github.com/alexbonavila/PartiturasPDF/pull/12) merged Phase E at
+  `c5db5b4cce4c08bdf3ead92b21d3972e96843392`.
+- [PR #13](https://github.com/alexbonavila/PartiturasPDF/pull/13) merged the governance/status
+  correction at `f56b6193c9b059cf647502a6b75dcbf762afd70c`.
+- [PR #14](https://github.com/alexbonavila/PartiturasPDF/pull/14) merged L01–L04 automation at
+  `f94841f9f1eead508dd81b670d0943f3b3ae19bb`. The old lack of PR publication/integration is
+  resolved; its historical audit-time BLOCKED statement is retained above.
+- [Main push CI #58](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38926693866),
+  `f94841f9`: build, lint, unit-tests, instrumented-api26, localization, pdf-fixtures and
+  quality-gate all PASS. API27/36 were not requested in this push run.
+- [Manual compatibility CI #59](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38926745562),
+  `f94841f9`: all seven mandatory jobs plus compatibility-api27 and compatibility-api36 PASS.
+  The earlier missing final hosted/compatibility evidence has subsequent main-baseline evidence;
+  emulator execution does not satisfy physical Android 8.1 acceptance.
+- [PR #14 CI #57](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38925687779)
+  passed the seven mandatory jobs at its pre-merge revision `36a52fb`; it is not a run on the
+  later `f94841f9` merge commit.
+
+The merged PRs and public run/job result pages were rechecked on 2026-10-16. Raw logs, XML and
+execution artifacts were not inspected in this review (GitHub API access remains unavailable).
+The recorded inventory of **165 JVM / 228 Android tests** therefore is not a new independently
+measured count for #58/#59. No new run or branch-protection verification is claimed here.
+
+[L04D](../LOCAL_COMPATIBILITY_VALIDATION.md) separately records owner-reported native macOS
+Apple Silicon API26 ARM64 `full` and `coverage` PASS at
+`87b864de296563649a4f80e15b55e30f75e26836`: 246 Python / 165 JVM / 228 Android / four authentic
+SAF stages for `full`, and genuine merged JVM+Android data for the approved coverage scopes.
+Its earlier Windows evidence is at `27cef9f` (L02 full) and `9d10739d` (L03 coverage), not at the
+latest main SHA. The historical hosted compatibility run
+[38857215346](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38857215346) is also
+at `87b864de`. These report-attributed results were not rerun on native hosts here. In particular,
+the genuine picker grants in the controlled synthetic-folder SAF suite supply evidence beyond
+E05's simulated callbacks, but do not prove every external provider or a production host
+reconciliation flow. The user-facing library, reader and settings screens remain unimplemented.
+
+### Requirement-to-evidence reconciliation
+
+Rows below distinguish implementation/evidence already present from the precise evidence still
+needed. Formal blockers remain governed by the existing Definition of Done; none is waived.
+P03/P04/P05 and additional execution require their own owner-approved scope.
+
+| Requirement | Implementation state | Test / evidence state | Remaining limitation, closure evidence and responsibility |
+| --- | --- | --- | --- |
+| E01 composition contracts and lifetime | AppGraph/Factory implemented and merged in #12 | Historical JVM factory lifecycle/failure tests and positive real-constructor integration; subsequent full-suite hosted PASS at `f94841f9` | Native constructor failure/cleanup and full-source coverage remain unestablished. Matching combined data, original classes and source/branch report must resolve the existing criterion; formal coverage blocker, P03 / owner. Injection-seam tests alone do not close it. |
+| E02 runtime limits | Immutable explicit read/render limits and owner lifetime implemented | Historical limits/configuration JVM tests; subsequent hosted unit/instrumentation PASS | Provisional ceilings are not measured performance budgets. Closing applicable device/resource acceptance needs repeated open/render/close and memory/latency observations on the selected constrained device; owner-approved physical/performance task. Future UI budgets require approved consumers, not speculative P02 changes. |
+| E03 SAF-to-PDF integration | Production adapters composed; real resolver/provider/native-render integration tests merged | Historical 12-test API26 owner report; full-suite hosted API26/27/36 PASS at `f94841f9` | Controlled providers/canonical inputs do not cover all external providers or physical conditions. Retained real-provider and physical-device scenario results at an exact SHA are needed for applicable formal acceptance; owner-led device/provider task. |
+| E04 Room/DataStore integration | Shared Room observation, metadata and preferences integration implemented | Historical four-test API26 owner report; subsequent full-suite hosted PASS | Real backup/reinstall/restore and D2D exclusion evidence still missing; C06 guarded acceptance with restored preferences and absent Room/private files closes the relevant persistence-security criteria. Owner / C06 deferred register; formal C acceptance blocker, not an E04 implementation failure. |
+| E05 lifecycle/error boundaries | Error/cancellation and independent graph/reader/bitmap ownership tests merged | Historical seven-test owner report; hosted full-suite PASS. Native L01 SAF evidence at `87b864de` uses authentic Android authorization | Additional external-provider revocation/restart conditions, physical stress and production-host reconciliation remain unverified. Close applicable manual E criteria with provider/device identity, grant flags, exact revision and retained before/after results; owner-approved external SAF / physical task. Controlled E2E is not universal provider acceptance. |
+| E06 delivery and acceptance reconciliation | Chronological audit retained; #12 integrated | PR publication, hosted mandatory checks and API27/36 now evidenced by merges and #58/#59 result pages | Coverage/manual obligations below and explicit final owner acceptance remain outstanding; formal phase closure cannot be inferred from merge or green CI. Owner reviews complete requirement evidence after approved follow-up tasks. |
+| L01–L04 automation | Merged in #14; opt-in and ordinary suites remain distinct | Native reports at their recorded SHAs; hosted main-baseline PASS | No new native Windows/macOS run at `f94841f9` or raw current-run count inspection is claimed. Fresh exact-revision host reports/XML would establish those specific claims if required by owner; attribution limitation, not an assertion that hosted CI failed. |
+| Full `app/di` combined coverage | Composition instrumentation exists; approved scoped coverage tooling exists | Current full-package JVM+Android report unresolved; A1/B5/C05 scoped PASS is not composition coverage | Missing matching Android/JVM data, original bytecode/provenance and all-source counters including native cleanup branches. P03 must measure and report against existing policy; formal coverage verification blocker. No new gate/threshold/exclusion is authorized. |
+| Physical Android 8.1 tablet | Backend implementation exists; device not yet accepted | **DEFERRED / NOT RUN**; API27 emulator PASS is separate | Acquire/select the physical tablet, record model/API/SHA and relevant compatibility, SAF, source-survival and resource results. Owner-approved physical acceptance after hardware purchase; blocks applicable functional-phase acceptance. |
+| Real backup/restore and D2D | Policy B exact-file allowlist and guarded manual tooling merged | XML-policy/static tests and persistence suites provide automated evidence; actual restore/D2D **DEFERRED / NOT RUN** | Execute independently supported cloud-transport restore and D2D procedures only in explicitly selected disposable environments. Retain exact preference survival, Room/sidecar/private-file absence and transfer-mode limitations. Owner / C06 deferred register; formal persistence acceptance blocker. |
+
+### Coverage interpretation and formal status
+
+The earlier factory JVM-only `13/36` line and `12/14` branch diagnostic remains a historical
+JVM-only measurement of the full source, not zero Android coverage or a combined percentage.
+L04D's combined A1/B5/C05 scope results do not supply the missing full `app/di` denominator or
+establish coverage of the production constructor's native failure/cleanup paths. P03 is pending;
+no coverage infrastructure, policy or tests are changed by this reconciliation.
+
+- **Technical integration:** Phase E is merged with backend integration tests and subsequent
+  hosted main-baseline mandatory/API27/API36 PASS evidence. The historical “not merge-ready”
+  verdict describes its earlier delivery, not the current fact of owner-controlled integration.
+- **Coverage verification:** complete combined JVM + Android `app/di` coverage remains unresolved
+  in the evidence available to R0/P02. No unconditional policy-threshold achievement is claimed.
+- **Physical/manual acceptance:** external/provider/device scenarios and controlled C06 restore/D2D
+  evidence remain outstanding, as detailed above and in the
+  [Phase C deferred register](../PHASE_C_DEFERRED_ACCEPTANCE.md).
+- **Formal acceptance:** this documentation task does not declare unconditional Phase E acceptance,
+  waive any [Definition of Done](../DEFINITION_OF_DONE.md) requirement or substitute integration
+  for explicit owner approval. P02 reconciliation can be delivered while those separate obligations
+  remain open. F/G/H/I implementation is future owner-approved work; P03/P04/P05 are not started here.
+
+Use [PROJECT_STATUS](../PROJECT_STATUS.md) and [ROADMAP](../ROADMAP.md) for the current index.
+Future revisions still require applicable latest-head CI/current base and human review; evidence
+at the baseline above is not automatically certification of this new documentation commit.

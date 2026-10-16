@@ -4,7 +4,7 @@
 
 Partituras PDF is a tablet-first project designed to turn an Android device into a practical digital music stand and a manageable library of musical scores. Its goal is to keep scores in ordinary PDF files, provide distraction-free reading with simple page turns, and make common changes without requiring a desktop PDF editor.
 
-> **Project status (2026-10-16):** Phase 0 and the backend architecture/contracts, SAF/PDF read adapters, Room/DataStore and E composition have been implemented; the main screen is still a starter greeting. The optional L01–L04 cross-platform testing infrastructure is awaiting PR integration into `main`. Read [the current status index](docs/PROJECT_STATUS.md) for exact scope, evidence, revisions and deferred acceptance. Product-facing library/reader/editor features remain planned; future work requires separate owner approval.
+> **Project status (2026-10-16):** Phase 0 and the backend architecture/contracts, SAF/PDF read adapters and Room/DataStore have been implemented; E composition is merged through [PR #12](https://github.com/alexbonavila/PartiturasPDF/pull/12) and L01–L04 cross-platform testing infrastructure through [PR #14](https://github.com/alexbonavila/PartiturasPDF/pull/14). The main screen is still a starter greeting; user-facing library, reader and settings screens are not implemented. Read [the current status index](docs/PROJECT_STATUS.md) for exact scope, evidence, revisions and deferred acceptance. Product-facing library/reader/editor features remain planned; future work requires separate owner approval.
 
 ## Planned capabilities
 

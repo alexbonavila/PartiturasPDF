@@ -1,5 +1,7 @@
 # E02 runtime limits and ownership decisions
 
+> **Current-state addendum (2026-10-16):** This file is a chronological E-phase implementation and acceptance audit; original `NOT RUN` statements refer to the environment/commit of that delivery, not every subsequent revision. Follow-up L01–L04 real API26 regression, SAF and combined coverage and hosted API26/27/36 results are documented at [current project status](../PROJECT_STATUS.md) and [L04D](../LOCAL_COMPATIBILITY_VALIDATION.md). The original E acceptance limits (notably manual external SAF grants and physical tablet) must not be silently reclassified as passed. The user-facing library/reader navigation remains unimplemented.
+
 Scope: E02 only, based on E01 b017c44a94e25384b419ab8c3006cb181f147991 on
 feat/app-composition-e. No MainActivity wiring, reader feature, ViewModel, global graph provider,
 new adapter or dependency is introduced. E03-E06 require separate owner authorization.

@@ -15,6 +15,8 @@ sources below determine available behavior. One `:app` module, minSdk 26, Kotlin
 and English/Catalan/Spanish remain binding. Proposed MVP boundaries narrow a future task, not the
 full product specification; any omitted product requirement needs explicit owner scope approval.
 
+> **P05 cross-reference (2026-10-17):** The [consolidated deferred acceptance register](PRE_FGH_DEFERRED_ACCEPTANCE.md) is now delivered for owner review. “P05 not started” below records this P04 document's earlier snapshot. D01–D11 remain PENDING OWNER APPROVAL; their recommendations are unchanged.
+
 ## 1. Existing implementation inventory
 
 All source paths here are relative to

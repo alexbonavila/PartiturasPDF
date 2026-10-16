@@ -1,6 +1,6 @@
 # Technical stack and foundation
 
-This document records the implemented Phase 0 foundation and the candidates in
+This document originated with Phase 0. Current installed capabilities are summarized in [PROJECT_STATUS.md](PROJECT_STATUS.md); the historical foundation/theme guidance below remains relevant. The product requirements and candidates are in
 [PROJECT_SPECIFICATION.md](PROJECT_SPECIFICATION.md). A candidate is not an
 installed dependency or authorization to implement a feature.
 
@@ -19,8 +19,7 @@ installed dependency or authorization to implement a feature.
 | Gradle daemon JVM criterion | 25 |
 | Toolchain resolver | Foojay convention plugin 1.0.0 |
 
-Versions, wrapper contents, module structure and Gradle configuration are
-unchanged. The Unix wrapper's executable permission is corrected so `./gradlew`
+The version catalog and Gradle configuration are authoritative for current dependency versions; later phases added persistence and test-only dependencies. The Unix wrapper's executable permission is corrected so `./gradlew`
 works. Do not add the legacy Kotlin Android plugin alongside AGP 9's built-in
 Kotlin. JDK 25 executes Gradle; Java 11 compatibility and Android API 26 runtime
 support are independent constraints.
@@ -39,8 +38,7 @@ The version catalog remains authoritative. Core KTX 1.10.1, lifecycle runtime
 KTX 2.6.1 and activity-compose 1.8.0 support the current starter. Compose UI,
 graphics, Material 3 and tooling preview use BOM 2026.02.01; debug builds also use
 tooling and the UI test manifest. Tests use JUnit 4.13.2, AndroidX test JUnit
-1.1.5, Espresso 3.5.1 and BOM-managed Compose UI test JUnit4. No Phase 0B
-dependency is added, upgraded or downgraded. Lint's version suggestions are
+1.1.5, Espresso 3.5.1 and BOM-managed Compose UI test JUnit4. Phase 0B itself added no dependency; later phases installed Room, DataStore, coroutines, KSP and testing libraries. Lint's version suggestions are
 review items, not permission to change working versions.
 
 ## Theme and accessibility
@@ -109,12 +107,12 @@ UI. Create packages/abstractions when used, rather than empty placeholders.
 | Platform SAF | User-controlled documents, persisted URI permissions; test revoked access, provider errors, non-seekable streams and replacement behavior. |
 | Platform `PdfRenderer` | Reading on API 26; bounded bitmap/cache memory, renderer/page closure and background execution; test protected/corrupt/complex PDFs. |
 | PDFBox-Android 2.0.27.0 | Candidate editing engine only; audit maintenance, vulnerabilities, dependencies, APK/memory impact and API 26 behavior before adoption. |
-| Room | Metadata only, never authoritative PDF content; require migrations and reconciliation with external file changes. |
-| DataStore | Future settings; test persistence/restart; never store authorization secrets in plain preferences. |
-| Kotlin coroutines | Future cancellable asynchronous operations; structured lifetimes and failure/cancellation tests. |
+| Room | **Installed**: metadata and registry persistence, schema v1; never authoritative PDF bytes; migration/reconciliation constraints remain. |
+| DataStore | **Installed**: application preferences, tested persistence/restart; never store authorization secrets in plain preferences. |
+| Kotlin coroutines | **Installed**: backend asynchronous operations with cancellation/ownership contracts. |
 | Google identity/authorization and Drive REST | Optional, explicit user-authorized import/export; verify current supported SDK/API and OAuth requirements before choosing versions. |
 
-Room, DataStore, PDFBox-Android and Drive libraries are not installed. Candidate
+Room and DataStore are installed and used; PDFBox-Android and Drive libraries are not installed. Candidate
 versions other than the specification's PDFBox starting point are intentionally
 undecided until dependency/API/license evaluation accompanies an approved task.
 
@@ -147,8 +145,7 @@ and read those files directly. Future Android tests can stage the same inputs
 into a **generated androidTest-only** asset directory via a declared copy task,
 including the manifest; never maintain a second source-controlled collection or
 add that directory to `main`/release. Test edits use per-test temporary copies.
-Verify release APK contents whenever source sets/assets change. No PDF-level
-application tests or fixture-staging tasks are added during Phase 0.
+Verify release APK contents whenever source sets/assets change. Phase 0 added no such tests. Subsequent approved phases staged canonical PDFs in the androidTest-only asset source set and executed native PDF integration tests; no production APK inclusion is intended.
 
 Root CC BY-NC-ND 4.0 and the fixture dataset's separate CC0 declaration remain
 unchanged. AndroidX libraries retain Apache-2.0; JUnit retains EPL-1.0 and

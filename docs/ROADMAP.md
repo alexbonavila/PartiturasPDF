@@ -1,6 +1,6 @@
 # Roadmap and approval boundaries
 
-**Status snapshot: 2026-10-16; verified `main` baseline `f94841f9f1eead508dd81b670d0943f3b3ae19bb`.** The Phase 0-only opening of this document is historical; the project progressed through architecture, backend adapters, persistence, integration and L01–L04 testing. For dated evidence and precise merge/acceptance boundaries see [PROJECT_STATUS.md](PROJECT_STATUS.md).
+**Status snapshot: 2026-10-17; verified `main` baseline `f94841f9f1eead508dd81b670d0943f3b3ae19bb`.** The Phase 0-only opening of this document is historical; the project progressed through architecture, backend adapters, persistence, integration and L01–L04 testing. For dated evidence and precise merge/acceptance boundaries see [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 | Workstream | Implemented state and remaining boundary |
 | --- | --- |
@@ -10,7 +10,7 @@
 | C persistence | Room/DataStore and Policy B configuration implemented; [real backup/restore/D2D and physical-tablet acceptance](PHASE_C_DEFERRED_ACCEPTANCE.md) are deferred, not passed. PR #10 is merged. |
 | E application composition | AppGraph/factory and integration tests merged through [PR #12](https://github.com/alexbonavila/PartiturasPDF/pull/12). The [E audit](integration/E_APP_COMPOSITION.md) records historical acceptance boundaries and remaining manual steps; user-facing navigation is not implemented. |
 | L01–L04 local testing | Merged through [PR #14](https://github.com/alexbonavila/PartiturasPDF/pull/14). SAF E2E, regression orchestration and scoped combined JaCoCo have revision-specific native evidence; post-merge hosted CI at `f94841f9` passed mandatory and requested API27/36 checks. Native runs remain attributed to their earlier SHAs. [L04D evidence](LOCAL_COMPATIBILITY_VALIDATION.md). |
-| Pre-F/G/H readiness | P01/P02 documentation and E evidence reconciliation are addressed by this documentation task; full combined `app/di` coverage remains unresolved (P03). P04/P05 are not started; no new coverage gate or acceptance waiver is created. |
+| Pre-F/G/H readiness | P01/P02 delivered. P03 cleanup remediation on the unmerged readiness branch at `618c9aa` has owner-reported Windows/API26 combined PASS: factory 37/37 lines, 14/14 branches; app/di 53/53, 14/14. Counts/raw artifacts are not independently inspected; classification stays INFORMATIONAL. [P04 boundaries](planning/FGH_INTERFACE_BOUNDARIES.md) prepared for owner review; decisions are recommendations. P05 not started. No formal acceptance waiver or feature authorization. |
 | C06 real backup/restore and D2D | **NOT RUN / DEFERRED**; XML-policy validation and automated persistence tests do not establish actual restore or D2D behavior. See the [deferred register](PHASE_C_DEFERRED_ACCEPTANCE.md). |
 | Physical Android 8.1/API27 tablet | **NOT RUN / DEFERRED** until hardware purchase; later a new short-lived test-specific branch from current `main` will prepare and execute physical acceptance. |
 | F/G/H/I and user-visible library/reader/settings/editor/annotation/Drive | Future implementation, not completed or authorized by this roadmap; each task requires separate owner approval. |

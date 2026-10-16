@@ -1,10 +1,11 @@
 # Current project status — PartiturasPDF
 
-**Snapshot date:** 2026-10-16. **Scope:** repository state and evidence review; this page is an index, not a new development authorization or an acceptance waiver.
+**Snapshot date:** 2026-10-17. **Scope:** repository state and evidence review; this page is an index, not a new development authorization or an acceptance waiver.
 
 - Repository: [alexbonavila/PartiturasPDF](https://github.com/alexbonavila/PartiturasPDF).
 - Verified `main` baseline: `f94841f9f1eead508dd81b670d0943f3b3ae19bb` (2026-10-16). Phase E merged through [PR #12](https://github.com/alexbonavila/PartiturasPDF/pull/12) (`c5db5b4c`); the governance/status correction through [PR #13](https://github.com/alexbonavila/PartiturasPDF/pull/13) (`f56b6193`); L01–L04 automation through [PR #14](https://github.com/alexbonavila/PartiturasPDF/pull/14) (`f94841f9`). Integration is complete for those PRs; formal acceptance remains separate.
 - Latest documented native macOS application/test evidence is at `87b864de296563649a4f80e15b55e30f75e26836`, before PR #14's merge. Post-merge hosted evidence below is at `f94841f9`; it does not establish a new native Windows/macOS run. See [L04D](LOCAL_COMPATIBILITY_VALIDATION.md).
+- Readiness branch `chore/pre-fgh-readiness` includes the P03 cleanup remediation at `618c9aa753e9597835b80c4862876e8d34e2fc85`, not yet merged into `main`. The owner reports native Windows/API26 combined coverage PASS at that exact revision; details below. [P04 interface boundaries](planning/FGH_INTERFACE_BOUNDARIES.md) are a planning deliverable awaiting owner review, not feature implementation authorization.
 
 ## Implemented capabilities versus user-facing features
 
@@ -39,11 +40,25 @@ The public GitHub run/job pages establish these conclusions and revision associa
 - **Earlier owner-reported native Windows / API26 x86_64:** L02 `full` PASS at `27cef9f`; L03 `coverage` PASS at `9d10739d`. These are earlier revisions, not final-SHA native Windows execution.
 - **Historical hosted [CI #38857215346](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38857215346), SHA `87b864de`:** L04D records all seven required jobs and API27/API36 PASS, 165 JVM and 228 Android tests on each API, 246 Python tests and 15 immutable PDF fixtures. Counts are attributed to that existing report, not a new artifact inspection.
 - **Scoped combined JaCoCo line/branch coverage recorded in L04D:** A1 99.47%/99.43%; B5 PDF 97.71%/87.50%; C05 Room 98.57%/94.35%; DataStore 100%/100%. These are historical scope-specific measurements, not new measurements at `f94841f9`. See [L03](LOCAL_CODE_COVERAGE.md) for the approved scopes; no project-wide coverage claim follows.
-- **Full `app/di` JVM + Android coverage remains unresolved.** Passing A1/B5/C05 gates does not establish composition-package coverage. The historical factory JVM-only diagnostic is not a combined report. P03 must examine authentic matching execution data, original bytecode, provenance and full-source counters, including constructor cleanup paths, before determining whether the existing 90% line / 80% branch criterion is satisfied. No new threshold, exclusion or gate is introduced.
+
+### P03 native Windows/API26 coverage — recorded 2026-10-17
+
+**Owner-provided evidence:** `python scripts/local_e2e.py run --suite coverage` returned PASS using the existing dedicated native accelerated API26 emulator at **`618c9aa753e9597835b80c4862876e8d34e2fc85`**. Report identifier: **`20261016T230454Z-941f1f3e04d0482ba9ea5063aeed730a`**. The owner extracted these counters from `coverage/summary.json`:
+
+| Source | Covered lines | Covered branches |
+| --- | --- | --- |
+| AppGraph.kt | 9/9 — 100% | N/A |
+| AppGraphFactory.kt | 37/37 — 100% | 14/14 — 100% |
+| AppRuntimeLimits.kt | 7/7 — 100% | N/A |
+| Entire app/di package | 53/53 — 100% | 14/14 — 100% |
+
+The supplied source inventory reports zero missed source lines/branches. The factory's production-used internal helper is exercised for successful cleanup, original exception propagation, distinct suppressed cleanup failure and same-instance suppression avoidance. These measured counters meet the P03 remediation's numerical targets; they replace the earlier current claim that combined composition coverage is unmeasured.
+
+**Attribution limits:** Codex has not inspected this Windows run's raw `.exec`, `.ec`, XML or class files. Its actual JVM/Android test counts were not supplied and are **not asserted** here. The prior cloud execution of 168 JVM tests at the remediation code is separate evidence, not this Windows run's count. Fresh bytecode/source mappings explain the changed denominator from the owner's earlier 31/36 factory and 47/52 package lines; percentages were not extrapolated from that baseline. `app/di` remains **INFORMATIONAL** in the runner; no permanent gate, threshold or exclusion changes. Coverage PASS is neither blanket production correctness nor formal Phase E, physical-device or backup/restore acceptance. See the [dated E addendum](integration/E_APP_COMPOSITION.md).
 
 ## Outstanding acceptance and readiness work
 
-1. P01/P02 reconcile current status and the [historical E audit](integration/E_APP_COMPOSITION.md). PR #14 is already merged; opening or merging it again is not a next step. P03 combined `app/di` coverage is **pending**; P04 boundaries and P05 deferred-acceptance consolidation are **not started** and need separate authorization. Any eventual readiness PR still requires current-head CI/current base, owner review and an explicit owner merge decision under [change control](CHANGE_CONTROL.md).
+1. P01/P02 status reconciliation is delivered; PR #14 is already merged. P03 cleanup implementation and owner-reported numerical coverage evidence are recorded above. [P04 architectural planning](planning/FGH_INTERFACE_BOUNDARIES.md) is prepared for owner review; its recommendations and handoff decisions are not approved implementation contracts. P05 deferred-acceptance consolidation is **not started** and needs separate authorization. Any eventual readiness PR still requires current-head CI/current base, owner review and an explicit merge decision under [change control](CHANGE_CONTROL.md).
 2. **Physical Android 8.1 (API27) tablet:** **DEFERRED / NOT RUN** until purchased. Owner's planned next step is a separately approved short-lived test branch from then-current `main`; no such branch is created by this documentation task. Physical-device evidence remains required by the [formal functional-phase acceptance rule](DEFINITION_OF_DONE.md), independently of hosted API27 PASS.
 3. Real C06 backup/reinstall/restore and device-to-device transfer: **DEFERRED / NOT RUN**. Guarded acceptance on an expressly approved disposable environment must record exact restored preferences and excluded Room/private files; cloud transport results cannot prove D2D. See the [Phase C deferred register](PHASE_C_DEFERRED_ACCEPTANCE.md). No waiver or destructive execution is authorized here.
 4. External SAF provider/grant/restart/revocation acceptance beyond the controlled local E2E flow, and real constrained-device resource/performance measurements, remain unverified as applicable. Owner-approved scenarios, provider/device identities, exact revision and retained results are needed to close these E acceptance limits; provisional runtime ceilings are not measured budgets.

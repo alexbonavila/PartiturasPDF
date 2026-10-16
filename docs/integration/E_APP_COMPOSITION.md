@@ -1020,3 +1020,66 @@ no coverage infrastructure, policy or tests are changed by this reconciliation.
 Use [PROJECT_STATUS](../PROJECT_STATUS.md) and [ROADMAP](../ROADMAP.md) for the current index.
 Future revisions still require applicable latest-head CI/current base and human review; evidence
 at the baseline above is not automatically certification of this new documentation commit.
+
+
+---
+
+## P03 native composition coverage evidence — 2026-10-17
+
+This addendum supersedes the **current** unresolved-combined-coverage statement in the
+2026-10-16 reconciliation above. All earlier E01–E06 audits and P02 observations remain
+historical records of their own revision/environment; none is rewritten as retroactive PASS.
+The implementation is on `chore/pre-fgh-readiness` at
+`618c9aa753e9597835b80c4862876e8d34e2fc85`, not yet merged into `main`.
+
+### Owner-provided native execution
+
+The owner reports PASS for `python scripts/local_e2e.py run --suite coverage` on Windows,
+using the existing dedicated native accelerated Android API26 emulator, at that exact SHA.
+Report identifier: **`20261016T230454Z-941f1f3e04d0482ba9ea5063aeed730a`**.
+The following measurements were supplied by the owner from `coverage/summary.json`:
+
+| Source | Covered lines | Covered branches |
+| --- | --- | --- |
+| AppGraph.kt | 9/9 — 100% | N/A |
+| AppGraphFactory.kt | 37/37 — 100% | 14/14 — 100% |
+| AppRuntimeLimits.kt | 7/7 — 100% | N/A |
+| Entire app/di package | 53/53 — 100% | 14/14 — 100% |
+
+The supplied source inventory reports zero missed lines and branches. Codex has not inspected
+this run's raw JaCoCo `.exec`/`.ec`, XML or original class files. Actual Windows JVM/Android
+execution counts were not supplied; no counts are inferred from the previous cloud 168-test JVM
+run or the earlier 228-test Android inventory. The report identifier is not a cloud-accessible
+artifact link. The owner retains the original run directory and compatible evidence for audit.
+
+### What the remediation establishes
+
+The real production constructor now uses `constructOwnedResources` in `AppGraphFactory.kt`.
+The same helper contains the original cleanup algorithm exercised by tests: assembly failure
+attempts release once, rethrows the exact primary Throwable, attaches a distinct cleanup Throwable
+as suppressed, and avoids same-instance self-suppression. Cancellation identity is preserved.
+Successful assembly transfers release to `Resources`; factory closure and retry tests exercise
+single ownership and absence of an incomplete cached graph. The isolated Android test initializes
+a real UUID-named Room database and injects a **synthetic assembly failure** into that helper;
+it is not a naturally reproduced production-adapter/framework failure.
+
+The owner-reported fresh combined measurements satisfy the remediation's >=90% line / >=80%
+branch numerical objectives for the factory and preserve/improve the package aggregate. The
+helper extraction changed bytecode/source mappings, so the new 37/37 and 53/53 denominators are
+reported measurements, not additions to the previous 31/36 and 47/52 counters. No report scope,
+source inventory, exclusion or permanent coverage gate was changed; `app/di` remains
+**INFORMATIONAL** under the existing runner classification.
+
+### Acceptance boundaries and next planning step
+
+P03 implementation and evidence documentation are delivered for owner review. The earlier
+measurement gap now has explicitly attributed native evidence, but the owner still reviews
+its provenance and acceptance interpretation. Numerical coverage is not proof of all possible
+construction failures, formal Phase E acceptance, latest-head hosted CI or universal provider
+behavior. Historical main CI at `f94841f9` is not CI for this readiness-branch revision.
+
+Physical Android 8.1 acceptance, real C06 backup/restore and D2D, additional external-provider
+manual scenarios and genuine reader performance remain **DEFERRED / NOT RUN** where previously
+recorded. No waiver is granted. [P04 interface boundaries](../planning/FGH_INTERFACE_BOUNDARIES.md)
+define planning ownership and unresolved decisions for F/G/H/I; no feature code is authorized.
+P05 is not started. See [PROJECT_STATUS](../PROJECT_STATUS.md) for current evidence attribution.

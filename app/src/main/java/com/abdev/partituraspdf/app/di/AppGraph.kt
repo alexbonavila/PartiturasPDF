@@ -24,4 +24,6 @@ internal class AppGraph(
     val pdfEngine: PdfReadEngine,
     /** Android grant mechanics remain available only to the controlled application host. */
     val treeGrants: SafTreeGrantAccess,
+    /** Absent only for existing explicitly injected isolated contract graphs. Production always supplies it. */
+    val foundation: FoundationDependencies? = null,
 )

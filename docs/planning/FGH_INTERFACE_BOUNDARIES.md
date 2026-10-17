@@ -17,6 +17,8 @@ full product specification; any omitted product requirement needs explicit owner
 
 > **P05 cross-reference (2026-10-17):** The [consolidated deferred acceptance register](PRE_FGH_DEFERRED_ACCEPTANCE.md) is now delivered for owner review. “P05 not started” below records this P04 document's earlier snapshot. D01–D11 remain PENDING OWNER APPROVAL; their recommendations are unchanged.
 
+> **Owner decision update (2026-10-17):** The master shared-foundation task approves D01–D11 in principle and supersedes the historical recommendations below. Implemented signatures and the two independent branch boundaries are authoritative in [FGH_FINAL_CONTRACT_FREEZE.md](FGH_FINAL_CONTRACT_FREEZE.md). No F/G/H/I screen or final Activity host is authorized here.
+
 ## 1. Existing implementation inventory
 
 All source paths here are relative to
@@ -313,3 +315,18 @@ real C06 backup/restore/D2D, additional external-provider scenarios and measured
 remain pending as recorded in [current status](../PROJECT_STATUS.md), the
 [Phase E audit](../integration/E_APP_COMPOSITION.md) and
 [Phase C deferred register](../PHASE_C_DEFERRED_ACCEPTANCE.md). This document closes none of them.
+
+
+## Owner-approved shared foundation addendum — 2026-10-17
+
+The owner-approved master task supersedes P04 recommendations; all D01–D11 are **OWNER APPROVED IN PRINCIPLE**. See the [actual contract freeze](FGH_FINAL_CONTRACT_FREEZE.md) for implemented source signatures, adapters, test evidence and integration-only work.
+
+- D01/D02: durable private atomic selected-root storage, authentic persisted READ checks, separate from the only allowlisted settings proto; provider locations never enter settings backup.
+- D03/D04: I-owned central explicit registration, typed registered/transient handoffs; no fake identities or inferred relocations.
+- D05/D06: confirmed bounded folder navigation; retained route owner across configuration changes, fresh reopen/access/page-count validation after restart, clamped saved page.
+- D07: primary target2GB devices (up to3GB); heap-derived provisional budgets, one session/render/retained lease, no prefetch and explicit trim response; no physical-performance claim.
+- D08: SharedPreferences is the one active new reader position source, checkpoint<=1000ms after settled display. Room position API/schema remain legacy-compatible, with no automatic migration, fallback or dual writes; favorites remain Room-owned.
+- D09/D10: automatic device-language policy, Spanish initial stage/fallback, later complete en/ca delivery; no manual language UI. The standalone Spanish-first governance branch is independent and is not copied into the foundation branch. I/localization owns actual default-resource migration and locale application.
+- D11: actual compiled shared host, settings, registration, folder and reader handoffs are frozen centrally. F/G/H consume them; I alone wires production Activity Results/startup/navigation/theme/locale.
+
+Earlier pending-decision wording records the P04 snapshot, not current approval state. Manual physical/C06/provider/performance acceptance remains deferred under unchanged policy. Implementation review/native validation is distinct from owner phase acceptance and feature authorization.

@@ -31,15 +31,18 @@ internal class AppGraphFactory internal constructor(
         val resolver = application.contentResolver
         val database = MetadataDatabase.open(application)
         constructOwnedResources(database::close) {
+            val catalog = SafDocumentCatalog(resolver)
+            val readAccess = SafDocumentReadAccess(resolver, application)
+            val registry = RoomDocumentRegistry(database)
+            val metadata = RoomDocumentMetadataRepository(database)
+            val preferences = DataStorePreferencesRepository(applicationPreferencesStore(application))
+            val pdfEngine = AndroidPdfReadEngine(limits.render)
+            val treeGrants = SafTreeGrantAccess(resolver)
             AppGraph(
-                runtimeLimits = limits,
-                catalog = SafDocumentCatalog(resolver),
-                readAccess = SafDocumentReadAccess(resolver, application),
-                registry = RoomDocumentRegistry(database),
-                metadata = RoomDocumentMetadataRepository(database),
-                preferences = DataStorePreferencesRepository(applicationPreferencesStore(application)),
-                pdfEngine = AndroidPdfReadEngine(limits.render),
-                treeGrants = SafTreeGrantAccess(resolver),
+                runtimeLimits = limits, catalog = catalog, readAccess = readAccess,
+                registry = registry, metadata = metadata, preferences = preferences,
+                pdfEngine = pdfEngine, treeGrants = treeGrants,
+                foundation = FoundationDependencies(application, registry, preferences, readAccess, pdfEngine, limits, catalog),
             )
         }
     })

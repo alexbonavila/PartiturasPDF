@@ -12,7 +12,7 @@ This file applies to **all agent work** in this repository, including Codex. Rea
 2. **Do not bypass approval.** Work in a dedicated branch and propose a pull request. Never push directly to `main`, force-push to `main`, approve your own work, or merge a PR. Only the human project owner authorizes merges and phase completion.
 3. **Protect Android 8.0 support.** `minSdk = 26` is mandatory and must not be increased. Do not use APIs unavailable on API 26 without a tested compatibility implementation.
 4. **Use Kotlin and Jetpack Compose/Material 3** for application development. Keep the existing Gradle Kotlin DSL configuration, catalog, and compatible toolchain unless a change is explicitly justified.
-5. **No hardcoded user-visible text.** All text visible to users (including errors, dialogs, notifications and accessibility descriptions) must be localized in English (`en`), Catalan (`ca`) and Spanish (`es`). Technical documentation, identifiers, comments, commit/PR text, and Codex prompts are in English.
+5. **No hardcoded user-visible text.** All new user-visible text and accessibility descriptions require Spanish resources. Preserve completed English/Catalan translations; staged new feature translation follows the Spanish-first procedure in section 5 and TESTING_POLICY.md. Technical documentation, identifiers, comments, commit/PR text, and Codex prompts are in English.
 6. **Never risk user PDFs to save time.** Editing must operate on a temporary copy and preserve the original across failures. A partial output cannot be mistaken for a successful save.
 7. **Do not fake quality.** Never disable tests, change assertions to avoid errors, hide lint findings, mark unavailable checks as passed, or reduce coverage requirements to make a PR green.
 8. **Keep secrets out of Git.** Do not include tokens, signing keys, OAuth client secrets, local SDK paths, private documents, or unnecessary personally identifiable information.
@@ -64,12 +64,11 @@ Gradle daemon JDK and source/target compatibility are not Android platform requi
 
 ## 5. Localization requirements
 
-- English is the base/fallback language in `res/values/strings.xml`.
-- Catalan translations go in `res/values-ca/strings.xml`.
-- Spanish translations go in `res/values-es/strings.xml`.
-- Resource arguments, plurals and formatting must behave correctly in all three languages.
-- Manual language selection on Android 8 must use a confirmed backward-compatible mechanism when the settings feature is implemented. Do not assume Android 13's per-app language APIs are available on API 26.
-- No code review is complete without verifying translations for every new or changed user-facing string.
+- Owner-approved Spanish-first transition: current `values/strings.xml` is English and remains unchanged by the policy PR. Existing en/ca/es resources must retain parity and format correctness.
+- New Spanish-first resources use explicitly named `*_spanish_first.xml` files in `values` with identical Spanish copy in `values-es`. These exact resources may temporarily lack Catalan translations; they are recorded translation debt, not translated PASS. Existing resources cannot be moved into staged files to evade translation checks.
+- I/localization owns the separately approved shared migration: translate remaining English default copy into Spanish, preserve English in `values-en`, and complete Catalan/English translations in a later translation branch. Feature agents do not independently migrate shared defaults.
+- Automatic device language only: Spanish now; later approved complete Catalan/English bundles enable those languages; unsupported languages fall back to Spanish. No manual language selector. Legacy LanguageSelection data remains compatible but does not control the future host.
+- See TESTING_POLICY.md for staged validation and mandatory deferred translation acceptance. Keep resource-backed UI, formatting, plural, accessibility and API26 obligations.
 
 ## 6. Workflow for every approved change
 
@@ -115,7 +114,7 @@ Strict thresholds:
 - **0 required test failures; 0 unexplained skipped checks**.
 - No new Android Lint errors or critical/high unresolved security findings.
 - Test on Android API 26 for PRs; API 27 in scheduled/phase-close automation and on a physical Android 8.1 tablet before accepting functional phases.
-- User-facing work requires English/Catalan/Spanish translation checks and accessible UI verification.
+- User-facing work requires Spanish-first/completed-translation checks and accessible UI verification; eventual English/Catalan translation acceptance remains mandatory.
 
 These are project policy requirements. CI gates were established during Phase 0; their existence is not proof that they passed on the revision under review. Check real execution evidence at the latest required commit. If an environment lacks Android SDK, network access, the required JDK or an emulator, report the missing prerequisites and mark dependent tests **NOT RUN / BLOCKED**, never PASS. Do not waive the gate yourself.
 

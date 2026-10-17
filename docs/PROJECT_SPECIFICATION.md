@@ -17,7 +17,7 @@ Fundamental principles:
 3. **Data safety:** prevent corruption and accidental loss; never use the only copy of a score as temporary processing storage.
 4. **Low-friction reading:** the score takes precedence over toolbars and decorative interface elements.
 5. **Compatibility:** Android API 26 is the absolute minimum; Android 8.1 tablets must be tested as first-class devices.
-6. **Localization:** English, Catalan, and Spanish are mandatory for all visible copy and accessibility descriptions.
+6. **Localization:** Spanish-first visible/accessibility copy is mandatory; preserve completed translations and deliver complete English/Catalan support in the separately approved translation stage.
 7. **Incremental delivery:** build by approved phases, tests, and pull requests; no speculative features or broad rewrites.
 8. **No silent compromise:** unsolved format, performance, permissions, or compatibility risks must be documented and tested before acceptance.
 
@@ -85,25 +85,11 @@ Only the first two brand colors are locked; other colors are adaptable for contr
 
 ## 4. Internationalization
 
-Mandatory languages:
+Owner-approved transition: initial functional UI is Spanish-first, with no manual language selector. Existing English/Catalan/Spanish resources remain intact. All new visible text and accessibility copy require Spanish resource values and valid argument/plural contracts, not hardcoded Kotlin literals.
 
-- **English (`en`)** — base strings and fallback.
-- **Catalan (`ca`)**.
-- **Spanish (`es`)**.
+Current default `res/values/strings.xml` is English. I/localization owns a separately approved central migration to Spanish default/fallback, retaining English in `values-en` and existing Catalan/Spanish bundles. New staged Spanish copy uses paired default `*_spanish_first.xml` and Spanish resources under TESTING_POLICY.md; absent later English/Catalan translations are explicitly deferred mandatory work. This policy PR does not migrate production resources.
 
-Resources:
-
-```text
-app/src/main/res/values/strings.xml       # English fallback
-app/src/main/res/values-ca/strings.xml    # Catalan
-app/src/main/res/values-es/strings.xml    # Spanish
-```
-
-Use Android resources for all user-facing strings, including navigation, confirmations, permissions explanations, accessibility labels, empty/error states, notifications, and PDF operation progress. Avoid concatenation that breaks translation; use plurals and formatted string parameters.
-
-At first, follow the system locale with English fallback. A manual language selector is part of the planned settings. Because API 26 and API 27 must work, manual selection requires a backwards-compatible locale mechanism; evaluate AppCompat's per-app language support and its activity integration with Compose before implementing it. Never assume a newer system-only per-app locale API is sufficient.
-
-Tests must detect missing translations and invalid format parameters; UI review must check truncation and RTL-independent layout resilience (RTL localization itself is not an initial language requirement).
+The future host chooses Spanish for the first functional stage regardless of device language. Once separately approved complete feature translations are delivered, device es -> Spanish, ca -> Catalan, en -> English; unsupported languages -> Spanish. I applies this policy on API26+ and system-language changes, without a manual selector. Legacy persisted language values remain compatible but inactive. The later translation branch must establish full parity, formatting, human linguistic/accessibility review and device acceptance before claiming full multilingual delivery.
 
 ## 5. PDF library and file ownership
 
@@ -119,7 +105,7 @@ Do not import every document into private app storage by default. Private cache 
 
 Plan for Room to index document URIs, display names, folder identifiers, favorite flags, timestamps, last page, and optional cached thumbnails. Database information must **not** replace PDF content. Reconcile deleted/renamed/moved externally managed files; do not treat a stale Room row as proof a file exists. Migrations must preserve user data.
 
-Use DataStore for settings such as light/dark mode, preferred reading behavior, last chosen storage root, and (when implemented) manual locale choice. Credentials and tokens do not belong in plain preference files.
+Use DataStore for settings such as light/dark mode, preferred reading behavior, last chosen storage root, and legacy locale data. Legacy LanguageSelection remains stored-data compatible but is not active manual locale configuration. Credentials and tokens do not belong in plain preference files.
 
 ## 6. PDF reader — rendering
 
@@ -290,7 +276,7 @@ Do not mark skipped, failed-to-run, or network-blocked jobs as **passed**. Non-a
 - **P2 (medium):** material issue in a phase being delivered. Resolve before phase acceptance.
 - **P3 (low):** nonblocking enhancement, tracked with owner approval; it cannot represent an unmet acceptance criterion.
 
-No phase is complete without requirement fulfillment, applicable passing tests, Android 8.1 device verification where required, three-language UI review, current docs, and explicit owner acceptance.
+No phase is complete without requirement fulfillment, applicable passing tests, Android 8.1 device verification where required, the applicable staged localization review and eventual mandatory full translation acceptance, current docs, and explicit owner acceptance.
 
 ### 13.5 Verification and evidence
 
@@ -329,7 +315,7 @@ The project owner requested **CC BY-NC-ND 4.0** for original project material (s
 | D-002 | Minimum Android API 26 | Confirmed, non-negotiable |
 | D-003 | Jetpack Compose + Material 3 | Confirmed |
 | D-004 | Green `#A5D6A7`, blue `#90CAF9` | Confirmed |
-| D-005 | English, Catalan and Spanish user-facing UI | Confirmed |
+| D-005 | Spanish-first UI, automatic device locale and later complete English/Catalan support | Owner-approved staged transition; existing translations preserved |
 | D-006 | Local physical folders/PDF files via SAF | Confirmed approach |
 | D-007 | Edge taps to navigate PDF pages | Confirmed |
 | D-008 | Rotate/reorder/delete, merge/extract | Confirmed scope |

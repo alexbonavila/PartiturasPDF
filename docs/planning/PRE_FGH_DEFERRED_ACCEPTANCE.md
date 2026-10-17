@@ -15,6 +15,8 @@ The [Phase C register](../PHASE_C_DEFERRED_ACCEPTANCE.md),
 and procedures. Earlier instructions to open/merge PR #10/#12/#14 or keep their old branches are
 historical; those integrations are complete. This task creates no future testing/feature branch.
 
+> **Owner decision update (2026-10-17):** D01–D11 below are the historical P05 pending snapshot. The owner subsequently approved the master foundation requirements in principle; implemented contracts are now recorded in [FGH_FINAL_CONTRACT_FREEZE.md](FGH_FINAL_CONTRACT_FREEZE.md). PR #15 has merged this readiness work at `121090a56ff6d2fdb98655eaf7104ee67d79caa4`. P05-A–G manual/physical obligations remain open; the new implementation does not waive them.
+
 ## 1. Status and priority rules
 
 - **PASS:** only the identified executed check/evidence at its actual revision. It does not close

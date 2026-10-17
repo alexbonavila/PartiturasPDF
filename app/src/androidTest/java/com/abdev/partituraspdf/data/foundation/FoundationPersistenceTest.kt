@@ -82,11 +82,26 @@ class FoundationPersistenceTest {
     } }
     @Test fun unsuccessfulCommitIsAnExplicitStorageFailure() { runBlocking {
         preferences { prefs ->
+            var commitCalls = 0
             val failing=object : SharedPreferences by prefs {
-                override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor by prefs.edit() { override fun commit()=false }
+                override fun edit(): SharedPreferences.Editor {
+                    val delegate = prefs.edit()
+                    return object : SharedPreferences.Editor by delegate {
+                        override fun putInt(key: String?, value: Int): SharedPreferences.Editor {
+                            delegate.putInt(key, value)
+                            return this
+                        }
+                        override fun commit(): Boolean {
+                            commitCalls++
+                            return false
+                        }
+                    }
+                }
             }
             val store=SharedPreferencesReaderPositions(failing);val doc=DocumentRef(DocumentId("issued"))
             assertEquals(Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE),store.saveVisible(store.writer(doc),1,PageIndex(1)))
+            assertEquals(1, commitCalls)
+            assertFalse(prefs.contains(doc.id.value))
         }
     } }
     @Test fun newPositionStoreDoesNotCompeteWithLegacyRoomPositionAndPreservesFavorites() { runBlocking {

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.os.Bundle
 import android.system.Os
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -42,6 +43,7 @@ class ReaderPdfiumProcessStateTest {
     private lateinit var directory: File
     private lateinit var rows: List<JSONObject>
     private var sequence = 0
+    private val attempts = org.json.JSONArray()
     private val limits = RenderLimits(128, 128L * 128)
 
     @Before fun setup() {
@@ -52,7 +54,14 @@ class ReaderPdfiumProcessStateTest {
         }
         rows = (0 until manifest.length()).map(manifest::getJSONObject)
     }
-    @After fun cleanup() { assertTrue("Only test-owned copies must be removed", directory.deleteRecursively()) }
+    @After fun cleanup() {
+        try { assertTrue("Only test-owned copies must be removed", directory.deleteRecursively()) }
+        finally {
+            // Machine-readable evidence survives a failing assertion and is tied to this one
+            // runner invocation; host automation must still prove process replacement.
+            instrumentation.addResults(Bundle().apply { putString("readerPdfiumEvidence", attempts.toString()) })
+        }
+    }
 
     private fun hash(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -72,7 +81,7 @@ class ReaderPdfiumProcessStateTest {
             put("api", android.os.Build.VERSION.SDK_INT); put("pid", Process.myPid())
             put("processStartElapsedMs", Process.getStartElapsedRealtime())
             put("invocation", InstrumentationRegistry.getArguments().getString("readerProcessRun", "unspecified-full-suite"))
-            put("test", testName.methodName); put("sequence", sequence); put("fixture", id)
+            put("class", this@ReaderPdfiumProcessStateTest.javaClass.name); put("test", testName.methodName); put("sequence", sequence); put("fixture", id)
             put("engine", if (adapter) "AndroidPdfReadEngine" else "PdfRenderer")
             put("size", copy.length()); put("sha256Verified", true); put("descriptorValid", raw.valid())
             put("constructed", false); put("pageCountRead", false); put("rendered", false)
@@ -175,6 +184,7 @@ class ReaderPdfiumProcessStateTest {
             evidence.put("cleanupException", cleanupFailure?.toString() ?: JSONObject.NULL)
             evidence.put("ownerCloseAttempted", session != null || renderer != null)
             evidence.put("ownerCloseSucceeded", if (session != null || renderer != null) cleanupFailure == null else JSONObject.NULL)
+            attempts.put(evidence)
             Log.i("ReaderPdfiumProcess", evidence.toString())
             if (cleanupFailure != null) {
                 if (primary != null) primary.addSuppressed(cleanupFailure!!) else throw cleanupFailure!!
@@ -208,5 +218,6 @@ class ReaderPdfiumProcessStateTest {
     @Test fun h_corruptEncryptedThenValidAdapter() { runBlocking(Dispatchers.IO) { sequence(true, "15", "14") } }
     @Test fun i_encryptedCorruptThenValidDirect() { runBlocking(Dispatchers.IO) { sequence(false, "14", "15") } }
     @Test fun j_encryptedCorruptThenValidAdapter() { runBlocking(Dispatchers.IO) { sequence(true, "14", "15") } }
+    @Test fun k_cleanAdapterRepeatedValidOpens() { runBlocking(Dispatchers.IO) { valid(true); valid(true); valid(true, "02") } }
 
 }

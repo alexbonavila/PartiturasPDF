@@ -216,13 +216,13 @@ class LibraryController(
         publish(state.value.copy(rootSelection = LibraryOperation.Pending, content = LibraryContent.NotLoaded, navigation = LibraryOperation.Idle))
         when (val launched = host.library(LibraryEvent.ChooseRoot)) {
             is Outcome.Success -> Unit // Launch acknowledgement is not authorization or a completed result.
-            is Outcome.Failure -> publish(state.value.copy(rootSelection = LibraryOperation.Failed(failure(LibraryFailureOperation.SELECTION, launched.error))))
+            is Outcome.Failure -> selectionFailure(launched.error)
         }
     }
     private suspend fun selection(result: Outcome<FolderRef?>) {
         if (!pendingSelection()) return // Includes late completion after cancellation, failed launch or close.
         when (result) {
-            is Outcome.Failure -> publish(state.value.copy(rootSelection = LibraryOperation.Failed(failure(LibraryFailureOperation.SELECTION, result.error))))
+            is Outcome.Failure -> selectionFailure(result.error)
             is Outcome.Success -> {
                 val actual = folders.state()
                 if (result.value != null && (actual == null || actual.root != result.value)) {
@@ -236,6 +236,11 @@ class LibraryController(
                 if (actual == null) noRoot() else beginLoad(actual)
             }
         }
+    }
+    private suspend fun selectionFailure(error: AppError) {
+        publish(state.value.copy(rootSelection = LibraryOperation.Failed(failure(LibraryFailureOperation.SELECTION, error))))
+        // A rejected replacement must not erase an already selected library. Re-read, never select.
+        folders.state()?.let { beginLoad(it) }
     }
     private suspend fun enter(key: LibraryRowKey) {
         val before = current()

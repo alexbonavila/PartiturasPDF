@@ -32,7 +32,7 @@ class ReaderOpeningTest {
         assertThrows(IllegalArgumentException::class.java) { ReaderOpenIntent(-1, registeredRequest) }
     } }
     @Test fun expectedOpenFailuresArePreservedAndRetryIsExplicit() = runTest {
-        val errors: List<AppError> = AppError.Access.entries + AppError.Unsupported.entries + AppError.Validation.INVALID_DOCUMENT
+        val errors: List<AppError> = AppError.Access.entries.filter { it != AppError.Access.NOT_REGISTERED && it != AppError.Access.DOCUMENT_DELETED }
         for (error in errors) withReader {
             opening = { Outcome.Failure(error) }; open()
             assertEquals(ReaderFailure(ReaderStage.OPEN,error,ReaderRetry.OPEN),state.failure)

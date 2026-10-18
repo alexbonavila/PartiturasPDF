@@ -15,6 +15,7 @@ class ReaderPresenterTest {
             val frame=state.frame!!;repeat(20){presenter.bind(frame)}
             assertTrue(displayed.isEmpty());assertNull(frame.attach());assertTrue(presenter.owns(frame))
             val first=presenter.draw(true){assertEquals(0,session.pages.single().closes)}!!
+            assertTrue(presenter.acknowledge(first));assertFalse(presenter.acknowledge(first))
             controller.dispatch(ReaderAction.Presented(first));runCurrent()
             repeat(20){presenter.bind(frame);assertNull(presenter.draw(true){})};runCurrent()
             assertEquals(1,displayed.size);assertEquals(PageIndex(2),state.presentedPage)
@@ -80,6 +81,26 @@ class ReaderPresenterTest {
             assertTrue(replacement.owns(frame));assertNull(frame.attach())
             val token=replacement.draw(true){}!!;assertTrue(replacement.current(token))
         } finally {observing.cancel();old.detach();replacement.detach()}
+    } }
+    @Test fun drawingWithoutSuccessfulPostOrEligibleDeliveryCanBeAcknowledgedOnALaterDraw() = runTest { withReader {
+        open();val presenter=ReaderPresenter();presenter.bind(state.frame)
+        try {
+            val discarded=presenter.draw(true){}!!
+            // A failed post or temporarily ineligible view never confirms this candidate.
+            assertTrue(displayed.isEmpty())
+            val redrawn=presenter.draw(true){}!!;assertSame(discarded,redrawn)
+            assertTrue(presenter.acknowledge(redrawn));controller.dispatch(ReaderAction.Presented(redrawn));runCurrent()
+            assertNull(presenter.draw(true){});assertEquals(1,displayed.size)
+        } finally {presenter.detach()}
+    } }
+    @Test fun delayedDeliveryFromDestroyedSurfaceCannotAcknowledgeAReplacementConsumer() = runTest { withReader {
+        open();val presenter=ReaderPresenter();presenter.bind(state.frame)
+        try {
+            val queued=presenter.draw(true){}!!;presenter.detach();presenter.bind(state.frame)
+            assertFalse(presenter.acknowledge(queued));assertTrue(displayed.isEmpty())
+            val fresh=presenter.draw(true){}!!;assertTrue(presenter.acknowledge(fresh))
+            controller.dispatch(ReaderAction.Presented(fresh));runCurrent();assertEquals(1,displayed.size)
+        } finally {presenter.detach()}
     } }
     @Test fun frameExposesOriginalPageGeometryWithoutReadingOrCopyingBitmap() = runTest { withReader {
         open();assertSame(session.pages.single().displayInfo,state.frame!!.displayInfo)

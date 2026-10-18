@@ -30,9 +30,14 @@ internal class ReaderPresenter {
             drawing = false
             if (detachPending) detach()
         }
-        return if (consumer === presentation && consumer.frame.active(consumer) && acknowledged !== consumer) {
-            acknowledged = consumer; consumer
-        } else null
+        return consumer.takeIf { current(it) && acknowledged !== it }
+    }
+
+    /** Called only after successful post and final view/identity checks, never just after draw. */
+    fun acknowledge(consumer: ReaderPresentation): Boolean {
+        if (!current(consumer) || acknowledged === consumer) return false
+        acknowledged = consumer
+        return true
     }
 
     fun current(consumer: ReaderPresentation): Boolean = presentation === consumer && consumer.frame.active(consumer)

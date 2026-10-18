@@ -42,8 +42,6 @@ class ReaderController(
     private var retiringFrame: ReaderFrame? = null
     private var pendingPresentation: ReaderPresentation? = null
     private var acknowledgedFrame: ReaderFrame? = null
-    private var lastPresentation: ReaderPresentation? = null
-    private var canceledRetry = ReaderRetry.NONE
     private var operation: Job? = null
     private var operationKind: Kind? = null
     private var paused = CompletableDeferred<Unit>()
@@ -91,7 +89,7 @@ class ReaderController(
         ready = null; needsCheck = false; needsOpen = true
         mutableState.value = state.value.copy(intent = intent, session = null, requestedPage = null,
             presentedPage = null, phase = if (active) ReaderPhase.OPENING else ReaderPhase.QUIESCED,
-            failure = null, checkpoint = ReaderCheckpoint.None)
+            failure = null, checkpoint = ReaderCheckpoint.None, cancellationRetry = ReaderRetry.NONE, checkpointConsumer = null)
         signal()
     }
 
@@ -124,7 +122,7 @@ class ReaderController(
             is ReaderAction.Presented -> if (active && validPresentation(action.presentation)) {
                 // A new consumer may replace a detached one without automatically retrying a
                 // possibly committed checkpoint. Explicit Retry uses the current live consumer.
-                lastPresentation = action.presentation
+                mutableState.value = state.value.copy(checkpointConsumer = action.presentation)
                 if (acknowledgedFrame !== action.presentation.frame) {
                     pendingPresentation = action.presentation
                     signal()
@@ -134,6 +132,11 @@ class ReaderController(
         }
     }
 
+    /**
+     * Stops G work and awaits native completion plus explicit graphical detachment without blocking
+     * the UI thread. I must keep the owner scope/UI alive, await this, then inspect background()/
+     * close() according to ReaderMemoryPolicy.trim(trim). Unexpected cleanup defects propagate.
+     */
     suspend fun quiesce(trim: ReaderTrim): Outcome<Unit> {
         val barrier = synchronized(lock) {
             if (retired) return@synchronized finished
@@ -149,6 +152,11 @@ class ReaderController(
         return Outcome.Success(Unit)
     }
 
+    /**
+     * I must first finish quiescence and all route mutations/flushes. No concurrent external route
+     * open/close is permitted while G is active. current() checks identity before borrowing again;
+     * a closed route reopens through the retained intent, never through its obsolete native session.
+     */
     fun resume() = synchronized(lock) {
         if (retired || !owner.isActive || active || !paused.isCompleted) return@synchronized
         active = true
@@ -163,6 +171,7 @@ class ReaderController(
         signal()
     }
 
+    /** Await before owner-scope cancellation; repeated calls observe the same completion/failure. */
     suspend fun retire(): Outcome<Unit> {
         synchronized(lock) {
             if (!retired) {
@@ -190,7 +199,7 @@ class ReaderController(
         }
     }
     private fun fail(stage: ReaderStage, error: AppError, retry: ReaderRetry) {
-        mutableState.value = state.value.copy(phase = ReaderPhase.ERROR, failure = ReaderFailure(stage, error, retry))
+        mutableState.value = state.value.copy(phase = ReaderPhase.ERROR, failure = ReaderFailure(stage, error, retry), cancellationRetry = ReaderRetry.NONE)
     }
     private fun scheduleRender() {
         needsRender = ready != null
@@ -201,7 +210,8 @@ class ReaderController(
         renderGeneration++
         if (operationKind == Kind.RENDER || operationKind == Kind.ACK) operation?.cancel()
         if (operationKind == Kind.ACK) mutableState.value = state.value.copy(checkpoint = ReaderCheckpoint.Canceled)
-        pendingPresentation = null; acknowledgedFrame = null; lastPresentation = null
+        pendingPresentation = null; acknowledgedFrame = null
+        mutableState.value = state.value.copy(checkpointConsumer = null)
         state.value.frame?.let { frame ->
             check(retiringFrame == null)
             retiringFrame = frame
@@ -210,9 +220,7 @@ class ReaderController(
         }
     }
     private fun retry() {
-        val retry = state.value.failure?.retry ?: if (state.value.phase == ReaderPhase.CANCELED) {
-            canceledRetry
-        } else ReaderRetry.NONE
+        val retry = readerRetry(state.value)
         when (retry) {
             ReaderRetry.NONE -> Unit
             ReaderRetry.OPEN -> {
@@ -223,7 +231,7 @@ class ReaderController(
             }
             ReaderRetry.RENDER -> { invalidateRender(); scheduleRender() }
             ReaderRetry.PRESENTATION -> {
-                lastPresentation?.takeIf(::validPresentation)?.let {
+                state.value.checkpointConsumer?.takeIf(::validPresentation)?.let {
                     acknowledgedFrame = null; pendingPresentation = it; signal()
                 }
             }
@@ -245,7 +253,6 @@ class ReaderController(
             pendingPresentation = null
             if (validPresentation(it) && acknowledgedFrame !== it.frame) {
                 acknowledgedFrame = it.frame
-                lastPresentation = it
                 mutableState.value = state.value.copy(phase = ReaderPhase.VISIBLE,
                     presentedPage = it.request.page.page, checkpoint = ReaderCheckpoint.Scheduling, failure = null)
                 return@synchronized Work.Ack(documentGeneration, it)
@@ -291,12 +298,12 @@ class ReaderController(
             currentCoroutineContext().ensureActive()
             synchronized(lock) {
                 if (current(work)) {
-                    canceledRetry = when (kind) {
+                    val canceledRetry = when (kind) {
                         Kind.OPEN, Kind.CHECK -> ReaderRetry.OPEN
                         Kind.RENDER -> ReaderRetry.RENDER
                         Kind.ACK -> ReaderRetry.PRESENTATION
                     }
-                    mutableState.value = state.value.copy(phase = ReaderPhase.CANCELED,
+                    mutableState.value = state.value.copy(phase = ReaderPhase.CANCELED, cancellationRetry = canceledRetry,
                         checkpoint = if (kind == Kind.ACK) ReaderCheckpoint.Canceled else state.value.checkpoint)
                 }
                 // A paused open needs an explicit new attempt on resume, never an old session.
@@ -315,7 +322,7 @@ class ReaderController(
                 synchronized(lock) {
                     if (!current(work)) return@synchronized
                     when (result) {
-                        is Outcome.Failure -> fail(ReaderStage.OPEN, result.error, ReaderRetry.OPEN)
+                        is Outcome.Failure -> fail(ReaderStage.OPEN, result.error, readerFailureRetry(result.error, ReaderStage.OPEN))
                         is Outcome.Success -> {
                             val value = result.value
                             if (value.request != work.intent.request || value.page.value >= value.session.info.pageCount) {
@@ -340,7 +347,7 @@ class ReaderController(
                             mutableState.value = state.value.copy(session = null)
                             signal()
                         }
-                        result.request != state.value.intent?.request || result.session.info != ready?.session?.info -> {
+                        result.request != state.value.intent?.request || result.session.info != ready?.session?.info || result.session !== ready?.session -> {
                             ready = null
                             mutableState.value = state.value.copy(session = null)
                             fail(ReaderStage.OPEN, AppError.Conflict.STALE_SESSION, ReaderRetry.OPEN)
@@ -358,8 +365,12 @@ class ReaderController(
                     if (current(work)) {
                         mutableState.value = state.value.copy(checkpoint = ReaderCheckpoint.Unconfirmed(result))
                         if (result is Outcome.Failure) {
-                            // Keep the exact live consumer for an explicit acknowledgement retry.
-                            fail(ReaderStage.PRESENTATION, result.error, ReaderRetry.PRESENTATION)
+                            val retry = readerFailureRetry(result.error, ReaderStage.PRESENTATION)
+                            if (retry == ReaderRetry.OPEN) {
+                                invalidateRender(); ready = null
+                                mutableState.value = state.value.copy(session = null)
+                            }
+                            fail(ReaderStage.PRESENTATION, result.error, retry)
                         }
                     }
                 }
@@ -398,18 +409,20 @@ class ReaderController(
                 if (!current(work)) return@synchronized
                 when (result) {
                     is Outcome.Failure -> {
-                        val mustReopen = result.error is AppError.Access || result.error == AppError.Conflict.SESSION_CLOSED || result.error == AppError.Conflict.STALE_SESSION || result.error == AppError.Conflict.REVISION_CHANGED
-                        if (mustReopen) {
+                        val retry = readerFailureRetry(result.error, stage)
+                        if (retry != ReaderRetry.RENDER && result.error != AppError.Validation.INVALID_PAGE && result.error != AppError.Validation.INVALID_RENDER_REQUEST) {
                             ready = null
                             mutableState.value = state.value.copy(session = null)
                         }
-                        fail(stage, result.error, if (mustReopen) ReaderRetry.OPEN else ReaderRetry.RENDER)
+                        fail(stage, result.error, retry)
                     }
                     is Outcome.Success -> {
                         val lease = result.value
                         val request = lease.request
                         if (request != planned || lease.displayInfo.page != page) {
-                            fail(ReaderStage.RENDER, AppError.Conflict.STALE_SESSION, ReaderRetry.RENDER)
+                            ready = null
+                            mutableState.value = state.value.copy(session = null)
+                            fail(ReaderStage.RENDER, AppError.Conflict.STALE_SESSION, ReaderRetry.OPEN)
                         } else {
                             mutableState.value = state.value.copy(phase = ReaderPhase.RENDERED, frame = ReaderFrame(lease), failure = null)
                             retained = true

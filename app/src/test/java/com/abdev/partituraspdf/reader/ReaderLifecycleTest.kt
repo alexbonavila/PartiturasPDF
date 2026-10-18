@@ -11,6 +11,70 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReaderLifecycleTest {
+    @Test fun allTrimBarriersShareNativeAndGraphicalQuiescenceWithoutStartingReplacementWork() = runTest { withReader {
+        open();val consumer=attach()
+        val barriers=ReaderTrim.entries.map{async{controller.quiesce(it)}};runCurrent()
+        assertTrue(barriers.none{it.isCompleted});assertEquals(ReaderPhase.QUIESCED,state.phase)
+        controller.resume();controller.dispatch(ReaderAction.Step(1));controller.dispatch(ReaderAction.Retry);runCurrent()
+        assertEquals(1,session.requests.size);assertEquals(0,session.pages.single().closes)
+        consumer.detached();runCurrent();barriers.forEach{assertEquals(Outcome.Success(Unit),it.await())}
+        assertEquals(1,session.pages.single().closes);assertEquals(0,session.closes)
+        assertEquals(0,backgrounds);assertEquals(0,routeCloses)
+        controller.resume();runCurrent();assertEquals(1,currentCalls);assertEquals(2,session.requests.size)
+    } }
+    @Test fun repeatedTrimsDuringCanceledOpeningCannotPublishItsLateResultOrResumeTooSoon() = runTest { withReader {
+        val gate=gate();opening={withContext(NonCancellable){gate.await()};Outcome.Success(ReaderReady(it,session,PageIndex(1)))}
+        open();val first=async{controller.quiesce(ReaderTrim.LOW_MEMORY)};runCurrent()
+        val critical=async{controller.quiesce(ReaderTrim.CRITICAL)};runCurrent()
+        controller.resume();runCurrent();assertEquals(1,opens.size);assertNull(state.frame)
+        gate.complete(Unit);runCurrent();first.await();critical.await()
+        assertNull(state.session);assertNull(state.frame);assertTrue(session.requests.isEmpty())
+        controller.resume();runCurrent();assertEquals(2,opens.size);assertEquals(ReaderPhase.RENDERED,state.phase)
+        assertEquals(0,session.closes);assertEquals(0,routeCloses)
+    } }
+    @Test fun resumeRejectsDifferentSessionObjectEvenIfItsMetadataWasReused() = runTest { withReader {
+        open();controller.quiesce(ReaderTrim.BACKGROUND)
+        val alias=TestSession() // Deliberately identical info; it is not the retained native object.
+        assertEquals(session.info,alias.info);active=ReaderReady(registeredRequest,alias,PageIndex(2))
+        controller.resume();runCurrent()
+        assertEquals(ReaderPhase.ERROR,state.phase);assertEquals(AppError.Conflict.STALE_SESSION,state.failure!!.error)
+        assertNull(state.frame);assertNull(state.session);assertTrue(alias.requests.isEmpty())
+        assertEquals(1,session.requests.size);assertEquals(1,opens.size);assertEquals(0,session.closes)
+    } }
+    @Test fun screenConsumerRecreationRetainsControllerAndDeduplicatesCheckpointWithoutReopening() = runTest { withReader {
+        open();val first=ReaderPresenter();first.bind(state.frame)
+        val old=first.draw(true){}!!;assertTrue(first.acknowledge(old))
+        controller.dispatch(ReaderAction.Presented(old));runCurrent();first.detach()
+        val fresh=ReaderPresenter()
+        try {
+            fresh.bind(state.frame);val current=fresh.draw(true){}!!;assertTrue(fresh.acknowledge(current))
+            assertFalse(first.acknowledge(old));controller.dispatch(ReaderAction.Presented(current));runCurrent()
+            assertEquals(1,opens.size);assertEquals(1,session.requests.size);assertEquals(1,displayed.size)
+            assertEquals(ReaderPhase.VISIBLE,state.phase);assertEquals(0,session.pages.single().closes)
+        } finally {first.detach();fresh.detach()}
+    } }
+    @Test fun attachedCleanupDefectCompletesQuiescenceAndRetirementWaitersWithoutDoubleClose() = runTest {
+        val parent=SupervisorJob();val errors=mutableListOf<Throwable>()
+        val f=ReaderFixture(this,CoroutineScope(coroutineContext+parent+CoroutineExceptionHandler{_,t->errors+=t}))
+        var closes=0;val defect=IllegalStateException("attached lease cleanup defect")
+        f.session.render={request->Outcome.Success(object:RenderedPage{
+            override val request=request
+            override val displayInfo=PageDisplayInfo(request.page,600,900)
+            override val bitmap:android.graphics.Bitmap get()=error("Not read on JVM")
+            override fun close(){closes++;throw defect}
+        })}
+        try {
+            f.open();val consumer=f.attach()
+            val paused=async{runCatching{f.controller.quiesce(ReaderTrim.CRITICAL)}};runCurrent()
+            val retired=async{runCatching{f.controller.retire()}};runCurrent()
+            assertFalse(paused.isCompleted);assertFalse(retired.isCompleted);assertEquals(0,closes)
+            consumer.detached();runCurrent()
+            assertTrue(paused.await().isFailure);assertTrue(retired.await().isFailure)
+            assertTrue(runCatching{f.controller.retire()}.isFailure)
+            assertEquals(1,closes);assertEquals(1,errors.size);assertEquals(ReaderPhase.RETIRED,f.state.phase)
+            assertEquals(0,f.session.closes);assertEquals(0,f.routeCloses);assertTrue(parent.isActive)
+        } finally {f.consumers.forEach{it.detached()};parent.cancel();runCurrent()}
+    }
     @Test fun alreadyCanceledOwnerCannotLeaveRetirementWaitingForAnUnstartedWorker() = runTest {
         val parent=SupervisorJob();parent.cancel()
         val f=ReaderFixture(this,CoroutineScope(coroutineContext+parent))

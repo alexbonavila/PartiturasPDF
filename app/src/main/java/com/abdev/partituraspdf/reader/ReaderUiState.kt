@@ -41,6 +41,9 @@ data class ReaderUiState(
     val frame: ReaderFrame? = null,
     val failure: ReaderFailure? = null,
     val checkpoint: ReaderCheckpoint = ReaderCheckpoint.None,
+    internal val cancellationRetry: ReaderRetry = ReaderRetry.NONE,
+    /** Last completed draw capability, never serialized or treated as a durable position. */
+    internal val checkpointConsumer: ReaderPresentation? = null,
 )
 
 sealed interface ReaderAction {

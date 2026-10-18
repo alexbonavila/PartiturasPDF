@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -39,6 +42,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /** Real Android bitmaps/surfaces and Compose; synthetic session, not native PDF acceptance. */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class ReaderScreenTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
@@ -48,6 +52,7 @@ class ReaderScreenTest {
     private val narrow=mutableStateOf(false)
     private val large=mutableStateOf(false)
     private val recomposition=mutableIntStateOf(0)
+    private val shortViewport=mutableStateOf(false)
     private val phase=mutableStateOf<ReaderPhase?>(null)
     private val actions=CopyOnWriteArrayList<ReaderAction>()
     private val requests=CopyOnWriteArrayList<RenderRequest>()
@@ -59,11 +64,13 @@ class ReaderScreenTest {
     private val sessionCloses=AtomicInteger()
     private val backs=AtomicInteger()
     private var openFailure:AppError?=null
+    private var checkpointFailure:AppError?=null
+    private var openingCanceled=false
     private var renderGate:CompletableDeferred<Unit>?=null
     private var openGate:CompletableDeferred<Unit>?=null
     private var portraitHeight=900
     private var ready:ReaderReady?=null
-    private val request=DocumentOpenRequest.Transient(StorageDocumentRef("ui-synthetic","pdf"))
+    private var request:DocumentOpenRequest=DocumentOpenRequest.Transient(StorageDocumentRef("ui-synthetic","pdf"))
     private val session=object:PdfReadSession {
         override val info=ReadSessionInfo(ReadSessionId("ui-session"),0,8)
         override val renderLimits=RenderLimits(4096,4_194_304)
@@ -92,9 +99,10 @@ class ReaderScreenTest {
         override suspend fun open(request:DocumentOpenRequest):Outcome<ReaderReady> {
             opens.incrementAndGet()
             openGate?.await()
+            if(openingCanceled)throw CancellationException("test canceled open")
             return openFailure?.let{Outcome.Failure(it)}?:Outcome.Success(ReaderReady(request,session,PageIndex(0)).also{ready=it})
         }
-        override suspend fun displayed(session:ReadSessionId,page:PageIndex):Outcome<Unit>{acknowledged+=page;return Outcome.Success(Unit)}
+        override suspend fun displayed(session:ReadSessionId,page:PageIndex):Outcome<Unit>{acknowledged+=page;return checkpointFailure?.let{Outcome.Failure(it)}?:Outcome.Success(Unit)}
         override suspend fun background():Outcome<Unit> = Outcome.Success(Unit)
         override suspend fun close():Outcome<Unit>{ready=null;return Outcome.Success(Unit)}
     }
@@ -109,7 +117,8 @@ class ReaderScreenTest {
             PartiturasPDFTheme(darkTheme=dark){
                 val density=LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density,if(large.value)2f else density.fontScale)){
-                    if(shown.value)Box(if(narrow.value)Modifier.width(320.dp).fillMaxHeight() else Modifier.fillMaxSize()){
+                    if(shown.value)Box((if(narrow.value)Modifier.width(320.dp) else Modifier.fillMaxWidth()).then(
+                        if(shortViewport.value)Modifier.height(240.dp) else Modifier.fillMaxHeight())){
                         ReaderScreen(state.copy(phase=phase.value?:state.phase),{if(generation>=0)actions+=it;controller.dispatch(it)},{backs.incrementAndGet()})
                     }
                 }
@@ -134,6 +143,98 @@ class ReaderScreenTest {
         assertEquals(0,activeLeases.get());assertEquals(0,sessionCloses.get())
     }
 
+    @Test fun trimCanAwaitGraphicalDetachWithoutBlockingMainAndResumeOnlyAfterHostFinishes(){
+        start();visible()
+        for(trim in ReaderTrim.entries){
+            val old=bitmaps.last()
+            lateinit var barrier:Deferred<Outcome<Unit>>
+            compose.runOnUiThread{barrier=scope.async{controller.quiesce(trim)}}
+            compose.waitUntil(10_000){barrier.isCompleted}
+            assertEquals(Outcome.Success(Unit),runBlocking{barrier.await()});assertTrue(old.isRecycled)
+            assertEquals(ReaderPhase.QUIESCED,controller.state.value.phase)
+            val renders=requests.size
+            compose.runOnUiThread{controller.dispatch(ReaderAction.Step(1))};compose.waitForIdle()
+            assertEquals(renders,requests.size);assertEquals(0,sessionCloses.get())
+            runBlocking{assertEquals(Outcome.Success(Unit),route.background());if(ReaderMemoryPolicy.trim(trim).closeSession)route.close()}
+            compose.runOnUiThread{controller.resume()};visible()
+        }
+    }
+    @Test fun recreatedComposeConsumerReusesControllerAndDoesNotDuplicateOpeningOrCheckpoint(){
+        start();visible();val original=bitmaps.single()
+        compose.runOnIdle{shown.value=false};compose.waitForIdle()
+        assertFalse(original.isRecycled);assertEquals(1,activeLeases.get())
+        compose.runOnIdle{shown.value=true};compose.waitForIdle();visible()
+        assertEquals(1,opens.get());assertEquals(1,requests.size);assertEquals(listOf(PageIndex(0)),acknowledged)
+        button(R.string.reader_next).performClick();visible(1);assertTrue(original.isRecycled)
+    }
+    @Test fun pageSemanticsExposeTotalAndDistinctBoundedNavigationActions(){
+        start();visible()
+        compose.onNodeWithTag("reader_page").assertContentDescriptionEquals(text(R.string.reader_page_description,1,8))
+        val actions=compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        assertFalse(actions.any{it.label==text(R.string.reader_previous)})
+        compose.runOnUiThread{assertTrue(actions.single{it.label==text(R.string.reader_next)}.action())};visible(1)
+        compose.onNodeWithTag("reader_page").assertContentDescriptionEquals(text(R.string.reader_page_description,2,8))
+        compose.onNodeWithTag("reader_page").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.ScrollBy))
+        assertTrue(compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsActions.CustomActions].any{it.label==text(R.string.reader_previous)})
+    }
+    @Test fun keyboardShortcutsAreLocalToPageFocusAndRespectModifierKeys(){
+        start();visible()
+        button(R.string.reader_back).performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        button(R.string.reader_back).performKeyInput{pressKey(Key.DirectionRight)}
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_page").performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        compose.onNodeWithTag("reader_page").performKeyInput{keyDown(Key.CtrlLeft);pressKey(Key.DirectionRight);keyUp(Key.CtrlLeft)}
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_page").performKeyInput{pressKey(Key.DirectionRight)};visible(1)
+        compose.onNodeWithTag("reader_page").performKeyInput{pressKey(Key.Equals)}
+        compose.onNodeWithTag("reader_page").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,text(R.string.reader_zoom_state,125)))
+        compose.onNodeWithTag("reader_page").performKeyInput{pressKey(Key.Zero)}
+        compose.onNodeWithTag("reader_page").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,text(R.string.reader_zoom_state,100)))
+    }
+    @Test fun tabTraversalReachesControlsAndMenuFitWithoutCapturingPageShortcuts(){
+        start();visible();button(R.string.reader_next).performClick();visible(1)
+        button(R.string.reader_back).performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        button(R.string.reader_back).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_previous).assertIsFocused()
+        button(R.string.reader_previous).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_next).assertIsFocused()
+        button(R.string.reader_next).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_options).assertIsFocused()
+        button(R.string.reader_options).performKeyInput{pressKey(Key.Enter)}
+        compose.onNodeWithText(text(R.string.reader_fit_page)).assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected,true))
+        compose.onNodeWithText(text(R.string.reader_fit_width)).performClick();visible(1)
+        assertEquals(PageFit.WIDTH,controller.state.value.fit)
+        button(R.string.reader_back).performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        button(R.string.reader_back).performKeyInput{pressKey(Key.Enter)};assertEquals(1,backs.get())
+    }
+    @Test fun checkpointFailurePreservesPageAndRetryOnlySchedulesWithoutClaimingDurability(){
+        request=DocumentOpenRequest.Registered(DocumentRef(DocumentId("synthetic-ui-checkpoint")))
+        checkpointFailure=AppError.Access.PRIVATE_STORAGE_UNAVAILABLE;start()
+        compose.waitUntil(10_000){controller.state.value.failure?.stage==ReaderStage.PRESENTATION}
+        compose.onNodeWithText(text(R.string.reader_page_counter,1,8)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_checkpoint_failure)).performScrollTo().assertIsDisplayed()
+        assertFalse(bitmaps.single().isRecycled);assertEquals(1,requests.size)
+        checkpointFailure=null;button(R.string.reader_retry).performClick();visible()
+        compose.onNodeWithText(text(R.string.reader_checkpoint_unconfirmed)).performScrollTo().assertIsDisplayed()
+        assertEquals(listOf(PageIndex(0),PageIndex(0)),acknowledged);assertEquals(1,requests.size)
+        compose.onNodeWithText(text(R.string.reader_retry)).assertDoesNotExist()
+    }
+    @Test fun transientDrawExplicitlyReportsNoPermanentPosition(){
+        start();visible()
+        compose.onNodeWithText(text(R.string.reader_checkpoint_transient)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_checkpoint_unconfirmed)).assertDoesNotExist()
+    }
+    @Test fun terminalErrorRemainsReachableAtLargeFontInShortViewportWithoutDeadRetry(){
+        narrow.value=true;large.value=true;shortViewport.value=true
+        openFailure=AppError.Unsupported.PASSWORD_PROTECTED;start(dark=true)
+        compose.onNodeWithText(text(R.string.reader_error_password)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_recovery_back)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_retry)).assertDoesNotExist()
+        compose.onNodeWithText(text(R.string.reader_opening)).assertDoesNotExist()
+        button(R.string.reader_back).assertHeightIsAtLeast(48.dp).performClick();assertEquals(1,backs.get())
+    }
+    @Test fun canceledOpeningOffersAnActualExplicitRecovery(){
+        openingCanceled=true;start()
+        compose.onNodeWithText(text(R.string.reader_canceled)).performScrollTo().assertIsDisplayed()
+        openingCanceled=false;button(R.string.reader_retry).performClick();visible();assertEquals(2,opens.get())
+    }
     @Test fun activeSoftwareSurfaceDrawAcknowledgesExactlyOnePage(){
         start();visible()
         assertEquals(listOf(PageIndex(0)),acknowledged)

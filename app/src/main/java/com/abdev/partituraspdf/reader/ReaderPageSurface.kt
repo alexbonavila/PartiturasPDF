@@ -56,7 +56,7 @@ internal class ReaderPageSurface(context: Context) : SurfaceView(context), Surfa
         } finally { holder.unlockCanvasAndPost(canvas) }
         drawn?.let { consumer ->
             // Nonblocking identity-checked signal after the completed draw/post, never from layout.
-            post { if (!released && ready && visible() && presenter.current(consumer)) onPresented(consumer) }
+            post { if (!released && ready && visible() && presenter.acknowledge(consumer)) onPresented(consumer) }
         }
     }
 

@@ -14,6 +14,7 @@ internal fun entry(name: String? = "folder", id: String = "child", folder: Folde
 /** Contract doubles only; no simulated Android grants or claim of real SAF behavior. */
 internal class LibraryFixture(scope: CoroutineScope, retained: FolderNavigationState? = null) : AutoCloseable {
     var navigation = retained
+    var readNavigation: suspend () -> FolderNavigationState? = { navigation }
     var restores = 0
     var restore: suspend () -> Outcome<FolderRef?> = {
         navigation = trail(root)
@@ -36,7 +37,7 @@ internal class LibraryFixture(scope: CoroutineScope, retained: FolderNavigationS
         override suspend fun inspect(document: StorageDocumentRef): Outcome<DocumentInfo> = error("Not part of browsing")
     }
     val navigator = object : FolderNavigation {
-        override suspend fun state() = navigation
+        override suspend fun state() = readNavigation()
         override suspend fun select(root: FolderRef): Outcome<FolderNavigationState> = error("Host owns root selection")
         override suspend fun enter(entry: DocumentEntry, expectedVersion: Long): Outcome<FolderNavigationState> = error("Use host event")
         override suspend fun back(expectedVersion: Long): Outcome<FolderNavigationState> = error("Use host event")
@@ -46,7 +47,8 @@ internal class LibraryFixture(scope: CoroutineScope, retained: FolderNavigationS
         override suspend fun acceptPersistedRoot(root: FolderRef): Outcome<Unit> = error("Only I accepts picker results")
         override suspend fun library(event: LibraryEvent): Outcome<Unit> { events += event; return this@LibraryFixture.event(event) }
     }
-    val controller = LibraryController(scope, catalog, navigator, host)
+    val documents = LibraryDocumentFixture()
+    val controller = LibraryController(scope, catalog, navigator, host, documents.registry, documents.metadata, documents.commands)
     val state get() = controller.state.value
     val ready get() = state.content as LibraryContent.Ready
     val available get() = state.location as LibraryLocation.Available

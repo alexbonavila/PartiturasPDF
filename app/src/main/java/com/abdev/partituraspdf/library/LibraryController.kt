@@ -2,9 +2,12 @@ package com.abdev.partituraspdf.library
 
 import com.abdev.partituraspdf.core.document.DocumentCatalog
 import com.abdev.partituraspdf.core.document.DocumentListing
+import com.abdev.partituraspdf.core.document.DocumentRegistry
+import com.abdev.partituraspdf.core.document.DocumentMetadataRepository
 import com.abdev.partituraspdf.core.document.FolderRef
 import com.abdev.partituraspdf.core.foundation.FeatureHost
 import com.abdev.partituraspdf.core.foundation.LibraryEvent
+import com.abdev.partituraspdf.core.foundation.RegistrationCommands
 import com.abdev.partituraspdf.core.result.AppError
 import com.abdev.partituraspdf.core.result.Outcome
 import com.abdev.partituraspdf.storage.api.FolderNavigation
@@ -30,6 +33,9 @@ class LibraryController(
     private val catalog: DocumentCatalog,
     private val folders: FolderNavigation,
     private val host: FeatureHost,
+    registry: DocumentRegistry,
+    metadata: DocumentMetadataRepository,
+    registration: RegistrationCommands,
 ) {
     private val owner = SupervisorJob(ownerScope.coroutineContext[Job])
     private val scope = CoroutineScope(ownerScope.coroutineContext + owner)
@@ -41,11 +47,14 @@ class LibraryController(
     val state: StateFlow<LibraryUiState> = mutableState.asStateFlow()
     private var generation = 0L
     private var load: Job? = null
+    private val documents = LibraryDocuments(scope, registry, metadata, registration, host, ::pdf, ::replacePdf,
+        { key, update -> messages.trySend(Message.Document(key, update)); Unit }, { owner.cancel() })
 
     private sealed interface Message {
         data class Action(val action: LibraryAction) : Message
         data class Selection(val result: Outcome<FolderRef?>) : Message
         data class Loaded(val generation: Long, val navigation: FolderNavigationState, val result: Outcome<DocumentListing>) : Message
+        data class Document(val key: LibraryRowKey, val update: () -> Unit) : Message
     }
 
     fun start() {
@@ -60,11 +69,13 @@ class LibraryController(
                             is Message.Action -> action(message.action)
                             is Message.Selection -> selection(message.result)
                             is Message.Loaded -> loaded(message)
+                            is Message.Document -> documentResult(message)
                         }
                     }
                 } finally {
                     // Unexpected failures propagate; stop sibling loads rather than leaving an orphan.
                     messages.cancel()
+                    documents.reset()
                     owner.cancel()
                 }
             }
@@ -90,7 +101,7 @@ class LibraryController(
     private fun publish(state: LibraryUiState) {
         synchronized(lifecycle) { if (!closed && owner.isActive) mutableState.value = state }
     }
-    private fun invalidate() { generation++; load?.cancel(); load = null }
+    private fun invalidate() { generation++; load?.cancel(); load = null; documents.reset() }
     private fun failure(operation: LibraryFailureOperation, error: AppError) = LibraryFailure(operation, error)
     private fun current() = (state.value.location as? LibraryLocation.Available)?.snapshot
     private fun pendingSelection() = state.value.rootSelection == LibraryOperation.Pending
@@ -116,7 +127,7 @@ class LibraryController(
     private fun beginLoad(navigation: FolderNavigationState) {
         invalidate()
         val token = generation
-        publish(state.value.copy(location = LibraryLocation.Available(navigation), content = LibraryContent.Loading(token)))
+        publish(state.value.copy(location = LibraryLocation.Available(navigation), content = LibraryContent.Loading(token), documentError = null))
         load = scope.launch {
             val result = catalog.list(navigation.current)
             messages.trySend(Message.Loaded(token, navigation, result))
@@ -140,6 +151,7 @@ class LibraryController(
             is Outcome.Success -> prepared.value
             is Outcome.Failure -> LibraryContent.Failed(failure(LibraryFailureOperation.LISTING, prepared.error))
         }))
+        if (prepared is Outcome.Success) documents.start(prepared.value.rows)
     }
 
     private suspend fun action(action: LibraryAction) {
@@ -150,6 +162,40 @@ class LibraryController(
             is LibraryAction.Enter -> enter(action.key)
             is LibraryAction.Back -> navigateBack(action.navigationVersion)
             LibraryAction.ChooseRoot -> chooseRoot()
+            is LibraryAction.Document -> documentAction(action)
+        }
+    }
+    private fun pdf(key: LibraryRowKey): LibraryRow.Pdf? =
+        (state.value.content as? LibraryContent.Ready)?.rows?.singleOrNull { it.key == key } as? LibraryRow.Pdf
+
+    private fun replacePdf(row: LibraryRow.Pdf) {
+        val ready = state.value.content as? LibraryContent.Ready ?: return
+        publish(state.value.copy(content = LibraryContent.Ready(ready.rows.map { if (it.key == row.key) row else it }, ready.complete)))
+    }
+    private suspend fun documentResult(message: Message.Document) {
+        if (message.key.loadGeneration != generation || pendingSelection() || pdf(message.key) == null) return
+        val actual = folders.state()
+        if (!sameNavigation(current(), actual)) { navigationFailure(AppError.Conflict.STALE_SESSION, actual); return }
+        message.update()
+    }
+    private suspend fun documentAction(action: LibraryAction.Document) {
+        val row = pdf(action.key)
+        val error = when {
+            !sameNavigation(current(), folders.state()) || action.key.loadGeneration != generation -> AppError.Conflict.STALE_SESSION
+            row == null -> if ((state.value.content as? LibraryContent.Ready)?.rows?.any { it.key == action.key } == true) AppError.Validation.INVALID_DOCUMENT else AppError.Conflict.STALE_SESSION
+            else -> null
+        }
+        if (error != null) { publish(state.value.copy(documentError = error)); return }
+        publish(state.value.copy(documentError = null))
+        when (action) {
+            is LibraryAction.Register -> if (row!!.association is LibraryAssociation.Failed && row.association.operation == LibraryAssociationOperation.REGISTRATION) documents.retryRegistration(action.key) else documents.register(action.key)
+            is LibraryAction.SetFavorite -> documents.setFavorite(action.key, action.favorite)
+            is LibraryAction.Open -> documents.open(action.key)
+            is LibraryAction.RetryLookup -> if (row!!.association is LibraryAssociation.Failed) documents.retryLookup(action.key)
+            is LibraryAction.RetryRegistration -> documents.retryRegistration(action.key)
+            is LibraryAction.RetryMetadata -> documents.retryMetadata(action.key)
+            is LibraryAction.RetryFavorite -> documents.retryFavorite(action.key)
+            is LibraryAction.RetryOpen -> if (row!!.opening is LibraryOpening.Failed || row.opening == LibraryOpening.Rejected) documents.open(action.key)
         }
     }
     private suspend fun refresh() {

@@ -188,10 +188,24 @@ class ReaderScreenTest {
         compose.onNodeWithTag("reader_page").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.ScrollBy))
         assertTrue(compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsActions.CustomActions].any{it.label==text(R.string.reader_previous)})
     }
-    private fun keyboardFocus(node:SemanticsNodeInteraction):SemanticsNodeInteraction {
-        compose.waitUntil(10_000){compose.activity.hasWindowFocus()}
+    private fun focusEvidence(stage:String) {
+        // Capture window state before semantics queries synchronize Compose to idle.
+        compose.runOnUiThread {
+            Log.i("ReaderFocusAcceptance","stage=$stage immediate,activityWindow=${compose.activity.hasWindowFocus()},androidFocus=${compose.activity.currentFocus?.javaClass?.simpleName},fit=${controller.state.value.fit}")
+        }
+        val popups=compose.onAllNodes(isPopup()).fetchSemanticsNodes().size
+        val focused=compose.onAllNodes(isFocused()).fetchSemanticsNodes().map{it.id}
+        compose.runOnUiThread {
+            Log.i("ReaderFocusAcceptance","stage=$stage,activityWindow=${compose.activity.hasWindowFocus()},androidFocus=${compose.activity.currentFocus?.javaClass?.simpleName},popups=$popups,focusedNodes=$focused")
+        }
+    }
+    private fun keyboardFocus(node:SemanticsNodeInteraction,popup:Boolean=false):SemanticsNodeInteraction {
+        if(popup)node.assert(hasAnyAncestor(isPopup()))
+        else compose.waitUntil(10_000){compose.activity.hasWindowFocus()}
         node.assertIsEnabled().assertIsDisplayed()
-        compose.runOnIdle{assertTrue("Window must accept keyboard input",inputMode.requestInputMode(InputMode.Keyboard))}
+        // A focusable popup owns a separate window. Never request its parent Activity's focus
+        // while testing a menu item; keyboard mode was established before opening the menu.
+        if(!popup)compose.runOnIdle{assertTrue("Window must accept keyboard input",inputMode.requestInputMode(InputMode.Keyboard))}
         val before=node.fetchSemanticsNode().config.getOrElse(SemanticsProperties.Focused){false}
         var accepted=false
         node.performSemanticsAction(SemanticsActions.RequestFocus){accepted=it()}
@@ -221,10 +235,27 @@ class ReaderScreenTest {
         button(R.string.reader_back).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_previous).assertIsFocused()
         button(R.string.reader_previous).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_next).assertIsFocused()
         button(R.string.reader_next).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_options).assertIsFocused()
-        button(R.string.reader_options).performKeyInput{pressKey(Key.Enter)}
-        compose.onNodeWithText(text(R.string.reader_fit_page)).assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected,true))
-        keyboardFocus(compose.onNodeWithText(text(R.string.reader_fit_width))).performKeyInput{pressKey(Key.Enter)};visible(1)
-        assertEquals(PageFit.WIDTH,controller.state.value.fit)
+        for((item,fit) in listOf(R.string.reader_fit_width to PageFit.WIDTH,R.string.reader_fit_page to PageFit.PAGE)){
+            focusEvidence("before options")
+            button(R.string.reader_options).performKeyInput{pressKey(Key.Enter)}
+            compose.onNodeWithText(text(item)).assertIsDisplayed()
+            val selected=if(controller.state.value.fit==PageFit.PAGE)R.string.reader_fit_page else R.string.reader_fit_width
+            compose.onNodeWithText(text(selected)).assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected,true))
+            focusEvidence("popup open")
+            keyboardFocus(compose.onNodeWithText(text(item)),popup=true).performKeyInput{pressKey(Key.Enter)}
+            focusEvidence("selection submitted")
+            // Material retains the popup during its exit transition. Wait for actual removal,
+            // not controller VISIBLE (which can still describe the preceding frame).
+            compose.waitForIdle()
+            focusEvidence("after selection idle")
+            compose.waitUntil(10_000){compose.onAllNodes(isPopup()).fetchSemanticsNodes().isEmpty()}
+            compose.onNodeWithText(text(R.string.reader_fit_page)).assertDoesNotExist()
+            compose.onNodeWithText(text(R.string.reader_fit_width)).assertDoesNotExist()
+            compose.waitUntil(10_000){compose.activity.hasWindowFocus()}
+            focusEvidence("popup removed and reader window active")
+            assertEquals(fit,controller.state.value.fit);visible(1)
+            button(R.string.reader_options).assertIsFocused()
+        }
         keyboardFocus(button(R.string.reader_back))
         button(R.string.reader_back).performKeyInput{pressKey(Key.Enter)};assertEquals(1,backs.get())
     }

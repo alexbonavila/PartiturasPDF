@@ -10,7 +10,6 @@ import android.util.Log
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -50,6 +49,7 @@ import org.junit.runners.MethodSorters
 @RunWith(AndroidJUnit4::class)
 class ReaderNativeIntegrationTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private val composition = ReaderTestComposition(compose)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val limits = RenderLimits(512, 512L * 512)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -71,6 +71,8 @@ class ReaderNativeIntegrationTest {
     private val maximumRenders = AtomicInteger()
     private val retained = AtomicInteger()
     private val maximumRetained = AtomicInteger()
+    private val presentedActions = AtomicInteger()
+    @Volatile private var nativeOperation = "idle"
     @Volatile private var plannedPixels = 0L
 
     private class InputResource(override val descriptor: ParcelFileDescriptor) : ReadResource {
@@ -105,7 +107,9 @@ class ReaderNativeIntegrationTest {
             val count = activeRenders.incrementAndGet(); maximumRenders.updateAndGet { maxOf(it, count) }
             val before = heap(); val started = SystemClock.elapsedRealtimeNanos()
             try {
+                nativeOperation = "render started: page=${request.page.page.value}"
                 val result = native.render(request)
+                nativeOperation = "render completed: ${if (result is Outcome.Success) "bitmap" else result}"
                 if (result !is Outcome.Success) return result
                 val lease = Lease(result.value, result.value.bitmap, plannedPixels); leases += lease
                 val held = retained.incrementAndGet(); maximumRetained.updateAndGet { maxOf(it, held) }
@@ -143,6 +147,7 @@ class ReaderNativeIntegrationTest {
             var delivered = false
             try {
                 val result = withContext(Dispatchers.IO) {
+                    nativeOperation = "preparing fixture and closing previous owner"
                     owner?.close(); owner = null; ready = null
                     val copy = File.createTempFile("canonical-", ".pdf", directory)
                     val expected = selected.getString("sha256"); sources += copy to expected
@@ -153,9 +158,11 @@ class ReaderNativeIntegrationTest {
                     val resource = InputResource(ParcelFileDescriptor.open(copy, ParcelFileDescriptor.MODE_READ_ONLY))
                     resources += resource
                     val handle = ReadHandle(resource, ReadProvenance.Provider(StorageDocumentRef("canonical", selected.getString("path"))), true)
+                    nativeOperation = "native open started"
                     val opened = try {
                         AndroidPdfReadEngine(limits).open(PdfReadSource(handle, (request as? DocumentOpenRequest.Registered)?.document))
                     } finally { if (handle.ownership == ReadOwnership.OWNED) handle.close() }
+                    nativeOperation = "native open completed: ${if (opened is Outcome.Success) "session" else opened}"
                     when (opened) {
                         is Outcome.Failure -> opened
                         is Outcome.Success -> {
@@ -190,14 +197,17 @@ class ReaderNativeIntegrationTest {
         directory = File(instrumentation.targetContext.cacheDir, "reader-native-${UUID.randomUUID()}")
         check(directory.mkdir())
         controller = ReaderController(scope, route, limits, { heap().also { plannedPixels = ReaderMemoryPolicy.budget(it).maxArgbPixels } }, PageFit.PAGE)
-        compose.runOnUiThread { compose.activity.setContent {
+        composition.mount {
             val state by controller.state.collectAsState()
-            PartiturasPDFTheme { ReaderScreen(state, controller::dispatch, {}) }
-        } }
+            PartiturasPDFTheme { ReaderScreen(state, { action ->
+                if (action is ReaderAction.Presented) presentedActions.incrementAndGet()
+                controller.dispatch(action)
+            }, {}) }
+        }
     }
     @After fun cleanup() {
         try {
-            compose.runOnUiThread { compose.activity.setContent {} }
+            composition.unmount()
             renderCompletionGate?.complete(Unit)
             // This timeout fails a hung test; it never authorizes recycling or forced route closure.
             runBlocking { withTimeout(30_000) { controller.retire() }; route.close() }
@@ -207,6 +217,9 @@ class ReaderNativeIntegrationTest {
             sessions.forEach { assertTrue("Native route owner was not closed", it.isClosed) }
             sources.forEach { (file, expected) -> assertEquals("Source PDF changed", expected, hash(file)) }
             assertTrue(directory.deleteRecursively()) // Only this test's unique synthetic-copy directory.
+        } catch (failure: Throwable) {
+            if (::controller.isInitialized) reportFailure(failure, "cleanup", -1)
+            throw failure
         } finally { scope.cancel() }
     }
     private fun open(row: JSONObject, registered: Boolean = false, restored: Int = 0) {
@@ -216,7 +229,41 @@ class ReaderNativeIntegrationTest {
         compose.runOnUiThread { controller.open(ReaderOpenIntent(++sequence, request)) }
     }
     private fun visible(page: Int) {
-        compose.waitUntil(20_000) { controller.state.value.phase == ReaderPhase.VISIBLE && controller.state.value.presentedPage?.value == page }
+        try {
+            compose.waitUntil(20_000) { controller.state.value.phase == ReaderPhase.VISIBLE && controller.state.value.presentedPage?.value == page }
+        } catch (failure: Throwable) {
+            // Preserve the primary failure and snapshot before @After changes the state.
+            reportFailure(failure, "waiting for VISIBLE", page)
+            throw failure
+        }
+    }
+    private fun reportFailure(failure: Throwable, stage: String, page: Int) {
+        try {
+            val details = "$stage: ${diagnostics(page)}"
+            Log.e("ReaderNativeAcceptance", details)
+            failure.addSuppressed(AssertionError(details))
+        } catch (diagnosticFailure: Throwable) { failure.addSuppressed(diagnosticFailure) }
+    }
+    private fun diagnostics(expected: Int): String {
+        val state = controller.state.value
+        var views = "unavailable"
+        compose.runOnUiThread {
+            views = composition.surfaces().joinToString { view ->
+                "attached=${view.isAttachedToWindow},shown=${view.isShown},visibility=${view.visibility}," +
+                    "window=${view.windowVisibility},size=${view.width}x${view.height},surfaceValid=${view.holder.surface.isValid}"
+            }
+        }
+        fun jobs(job: Job): String = "active=${job.isActive}/completed=${job.isCompleted}/cancelled=${job.isCancelled}" +
+            job.children.joinToString(prefix = "[", postfix = "]") { jobs(it) }
+        return "Reader timeout: api=${android.os.Build.VERSION.SDK_INT},fixture=${if (::selected.isInitialized) selected.getString("id") else "none"}," +
+            "expected=$expected,phase=${state.phase},intentSequence=${state.intent?.sequence}," +
+            "requested=${state.requestedPage},presented=${state.presentedPage},session=${state.session}," +
+            "sessionValid=${state.frame?.let { ready?.session?.info?.validate(it.request.page) }}," +
+            "viewport=${state.viewport},viewportGeneration=${state.viewportGeneration},request=${state.frame?.request}," +
+            "frame=${state.frame?.let(System::identityHashCode)},attachable=${state.frame?.availability?.value}," +
+            "failure=${state.failure},cancellationRetry=${state.cancellationRetry},checkpoint=${state.checkpoint},jobs=${jobs(scope.coroutineContext[Job]!!)}," +
+            "opens=${opens.get()},activeRenders=${activeRenders.get()},produced=${leases.size},retained=${retained.get()}," +
+            "nativeOperation=$nativeOperation,PresentedActions=${presentedActions.get()},displayed=${displayed.size},views=[$views]; draw/post unobserved unless a current Presented reached the route"
     }
     private fun surface(): ReaderPageSurface {
         fun find(view: View): ReaderPageSurface? {

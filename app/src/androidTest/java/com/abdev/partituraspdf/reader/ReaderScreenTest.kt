@@ -7,7 +7,6 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -46,6 +45,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderScreenTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+    private val composition=ReaderTestComposition(compose)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private lateinit var controller:ReaderController
     private val shown=mutableStateOf(true)
@@ -111,7 +111,7 @@ class ReaderScreenTest {
     private fun start(fit:PageFit=PageFit.PAGE,dark:Boolean=false,open:Boolean=true){
         controller=ReaderController(scope,route,session.renderLimits,{HeapAvailability(256L*1024*1024,0)},fit)
         if(open)controller.open(ReaderOpenIntent(1,request))
-        compose.runOnUiThread{compose.activity.setContent{
+        composition.mount{
             val state by controller.state.collectAsState()
             val generation=recomposition.intValue
             PartiturasPDFTheme(darkTheme=dark){
@@ -123,7 +123,7 @@ class ReaderScreenTest {
                     }
                 }
             }
-        }}
+        }
     }
     private fun visible(page:Int=0){compose.waitUntil(10_000){controller.state.value.phase==ReaderPhase.VISIBLE&&controller.state.value.presentedPage?.value==page}}
     private fun button(id:Int)=compose.onNodeWithText(text(id)).performScrollTo()
@@ -136,11 +136,14 @@ class ReaderScreenTest {
         }
         return checkNotNull(find(compose.activity.findViewById(android.R.id.content)))
     }
-    @After fun cleanup(){
-        compose.runOnUiThread{compose.activity.setContent{}}
+    private fun disposeFixture(){
+        composition.unmount()
         if(::controller.isInitialized)runBlocking{withTimeout(10_000){controller.retire()}}
-        scope.cancel()
         assertEquals(0,activeLeases.get());assertEquals(0,sessionCloses.get())
+    }
+    @After fun cleanup(){
+        // Cancellation is last: it must not strand a worker waiting for a live consumer.
+        try { disposeFixture() } finally { scope.cancel() }
     }
 
     @Test fun trimCanAwaitGraphicalDetachWithoutBlockingMainAndResumeOnlyAfterHostFinishes(){
@@ -396,4 +399,31 @@ class ReaderScreenTest {
         button(R.string.reader_options).performClick()
         compose.onNodeWithText(text(R.string.reader_zoom_reset)).performScrollTo().assertIsDisplayed().performClick()
     }
+    @Test fun fixtureDisposesAfterAssertionFailureWithoutMaskingIt(){
+        start();visible();val original=AssertionError("deliberate test-body failure")
+        val observed=assertThrows(AssertionError::class.java){
+            try { throw original } finally { disposeFixture() }
+        }
+        assertSame(original,observed);assertTrue(bitmaps.single().isRecycled)
+    }
+    @Test fun fixtureDisposesAfterFailedOpening(){
+        openFailure=AppError.Access.PERMISSION_REVOKED;start()
+        compose.waitUntil(10_000){controller.state.value.phase==ReaderPhase.ERROR}
+        disposeFixture();assertTrue(bitmaps.isEmpty());assertEquals(1,opens.get())
+    }
+    @Test fun fixtureDisposesWhileRenderIsSuspended(){
+        renderGate=CompletableDeferred();start()
+        compose.waitUntil(10_000){controller.state.value.phase==ReaderPhase.RENDERING}
+        disposeFixture();assertTrue(bitmaps.isEmpty());assertTrue(acknowledged.isEmpty())
+    }
+    @Test fun fixtureObservesDetachBeforeRetiringAfterReplacement(){
+        start();visible();val first=bitmaps.single()
+        button(R.string.reader_next).performClick();visible(1)
+        val current=controller.state.value.frame!!
+        composition.unmount()
+        assertTrue("Unmount must return the live consumer",current.availability.value)
+        assertTrue(first.isRecycled);assertFalse(bitmaps.last().isRecycled)
+        disposeFixture();assertTrue(bitmaps.all{it.isRecycled});assertEquals(1,maximumLeases.get())
+    }
+
 }

@@ -1,7 +1,14 @@
 package com.abdev.partituraspdf.reader
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.net.Uri
+import android.system.Os
+import android.system.OsConstants
+import com.abdev.partituraspdf.storage.saf.SafDocumentReadAccess
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
@@ -101,6 +108,26 @@ class ReaderNativeIntegrationTest {
         }
         return (0 until rows.length()).map(rows::getJSONObject)
     }
+    /** Inspect the exact descriptor without changing the offset shared with PdfRenderer. */
+    private fun verifyDescriptor(descriptor: ParcelFileDescriptor, row: JSONObject) {
+        val fd=descriptor.fileDescriptor
+        assertTrue("Descriptor invalid",fd.valid())
+        assertEquals(row.getLong("bytes"),Os.fstat(fd).st_size)
+        assertEquals(0L,Os.lseek(fd,0,OsConstants.SEEK_CUR))
+        val digest=MessageDigest.getInstance("SHA-256")
+        val bytes=ByteArray(8192);var position=0L
+        while(position<row.getLong("bytes")) {
+            val n=Os.pread(fd,bytes,0,minOf(bytes.size.toLong(),row.getLong("bytes")-position).toInt(),position)
+            assertTrue("Truncated descriptor",n>0);digest.update(bytes,0,n);position+=n
+        }
+        assertEquals(0,Os.pread(fd,bytes,0,1,position))
+        assertEquals(row.getString("sha256"),digest.digest().joinToString(""){"%02x".format(it.toInt() and 255)})
+        if(row.getString("expected_status")=="valid") {
+            val header=ByteArray(5);assertEquals(5,Os.pread(fd,header,0,5,0))
+            assertEquals("%PDF-",String(header,Charsets.US_ASCII))
+        }
+        assertEquals("Diagnostics must preserve offset",0L,Os.lseek(fd,0,OsConstants.SEEK_CUR))
+    }
     private fun borrowed(native: PdfReadSession): PdfReadSession = object : PdfReadSession by native {
         override fun close(): Unit = error("G must never close the borrowed native session")
         override suspend fun render(request: RenderRequest): Outcome<RenderedPage> {
@@ -160,6 +187,7 @@ class ReaderNativeIntegrationTest {
                     val handle = ReadHandle(resource, ReadProvenance.Provider(StorageDocumentRef("canonical", selected.getString("path"))), true)
                     nativeOperation = "native open started"
                     val opened = try {
+                        verifyDescriptor(resource.descriptor,selected)
                         AndroidPdfReadEngine(limits).open(PdfReadSource(handle, (request as? DocumentOpenRequest.Registered)?.document))
                     } finally { if (handle.ownership == ReadOwnership.OWNED) handle.close() }
                     nativeOperation = "native open completed: ${if (opened is Outcome.Success) "session" else opened}"
@@ -230,7 +258,9 @@ class ReaderNativeIntegrationTest {
     }
     private fun visible(page: Int) {
         try {
-            compose.waitUntil(20_000) { controller.state.value.phase == ReaderPhase.VISIBLE && controller.state.value.presentedPage?.value == page }
+            compose.waitUntil(20_000) { controller.state.value.let { it.phase == ReaderPhase.ERROR || (it.phase == ReaderPhase.VISIBLE && it.presentedPage?.value == page) } }
+            val state=controller.state.value
+            if(state.phase==ReaderPhase.ERROR)throw AssertionError("Native terminal error: fixture=${selected.getString("id")},error=${state.failure?.error},operation=$nativeOperation,session=${state.session}")
         } catch (failure: Throwable) {
             // Preserve the primary failure and snapshot before @After changes the state.
             reportFailure(failure, "waiting for VISIBLE", page)
@@ -281,6 +311,73 @@ class ReaderNativeIntegrationTest {
             assertTrue(done.await(20, TimeUnit.SECONDS)); assertEquals(PixelCopy.SUCCESS, status)
             return bitmap
         } catch (failure: Throwable) { bitmap.recycle(); throw failure }
+    }
+
+    @Test fun a0_sameCanonicalBytesOpenDirectThroughEngineAndSaf() {
+        runBlocking(Dispatchers.IO) {
+            val row=fixtures().single{it.getString("id")=="01"}
+            val copy=File(directory,"differential-a4.pdf")
+            instrumentation.context.assets.open(row.getString("path")).use { input -> copy.outputStream().use { input.copyTo(it) } }
+            assertEquals(row.getString("sha256"),hash(copy))
+            val results=mutableListOf<String>()
+            val failures=mutableListOf<Throwable>()
+            fun experiment(name:String, action:()->Unit) {
+                try { action();results+="$name: PASS" }
+                catch(failure:Exception) {
+                    if(failure is CancellationException)throw failure
+                    failures+=failure;results+="$name: ${failure.javaClass.simpleName}: ${failure.message}"
+                } catch(failure:AssertionError) {failures+=failure;results+="$name: ${failure.message}"}
+                Log.i("ReaderNativeDifferential",results.last())
+            }
+            experiment("A direct PdfRenderer") {
+                ParcelFileDescriptor.open(copy,ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                    verifyDescriptor(fd,row)
+                    PdfRenderer(fd).use { assertEquals(row.getInt("expected_pages"),it.pageCount) }
+                }
+            }
+            // Each experiment owns an independent descriptor, so A cannot advance or close B/C.
+            suspend fun engine(handle:ReadHandle) {
+                try {
+                    verifyDescriptor(handle.descriptor,row)
+                    val result=AndroidPdfReadEngine(limits).open(PdfReadSource(handle))
+                    try {
+                        assertEquals(ReadOwnership.TRANSFERRED,handle.ownership)
+                        assertTrue("Expected native session, got $result",result is Outcome.Success)
+                        assertEquals(row.getInt("expected_pages"),(result as Outcome.Success).value.info.pageCount)
+                    } finally {if(result is Outcome.Success)result.value.close()}
+                } finally {if(handle.ownership==ReadOwnership.OWNED)handle.close()}
+            }
+            // experiment is non-suspending; runBlocking stays on this test-owned IO thread.
+            experiment("B file descriptor through production engine") {
+                val resource=InputResource(ParcelFileDescriptor.open(copy,ParcelFileDescriptor.MODE_READ_ONLY));resources+=resource
+                runBlocking { engine(ReadHandle(resource,ReadProvenance.Provider(StorageDocumentRef("canonical","01")),true)) }
+                assertEquals(1,resource.closes.get())
+            }
+            val token=UUID.randomUUID().toString()
+            val uri=Uri.parse("content://com.abdev.partituraspdf.test.integration.pdf/document/file-01").buildUpon().appendQueryParameter("request",token).build()
+            val resolver=instrumentation.targetContext.contentResolver
+            try {
+                experiment("C SAF provider through production access and engine") {
+                    runBlocking {
+                        val ref=StorageDocumentRef("saf",uri.toString())
+                        val isolated=object:ContextWrapper(instrumentation.targetContext) {
+                            override fun getApplicationContext():Context=this
+                            override fun getCacheDir():File=directory
+                        }
+                        val result=SafDocumentReadAccess(resolver,isolated).openSeekable(ref,ReadAccessLimits(row.getLong("bytes")))
+                        assertTrue("SAF open failed: $result",result is Outcome.Success)
+                        val handle=(result as Outcome.Success).value
+                        try { assertEquals(ReadProvenance.Provider(ref),handle.provenance);engine(handle) }
+                        finally {if(handle.ownership==ReadOwnership.OWNED)handle.close()}
+                    }
+                }
+            } finally {
+                val report=checkNotNull(resolver.call(uri,"await",token,null))
+                assertNull(report.getString("failure"));assertEquals(row.getLong("bytes"),report.getLong("bytes"));assertTrue(report.getBoolean("unlinked"))
+            }
+            Log.i("ReaderNativeDifferential",results.joinToString("; "))
+            if(failures.isNotEmpty())throw AssertionError(results.joinToString("; ")).also { failure -> failures.forEach(failure::addSuppressed) }
+        }
     }
 
     @Test fun a_readableCanonicalCorpusUsesNativeRenderingAndGPublication() {
@@ -393,6 +490,9 @@ class ReaderNativeIntegrationTest {
             if (id == "15") assertEquals(AppError.Validation.INVALID_DOCUMENT, error)
             else assertTrue(error == AppError.Unsupported.DOCUMENT_FORMAT || error == AppError.Validation.INVALID_DOCUMENT)
             assertEquals(ReaderRetry.NONE, readerRetry(controller.state.value))
+            val failure=assertThrows(AssertionError::class.java){visible(0)}
+            assertTrue(failure.message!!.startsWith("Native terminal error:"))
+            assertTrue(failure.message!!.contains("error=$error"))
             assertNull(controller.state.value.frame); assertTrue(displayed.isEmpty()); assertTrue(leases.isEmpty())
         }
         assertEquals(2, opens.get())

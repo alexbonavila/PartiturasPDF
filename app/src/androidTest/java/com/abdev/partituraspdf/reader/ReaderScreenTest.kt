@@ -2,6 +2,10 @@ package com.abdev.partituraspdf.reader
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.Log
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
@@ -48,6 +52,8 @@ class ReaderScreenTest {
     private val composition=ReaderTestComposition(compose)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private lateinit var controller:ReaderController
+    private lateinit var inputMode:InputModeManager
+    private var resizeHeightPx:Int?=null
     private val shown=mutableStateOf(true)
     private val narrow=mutableStateOf(false)
     private val large=mutableStateOf(false)
@@ -112,13 +118,15 @@ class ReaderScreenTest {
         controller=ReaderController(scope,route,session.renderLimits,{HeapAvailability(256L*1024*1024,0)},fit)
         if(open)controller.open(ReaderOpenIntent(1,request))
         composition.mount{
+            val manager=LocalInputModeManager.current
+            SideEffect{inputMode=manager}
             val state by controller.state.collectAsState()
             val generation=recomposition.intValue
             PartiturasPDFTheme(darkTheme=dark){
                 val density=LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density,if(large.value)2f else density.fontScale)){
                     if(shown.value)Box((if(narrow.value)Modifier.width(320.dp) else Modifier.fillMaxWidth()).then(
-                        if(shortViewport.value)Modifier.height(240.dp) else Modifier.fillMaxHeight())){
+                        if(shortViewport.value)Modifier.height(with(density){(resizeHeightPx?:240.dp.roundToPx()).toDp()}) else Modifier.fillMaxHeight())){
                         ReaderScreen(state.copy(phase=phase.value?:state.phase),{if(generation>=0)actions+=it;controller.dispatch(it)},{backs.incrementAndGet()})
                     }
                 }
@@ -180,12 +188,25 @@ class ReaderScreenTest {
         compose.onNodeWithTag("reader_page").assert(SemanticsMatcher.keyNotDefined(SemanticsActions.ScrollBy))
         assertTrue(compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsActions.CustomActions].any{it.label==text(R.string.reader_previous)})
     }
+    private fun keyboardFocus(node:SemanticsNodeInteraction):SemanticsNodeInteraction {
+        compose.waitUntil(10_000){compose.activity.hasWindowFocus()}
+        node.assertIsEnabled().assertIsDisplayed()
+        compose.runOnIdle{assertTrue("Window must accept keyboard input",inputMode.requestInputMode(InputMode.Keyboard))}
+        val before=node.fetchSemanticsNode().config.getOrElse(SemanticsProperties.Focused){false}
+        var accepted=false
+        node.performSemanticsAction(SemanticsActions.RequestFocus){accepted=it()}
+        compose.waitForIdle()
+        Log.i("ReaderFocusAcceptance","window=${compose.activity.hasWindowFocus()},androidFocus=${compose.activity.currentFocus?.javaClass?.simpleName},before=$before,request=$accepted,after=${node.fetchSemanticsNode().config.getOrElse(SemanticsProperties.Focused){false}},mode=${inputMode.inputMode}")
+        assertTrue("RequestFocus must succeed or target must already be focused",accepted||before)
+        node.assertIsFocused()
+        return node
+    }
     @Test fun keyboardShortcutsAreLocalToPageFocusAndRespectModifierKeys(){
         start();visible()
-        button(R.string.reader_back).performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        keyboardFocus(button(R.string.reader_back))
         button(R.string.reader_back).performKeyInput{pressKey(Key.DirectionRight)}
         assertEquals(PageIndex(0),controller.state.value.requestedPage)
-        compose.onNodeWithTag("reader_page").performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        keyboardFocus(compose.onNodeWithTag("reader_page"))
         compose.onNodeWithTag("reader_page").performKeyInput{keyDown(Key.CtrlLeft);pressKey(Key.DirectionRight);keyUp(Key.CtrlLeft)}
         assertEquals(PageIndex(0),controller.state.value.requestedPage)
         compose.onNodeWithTag("reader_page").performKeyInput{pressKey(Key.DirectionRight)};visible(1)
@@ -196,15 +217,15 @@ class ReaderScreenTest {
     }
     @Test fun tabTraversalReachesControlsAndMenuFitWithoutCapturingPageShortcuts(){
         start();visible();button(R.string.reader_next).performClick();visible(1)
-        button(R.string.reader_back).performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        keyboardFocus(button(R.string.reader_back))
         button(R.string.reader_back).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_previous).assertIsFocused()
         button(R.string.reader_previous).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_next).assertIsFocused()
         button(R.string.reader_next).performKeyInput{pressKey(Key.Tab)};button(R.string.reader_options).assertIsFocused()
         button(R.string.reader_options).performKeyInput{pressKey(Key.Enter)}
         compose.onNodeWithText(text(R.string.reader_fit_page)).assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected,true))
-        compose.onNodeWithText(text(R.string.reader_fit_width)).performClick();visible(1)
+        keyboardFocus(compose.onNodeWithText(text(R.string.reader_fit_width))).performKeyInput{pressKey(Key.Enter)};visible(1)
         assertEquals(PageFit.WIDTH,controller.state.value.fit)
-        button(R.string.reader_back).performSemanticsAction(SemanticsActions.RequestFocus){assertTrue(it())}
+        keyboardFocus(button(R.string.reader_back))
         button(R.string.reader_back).performKeyInput{pressKey(Key.Enter)};assertEquals(1,backs.get())
     }
     @Test fun checkpointFailurePreservesPageAndRetryOnlySchedulesWithoutClaimingDurability(){
@@ -345,12 +366,30 @@ class ReaderScreenTest {
         assertEquals(renders+1,requests.size)
     }
     @Test fun resizingReportsUsableViewportOnceAndIgnoresDrawStatusChanges(){
-        start();visible();val before=controller.state.value.viewportGeneration
-        compose.runOnIdle{narrow.value=true};visible()
-        compose.waitUntil(10_000){controller.state.value.viewportGeneration>before}
-        visible();val viewports=actions.filterIsInstance<ReaderAction.Viewport>().map{it.value}
-        assertEquals(viewports.distinct(),viewports)
-        assertTrue(viewports.all{it.widthPx>0&&it.heightPx>0});assertEquals(1,opens.get())
+        start();visible();compose.waitForIdle()
+        val initial=controller.state.value.viewport!!
+        val before=controller.state.value.viewportGeneration
+        val updates=actions.filterIsInstance<ReaderAction.Viewport>().size
+        val renders=requests.size
+        assertTrue(initial.widthPx>0&&initial.heightPx>0)
+        // Parent height is smaller than the original page alone, so the measured page MUST shrink
+        // even on a 320px-wide emulator. No synthetic Viewport action is dispatched.
+        compose.runOnIdle{resizeHeightPx=(initial.heightPx/2).coerceAtLeast(2);shortViewport.value=true}
+        compose.waitUntil(10_000){controller.state.value.viewport!=initial}
+        visible();compose.waitForIdle()
+        val changed=controller.state.value.viewport!!
+        val bounds=compose.onNodeWithTag("reader_page").fetchSemanticsNode().boundsInRoot
+        assertEquals(bounds.width.toInt(),changed.widthPx);assertEquals(bounds.height.toInt(),changed.heightPx)
+        assertTrue(changed.heightPx in 1 until initial.heightPx)
+        assertEquals(before+1,controller.state.value.viewportGeneration)
+        assertEquals(updates+1,actions.filterIsInstance<ReaderAction.Viewport>().size)
+        assertEquals(renders+1,requests.size)
+        Log.i("ReaderViewportAcceptance","initial=$initial,changed=$changed")
+        repeat(3){compose.runOnIdle{shortViewport.value=true;recomposition.intValue++};compose.waitForIdle()}
+        assertEquals(before+1,controller.state.value.viewportGeneration)
+        assertEquals(updates+1,actions.filterIsInstance<ReaderAction.Viewport>().size)
+        assertEquals(renders+1,requests.size)
+        assertEquals(PageIndex(0),controller.state.value.presentedPage);assertEquals(1,opens.get())
     }
     @Test fun newDocumentResetsVisualZoomWithoutPersistingIt(){
         start();visible();option(R.string.reader_zoom_in);pressBack()

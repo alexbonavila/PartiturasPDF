@@ -11,6 +11,20 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReaderSchedulingTest {
+    @Test fun rapidRelativeUiNavigationDoesNotLoseTapsAgainstAnOldComposeSnapshot() = runTest { withReader {
+        open();repeat(20){controller.dispatch(ReaderAction.Step(1))};runCurrent()
+        assertEquals(PageIndex(7),state.requestedPage)
+        repeat(20){controller.dispatch(ReaderAction.Step(-1))};runCurrent()
+        assertEquals(PageIndex(0),state.requestedPage)
+        controller.dispatch(ReaderAction.Step(-1));runCurrent();assertEquals(PageIndex(0),state.requestedPage)
+        assertTrue(session.requests.size<=3);assertEquals(0,session.closes)
+        assertThrows(IllegalArgumentException::class.java){ReaderAction.Step(0)}
+    } }
+    @Test fun relativeNavigationWithoutSessionOrWhilePausedDoesNotInventAPage() = runTest { withReader {
+        controller.dispatch(ReaderAction.Step(1));runCurrent();assertNull(state.requestedPage)
+        open();controller.quiesce(com.abdev.partituraspdf.core.foundation.ReaderTrim.LOW_MEMORY)
+        controller.dispatch(ReaderAction.Step(1));runCurrent();assertEquals(PageIndex(2),state.requestedPage)
+    } }
     @Test fun rapidRequestsKeepOneActiveRenderAndOnlyTheLatestPendingPage() = runTest { withReader {
         val gate=gate(); var activeRenders=0; var maximum=0
         session.render={ request ->

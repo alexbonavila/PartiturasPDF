@@ -2,8 +2,11 @@ package com.abdev.partituraspdf.reader
 
 import android.graphics.Bitmap
 import com.abdev.partituraspdf.pdf.api.RenderRequest
+import com.abdev.partituraspdf.pdf.api.PageDisplayInfo
 import com.abdev.partituraspdf.pdf.api.RenderedPage
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * G owns the lease; a presenter may borrow it once at a time. Retirement prevents new consumers
@@ -12,6 +15,9 @@ import kotlinx.coroutines.CompletableDeferred
  */
 class ReaderFrame internal constructor(private val lease: RenderedPage) {
     val request: RenderRequest = lease.request
+    val displayInfo: PageDisplayInfo = lease.displayInfo
+    private val attachable = MutableStateFlow(true)
+    internal val availability = attachable.asStateFlow()
     private val lock = Any()
     private var retiring = false
     private var released = false
@@ -19,7 +25,7 @@ class ReaderFrame internal constructor(private val lease: RenderedPage) {
     private val release = CompletableDeferred<Unit>()
 
     fun attach(): ReaderPresentation? = synchronized(lock) {
-        if (retiring || consumer != null) null else ReaderPresentation(this).also { consumer = it }
+        if (retiring || consumer != null) null else ReaderPresentation(this).also { consumer = it; attachable.value = false }
     }
 
     internal fun active(presentation: ReaderPresentation): Boolean = synchronized(lock) {
@@ -32,11 +38,12 @@ class ReaderFrame internal constructor(private val lease: RenderedPage) {
     }
 
     internal fun detach(presentation: ReaderPresentation) = synchronized(lock) {
-        if (consumer === presentation) { consumer = null; if (retiring) releaseLocked() }
+        if (consumer === presentation) { consumer = null; if (retiring) releaseLocked() else attachable.value = true }
     }
 
     internal fun requestRetirement() = synchronized(lock) {
         retiring = true
+        attachable.value = false
         if (consumer == null) releaseLocked()
     }
 

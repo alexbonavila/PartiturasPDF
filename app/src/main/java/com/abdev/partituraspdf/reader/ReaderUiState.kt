@@ -47,6 +47,10 @@ sealed interface ReaderAction {
     data class Viewport(val value: ReaderViewport) : ReaderAction
     data class Fit(val value: PageFit) : ReaderAction
     data class Page(val index: Int) : ReaderAction
+    /** Relative navigation is resolved atomically, even before Compose receives the next snapshot. */
+    data class Step(val delta: Int) : ReaderAction {
+        init { require(delta == -1 || delta == 1) }
+    }
     data object Retry : ReaderAction
     /** Only the active graphical consumer may report a completed presentation. */
     data class Presented(val presentation: ReaderPresentation) : ReaderAction

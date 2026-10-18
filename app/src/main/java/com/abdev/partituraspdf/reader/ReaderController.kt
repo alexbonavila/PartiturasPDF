@@ -112,16 +112,13 @@ class ReaderController(
                     failure = if (ready == null) state.value.failure else null)
                 scheduleRender()
             }
-            is ReaderAction.Page -> if (active) {
-                val session = ready?.session
-                if (session == null || action.index < 0 || action.index >= session.info.pageCount) {
-                    if (session != null || state.value.failure?.retry != ReaderRetry.OPEN) {
-                        fail(ReaderStage.PLAN, AppError.Validation.INVALID_PAGE, ReaderRetry.NONE)
-                    }
-                } else if (state.value.requestedPage?.value != action.index) {
-                    invalidateRender()
-                    mutableState.value = state.value.copy(requestedPage = PageIndex(action.index), failure = null)
-                    scheduleRender()
+            is ReaderAction.Page -> if (active) requestPage(action.index)
+            is ReaderAction.Step -> if (active) {
+                val index = state.value.requestedPage?.value
+                val count = ready?.session?.info?.pageCount
+                if (index != null && count != null) {
+                    val target = index.toLong() + action.delta
+                    if (target in 0 until count.toLong()) requestPage(target.toInt())
                 }
             }
             is ReaderAction.Presented -> if (active && validPresentation(action.presentation)) {
@@ -180,6 +177,18 @@ class ReaderController(
     }
 
     private fun signal() { wake.trySend(Unit) }
+    private fun requestPage(index: Int) {
+        val session = ready?.session
+        if (session == null || index < 0 || index >= session.info.pageCount) {
+            if (session != null || state.value.failure?.retry != ReaderRetry.OPEN) {
+                fail(ReaderStage.PLAN, AppError.Validation.INVALID_PAGE, ReaderRetry.NONE)
+            }
+        } else if (state.value.requestedPage?.value != index) {
+            invalidateRender()
+            mutableState.value = state.value.copy(requestedPage = PageIndex(index), failure = null)
+            scheduleRender()
+        }
+    }
     private fun fail(stage: ReaderStage, error: AppError, retry: ReaderRetry) {
         mutableState.value = state.value.copy(phase = ReaderPhase.ERROR, failure = ReaderFailure(stage, error, retry))
     }

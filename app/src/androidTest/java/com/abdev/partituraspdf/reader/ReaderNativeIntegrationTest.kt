@@ -267,6 +267,25 @@ class ReaderNativeIntegrationTest {
             throw failure
         }
     }
+    private fun awaitCheckpoint(frame:ReaderFrame) {
+        val expected=frame.request.page.session to frame.request.page.page
+        try {
+            assertSame(frame,controller.state.value.frame)
+            assertEquals(expected.first,controller.state.value.session!!.id)
+            assertEquals(expected.second,controller.state.value.presentedPage)
+            compose.waitUntil(20_000) {
+                displayed.lastOrNull()==expected &&
+                    controller.state.value.frame===frame &&
+                    controller.state.value.checkpoint is ReaderCheckpoint.Unconfirmed
+            }
+            // This is completion of the test route's scheduling call, never a disk-write claim.
+            assertEquals(ReaderCheckpoint.Unconfirmed(Outcome.Success(Unit)),controller.state.value.checkpoint)
+            assertEquals(expected,displayed.last())
+            compose.waitForIdle()
+            assertSame(frame,controller.state.value.frame)
+            assertEquals(expected,displayed.last())
+        } catch(failure:Throwable) {reportFailure(failure,"waiting for checkpoint $expected",expected.second.value);throw failure}
+    }
     private fun reportFailure(failure: Throwable, stage: String, page: Int) {
         try {
             val details = "$stage: ${diagnostics(page)}"
@@ -406,6 +425,7 @@ class ReaderNativeIntegrationTest {
                 }
                 sizes += frame.displayInfo.width to frame.displayInfo.height
                 assertNull(frame.displayInfo.rotation); assertEquals(AnnotationRendering.UNKNOWN, frame.displayInfo.annotations)
+                awaitCheckpoint(frame)
                 assertEquals(frame.request.page.session to PageIndex(index), displayed.last())
             }
             if (row.getString("id") == "08") assertTrue(sizes.size > 1)
@@ -414,13 +434,16 @@ class ReaderNativeIntegrationTest {
     }
     @Test fun b_hundredPagesRestoreClampAndRapidNavigationKeepOneNativeLease() {
         open(fixtures().single { it.getString("id") == "05" }, registered = true, restored = 9); visible(9)
+        awaitCheckpoint(controller.state.value.frame!!)
         compose.runOnUiThread { repeat(200) { controller.dispatch(ReaderAction.Step(1)) } }; visible(99)
+        awaitCheckpoint(controller.state.value.frame!!)
         assertEquals(listOf(9, 99), displayed.map { it.second.value })
         compose.runOnUiThread { controller.dispatch(ReaderAction.Step(1)) }; compose.waitForIdle()
         assertEquals(PageIndex(99), controller.state.value.requestedPage)
         assertEquals(1, opens.get()); assertEquals(1, maximumRenders.get()); assertEquals(1, maximumRetained.get())
         assertTrue(leases.size < 100) // Navigation never renders/caches all intervening pages.
         open(fixtures().single { it.getString("id") == "05" }, registered = true, restored = 1000); visible(99)
+        awaitCheckpoint(controller.state.value.frame!!)
         assertEquals(PageIndex(99), controller.state.value.requestedPage); assertEquals(2, opens.get())
         assertEquals(1, maximumRetained.get())
     }

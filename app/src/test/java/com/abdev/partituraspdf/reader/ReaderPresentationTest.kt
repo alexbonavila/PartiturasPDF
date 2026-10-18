@@ -91,4 +91,47 @@ class ReaderPresentationTest {
         val two=attach();controller.dispatch(ReaderAction.Presented(two));runCurrent()
         assertEquals(1,displayed.size)
     } }
+    @Test fun visiblePageCanPrecedeCheckpointReceiptAndEachPageNeedsItsOwnEvent() = runTest { withReader {
+        opening={Outcome.Success(com.abdev.partituraspdf.pdf.api.ReaderReady(it,session,PageIndex(0)))}
+        open();val first=attach();val firstReceipt=gate();beforeDisplayed={firstReceipt.await()}
+        controller.dispatch(ReaderAction.Presented(first));runCurrent()
+        assertEquals(ReaderPhase.VISIBLE,state.phase);assertEquals(PageIndex(0),state.presentedPage)
+        assertEquals(ReaderCheckpoint.Scheduling,state.checkpoint);assertTrue(displayed.isEmpty())
+        firstReceipt.complete(Unit);runCurrent()
+        assertEquals(listOf(session.info.id to PageIndex(0)),displayed)
+        controller.dispatch(ReaderAction.Page(1));first.detached();runCurrent()
+        val second=attach();val secondReceipt=gate();beforeDisplayed={secondReceipt.await()}
+        repeat(10){controller.dispatch(ReaderAction.Presented(second))};runCurrent()
+        // Exact reproduction of the native assertion race: VISIBLE page 1, received page 0.
+        assertEquals(ReaderPhase.VISIBLE,state.phase);assertEquals(PageIndex(1),state.presentedPage)
+        assertEquals(session.info.id to PageIndex(0),displayed.last())
+        secondReceipt.complete(Unit);runCurrent()
+        assertEquals(listOf(session.info.id to PageIndex(0),session.info.id to PageIndex(1)),displayed)
+        assertEquals(ReaderCheckpoint.Unconfirmed(Outcome.Success(Unit)),state.checkpoint)
+        repeat(10){controller.dispatch(ReaderAction.Presented(first));controller.dispatch(ReaderAction.Presented(second))}
+        runCurrent();assertEquals(2,displayed.size);assertEquals(session.info.id to PageIndex(1),displayed.last())
+    } }
+    @Test fun canceledOldSessionAckCannotOverwriteReplacementCheckpoint() = runTest { withReader {
+        var target=session
+        opening={Outcome.Success(com.abdev.partituraspdf.pdf.api.ReaderReady(it,target,PageIndex(0)))}
+        open();val old=attach();val oldReceipt=gate()
+        beforeDisplayed={withContext(NonCancellable){oldReceipt.await()}}
+        controller.dispatch(ReaderAction.Presented(old));runCurrent()
+        assertTrue(displayed.isEmpty());assertEquals(ReaderCheckpoint.Scheduling,state.checkpoint)
+        val replacement=TestSession("replacement-native")
+        target=replacement
+        controller.open(ReaderOpenIntent(2,transientRequest));old.detached();runCurrent()
+        assertEquals(1,opens.size) // The worker must join even a non-cooperative old ack.
+        oldReceipt.complete(Unit);runCurrent()
+        assertEquals(replacement.info,state.session);assertEquals(ReaderPhase.RENDERED,state.phase)
+        assertEquals(ReaderCheckpoint.None,state.checkpoint)
+        beforeDisplayed={}
+        val current=attach();controller.dispatch(ReaderAction.Presented(current));runCurrent()
+        assertEquals(listOf(session.info.id to PageIndex(0),replacement.info.id to PageIndex(0)),displayed)
+        repeat(10){controller.dispatch(ReaderAction.Presented(old))};runCurrent()
+        assertEquals(replacement.info.id to PageIndex(0),displayed.last())
+        assertEquals(replacement.info,state.session);assertEquals(ReaderCheckpoint.Unconfirmed(Outcome.Success(Unit)),state.checkpoint)
+        assertEquals(0,session.closes);assertEquals(0,replacement.closes)
+    } }
+
 }

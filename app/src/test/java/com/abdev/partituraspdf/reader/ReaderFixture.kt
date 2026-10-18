@@ -54,6 +54,7 @@ internal class ReaderFixture(val test: TestScope, scope: CoroutineScope = test.b
     var routeCloses = 0
     var backgrounds = 0
     var opening: suspend (DocumentOpenRequest) -> Outcome<ReaderReady> = { Outcome.Success(ReaderReady(it, session, PageIndex(2))) }
+    var beforeDisplayed: suspend () -> Unit = {}
     var acknowledge: suspend () -> Outcome<Unit> = { Outcome.Success(Unit) }
     var current: suspend () -> ReaderReady? = { active }
     val route = object : ReaderRoute {
@@ -63,6 +64,7 @@ internal class ReaderFixture(val test: TestScope, scope: CoroutineScope = test.b
             return opening(request).also { if (it is Outcome.Success) active = it.value }
         }
         override suspend fun displayed(session: ReadSessionId, page: PageIndex): Outcome<Unit> {
+            beforeDisplayed()
             displayed += session to page; return acknowledge()
         }
         override suspend fun background(): Outcome<Unit> { backgrounds++; return Outcome.Success(Unit) }

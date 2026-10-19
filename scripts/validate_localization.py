@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate completed translations and explicitly staged Spanish-first resources."""
+"""Require complete es/ca/en delivery and Spanish fallback; retain historical staging tests."""
 
 from __future__ import annotations
 
@@ -109,10 +109,10 @@ def read_resources(directory: Path) -> dict:
     return resources
 
 
-def validate(root: Path) -> list[str]:
+def validate(root: Path, *, require_complete: bool = False) -> list[str]:
     errors = []
     bundles = {}
-    locales = LOCALES + (("values-en",) if (root / "values-en").is_dir() else ())
+    locales = LOCALES + (("values-en",) if require_complete or (root / "values-en").is_dir() else ())
     for locale in locales:
         try:
             bundles[locale] = read_resources(root / locale)
@@ -130,6 +130,17 @@ def validate(root: Path) -> list[str]:
             if element.tag in ("string", "plurals", "string-array"):
                 staged.add(element.get("name"))
                 spanish_text[element.get("name")] = [(e.tag, tuple(sorted(e.attrib.items())), (e.text or "").strip(), (e.tail or "").strip()) for e in element.iter()]
+    if require_complete:
+        if staged:
+            errors.append("complete delivery cannot retain Spanish-first staging")
+        # Compare XML values, including markup and item attributes, not just placeholders.
+        def content(directory):
+            return {e.get("name"): ET.tostring(e, encoding="unicode").strip()
+                    for path in sorted(directory.glob("*.xml"))
+                    for e in ET.parse(path).getroot()
+                    if e.tag in ("string", "plurals", "string-array")}
+        if content(root / "values") != content(root / "values-es"):
+            errors.append("default fallback must match complete Spanish copy")
     if staged & {"app_name", "starter_recipient", "starter_greeting"}:
         errors.append("completed starter resources cannot be reclassified as Spanish-first")
     spanish = bundles.get("values-es", {})
@@ -149,7 +160,7 @@ def validate(root: Path) -> list[str]:
         for name in sorted((base.keys() - translated.keys()) - (staged if locale in ("values-ca", "values-en") else set())):
             errors.append(f"{locale}: missing translation: {name}")
         for name in sorted(translated.keys() - base.keys()):
-            errors.append(f"{locale}: resource absent from English fallback: {name}")
+            errors.append(f"{locale}: resource absent from default fallback: {name}")
         for name in sorted(base.keys() & translated.keys()):
             tag, formatted, contracts = base[name]
             other_tag, other_formatted, other_contracts = translated[name]
@@ -172,12 +183,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--res-dir", type=Path, default=Path("app/src/main/res"))
     args = parser.parse_args()
-    errors = validate(args.res_dir)
+    errors = validate(args.res_dir, require_complete=True)
+    # The shipped debug-only SAF acceptance UI has its own localized source set.
+    debug = args.res_dir.parent.parent / "debug" / "res"
+    if args.res_dir.resolve() == Path("app/src/main/res").resolve():
+        errors.extend(validate(debug, require_complete=True))
     if errors:
         for error in errors:
             print(f"FAIL {error}", file=sys.stderr)
         return 1
-    print("PASS completed translations, required Spanish and format arguments; Spanish-first resources may await translation")
+    print("PASS complete es/ca/en translations, Spanish default fallback and format arguments")
     return 0
 
 

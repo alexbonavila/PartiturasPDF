@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Settings</string>
+    <string name="settings_theme_title">Application theme</string>
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_fit_title">Page fit</string>
+    <string name="settings_fit_page">Whole page</string>
+    <string name="settings_fit_width">Fit width</string>
+    <string name="settings_fit_page_description">Shows the whole page in the available space.</string>
+    <string name="settings_fit_width_description">Fits the page to the available width.</string>
+    <string name="settings_loading">Loading settings…</string>
+    <string name="settings_pending">Update pending: %1$s. The marked selection reflects the observed value.</string>
+    <string name="settings_reconciling">Checking: %1$s. Waiting for an updated read.</string>
+    <string name="settings_reconciling_uncertain">Checking: %1$s. The operation may have been saved.</string>
+    <string name="settings_requested">Requested change: %1$s.</string>
+    <string name="settings_read_error">Could not read settings.</string>
+    <string name="settings_theme_write_error">Could not change the theme.</string>
+    <string name="settings_fit_write_error">Could not change page fit.</string>
+    <string name="settings_error_storage">Could not access private storage. Try again.</string>
+    <string name="settings_error_other">Could not complete the operation. Try again.</string>
+    <string name="settings_retry_read">Read settings again</string>
+    <string name="settings_retry_theme">Retry theme change</string>
+    <string name="settings_retry_fit">Retry page fit</string>
+    <string name="settings_verify_again">Check again</string>
+</resources>

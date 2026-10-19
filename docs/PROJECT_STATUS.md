@@ -11,6 +11,8 @@ Verified Git baseline: `adcca2bd07693e0d985eee1c611bc931be1dfed1`. F merged in [
 
 The owner-supplied handoff attributes [post-merge CI 39251879166](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39251879166) to this exact baseline: nine jobs PASS (seven mandatory plus API27/36), 420 JVM and 357 ordinary Android tests on each API26/27/36, plus separately validated controlled PDFium diagnostics. This is attributed baseline evidence; raw hosted artifacts have not been independently downloaded in this closeout. Known raw diagnostic failures must remain visible under the existing classification policy. Neither historical CI nor a merge certifies the changed closeout revision.
 
+Complete main es/ca/en translation bundles and Spanish default are delivered in the pre-I closeout (147 main IDs plus20 debug SAF IDs); runtime host locale application remains I.
+
 See [FGH_PRE_I_CLOSEOUT](acceptance/FGH_PRE_I_CLOSEOUT.md) for current translation/coverage results, source attribution, Phase-I ownership and remaining acceptance. Physical Android8.1, backup/restore/D2D, external providers and manual accessibility remain open. Performance/memory measurement is deferred until after a functional Phase I; none is authorized here. The specification's 25% edge zones/center toggle versus G's 15%-minimum-48dp bands is a later owner product-fit decision, not changed here.
 
 ## Historical snapshots (retain their original revision and date)

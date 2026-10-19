@@ -36,4 +36,3 @@ internal fun AppHostViewModel.readerVisibility(): Flow<Unit> = state.flatMapLate
     }
 }
 internal fun keepReaderScreenOn(visible: Boolean, resumed: Boolean, focused: Boolean): Boolean = visible && resumed && focused
-

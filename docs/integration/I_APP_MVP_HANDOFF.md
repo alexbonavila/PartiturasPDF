@@ -1159,3 +1159,322 @@ gradle.beforeProject { p ->
  } }
 }
 ```
+
+
+## I08–I10 — Settings effects, automatic locale and Reader window (2026-10-19)
+
+Starting revision: `991084ff176f16aaec110a5c981064754703e2ae`.
+Implementation: `8634d965046486fe79658568e2968dd359b120e4`, on
+`feat/app-mvp-integration-i`. The following evidence commit also removes an extra empty EOF
+line in the new presentation-policy file caught by the staged whitespace check; it changes no
+behavior. Resolve the delivery tip with `git log -1 --format=%H -- docs/integration/I_APP_MVP_HANDOFF.md`.
+All commits remain local: no push, PR, merge or Actions dispatch. Historical I01–I07 evidence
+is preserved; this section supersedes earlier statements that global effects/locale/window
+integration are not implemented. Android runtime acceptance remains NOT RUN.
+
+### Exact file scope
+
+Five new and six modified files, none deleted:
+
+- `app/src/main/java/com/abdev/partituraspdf/MainActivity.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppHost.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppHostViewModel.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/ReaderHostLifetime.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppPresentation.kt` (new, Android/Compose boundary)
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppPresentationState.kt` (new, host policy/flows)
+- `app/src/main/java/com/abdev/partituraspdf/app/localization/AppLocaleContext.kt` (new)
+- `app/src/test/java/com/abdev/partituraspdf/app/host/AppPresentationIntegrationTest.kt` (new)
+- `app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppLocaleIntegrationTest.kt` (new)
+- `app/src/androidTest/java/com/abdev/partituraspdf/app/integration/ReaderHostNativeIntegrationTest.kt`
+- `docs/integration/I_APP_MVP_HANDOFF.md`
+
+No protected F/G/H, core/storage/data/position/checkpoint implementation, native worker/AIDL,
+Room schema, dependencies, Gradle, CI/policy, backup or canonical fixture changes. Existing
+material palettes, Reader gesture zones and H/G contracts remain intact. No new resource IDs,
+strings, language selector, wake lock, foreground service, immersive mode, brightness/timeout
+setting, profiling or Prompt 8 recovery matrix is introduced.
+
+### I08 — One authoritative observation, global theme and default fit
+
+Production H already owns the continuous `PreferencesRepository.observe()` collector. The
+retained host now observes H's **StateFlow**, maps its preference observation and deduplicates
+it; it does not subscribe to DataStore again or write anything. That observer is a child of
+the existing session/graph attempt and is canceled/joined by existing disposal. Theme commands,
+Pending/Reconciling/Failed operations and write acknowledgments cannot substitute for Ready.
+
+`AppPresentation` wraps the entire AppHost including startup/failure and Library/Reader/Settings:
+SYSTEM uses Compose's system-night configuration, LIGHT and DARK force the corresponding
+existing PartiturasPDFTheme palette. Loading/Failed use a visual system fallback while retaining
+the actual non-Ready observation; this is not a confirmed preference/default or automatic repair.
+A genuine Ready update changes colors through recomposition, not Activity recreation, graph
+construction or Reader opening. There is no process-global theme variable. H's selected values,
+retries, uncertain-write reconciliation and repository semantics remain authoritative.
+
+New Reader lifetimes still initialize from `confirmedReaderFit(H.state.preferences)`; unavailable
+preferences reject opening explicitly through the existing policy, without indefinitely waiting
+or silently assuming a persisted PAGE. The host remembers only the last confirmed default-fit
+value for change detection. Repeated Ready, theme-only and legacy-language-only emissions do
+not dispatch Fit or reset a local Reader menu choice. Loading/Failed do not reset this comparison
+baseline. A **genuinely different Ready default** replaces the active Reader's local fit via the
+existing ReaderAction.Fit boundary. This is the chosen external-update policy, not an implicit
+write of the Reader-local menu back to settings.
+
+Active fit dispatch uses G's existing page/viewport invalidation and does not reopen a PDF or
+reset its page. During I06 suspension, only the latest external fit is retained in RAM and is
+applied after mandatory cleanup, immediately before G.resume. It neither resumes automatically
+nor allocates during memory suspension. Back/terminal reject effects into a leaving lifetime;
+a new lifetime clears the pending value and reads the current authoritative default. No extra
+Reader/session/checkpoint store or competing lifecycle coordinator is introduced.
+
+The obsolete “global settings will be integrated later” banner is removed from AppHost. Its
+resource ID/translations are retained for compatibility. Startup/failure columns now consume
+safe-drawing insets as the ready shell already did. Existing nested safeDrawingPadding uses
+Compose inset consumption; no additional Reader padding or gesture/layout redesign is added.
+
+### I09 — Automatic Activity locale, API26+
+
+`MainActivity.attachBaseContext` wraps the base in a configuration context **before UI resource
+reads**. `systemAppLanguage()` takes language tags from `Resources.getSystem().configuration.locales`,
+not a previously localized Activity or persisted legacy LanguageSelection. It delegates to the
+existing DeviceLocalePolicy with delivered English/Catalan enabled. Primary es/ca/en and regional
+variants map to those languages; unsupported/absent input maps to Spanish even with a supported
+secondary language. A single resolved LocaleList makes that fallback explicit.
+
+`Configuration(base.resources.configuration)` preserves the other configuration values and sets
+only locales/layout direction. `createConfigurationContext`, LocaleList and these configuration
+APIs are available on API26. No Locale.setDefault, global Resources.updateConfiguration, device
+setting, AppCompat/per-app language store or new dependency is used. Contexts stay Activity-owned;
+no Activity/Window/Context reference enters the retained host or a feature controller.
+
+With no new manifest configChanges override, Android's ordinary configuration recreation handles
+system language/night changes. OnStart also compares the Activity language with current system
+policy after background return; a mismatch requests one recreation for that Activity and skips
+its stale foreground acknowledgement. The replacement attach creates the localized context.
+The per-Activity guard prevents repeated recreation requests by the same instance. Real system
+language-change/relaunch behavior, including OEM/API differences, still requires execution.
+I06 configuration-stop identity guards preserve retained owners; I07 reconstructs new owners only
+when genuinely supplied a new ViewModel lifetime. Locale never changes saved IDs/grants or page
+checkpoint authority. Unsupported-primary-to-unsupported-primary still resolves to Spanish.
+
+### I10 — Activity-owned window and system bars
+
+The AppPresentation DisposableEffect owns lifecycle/focus listeners and a STARTED-scoped wakeup
+collector for exactly its Activity/composition. It reads host/nav/lifetime/controller state and
+frame availability. Notifications carry no cached permission to enable a flag: the callback
+re-reads current snapshots immediately before touching **that Activity's own Window**.
+
+FLAG_KEEP_SCREEN_ON is enabled only for a Ready host, current Reader destination, non-leaving,
+non-suspended lifetime, VISIBLE G state with a current active graphical consumer, and a RESUMED,
+focused Activity. Mere retained controller existence, OPENING/ERROR, detached frames, hidden/
+background Activities or obsolete snapshots cannot qualify. Frame availability changes wake the
+collector even when the controller's StateFlow has not changed at detach. Pure eligibility and
+actual Android flag mutation are deliberately separate coverage/evidence boundaries.
+
+Back marks leaving before asynchronous cleanup; pause/stop/focus loss/closing all clear eligibility.
+Lifecycle callbacks independently clear the flag when state drops below RESUMED. Composition
+release cancels the job, removes lifecycle/focus listeners (including a replaced view tree), and
+clears the flag. Old windows remain tied to old Activity lifecycles; no Window is retained by the
+ViewModel. Foreground recovery requires a new real presentation before keeping the screen awake.
+The I06 native/graphics barriers and I07 registered/transient restoration behavior remain unchanged.
+
+System bars stay visible. A theme-derived surface scrim plus AndroidX SystemBarStyle.auto supplies
+appropriate light/dark icon handling through existing API26-compatible edge-to-edge support. No
+immersive navigation hiding, custom wake lock or duplicate Reader insets are added. Physical
+contrast, landscape, font-scale, keyboard, gestures and TalkBack acceptance remain pending;
+existing G layout/accessibility tests remain enabled and compiled, not claimed executed here.
+
+### Tests and actual validation
+
+29 new JVM methods exercise real retained H/G state machines with declared storage/native doubles:
+theme SYSTEM/LIGHT/DARK; Loading/Failed; pending/failed/uncertain writes; actual observation versus
+acknowledgment; one settings collector; no PDF reopen on theme; initial/default/local fits; repeated
+Ready/theme/language emissions; external updates after pending writes while Reader is active;
+failed-read explicit retry; new lifetimes; queued latest fit behind low/background cleanup; Back/
+terminal safety; primary policy forwarding without global mutation; visible/error/detached Reader
+eligibility; resumed/focused requirements; lifecycle wakeups and rapid repeated navigation. Existing
+DeviceLocalePolicy/DeliveredLocalePolicy tests supply the language-policy matrix rather than a
+second policy implementation. Existing I01–I07/F/G/H/persistence assertions remain enabled.
+
+11 new Android methods compile: four real resource-context/Activity cases and seven native-host
+presentation cases. Resource cases check es/ca/en and regions, unsupported-primary+supported-secondary
+Spanish fallback, actual navigation/feature/accessibility strings, base/global nonmutation and
+preserved density/orientation/night/font configuration, plus genuine Activity recreation/retained
+host. Native cases check confirmed LIGHT/DARK/SYSTEM colors, **injected** Compose night configuration,
+Reader theme recreation and old-window flag clearing, initial/local/external fit with the same real
+isolated session, actual Window background/resume/Back/Settings/disposal, and synthetic new-host
+reload of persisted theme/fit. Injection is not a claim of actual device system-language/night change.
+
+The native test fixture now uses the existing production DataStore adapter on a unique file in its
+owned cache directory. Its scope belongs to the test graph's children; disposal cancels/joins it
+before reusing the file, closing Room or removing test files. It cannot write the production
+app_preferences file. Field updates are real adapter writes; new-host tests reopen the same test
+file only after disposal. Fixture PDFs remain verified, immutable originals with owned copies.
+
+During review, an I07 test helper defect was found: ReaderTestComposition.mount is deliberately
+one-use, but synthetic reconstruction previously tried to reuse it after unmount. Reconstruction
+now creates a fresh test composition. No protected helper/production restoration code changed.
+This is a confirmed test-only defect corrected here; the affected Android methods still need
+actual execution. Two new JVM fixture expectations also initially failed because H correctly
+replayed the prior Ready/Failed value; tests now explicitly clear replay and supply controlled
+fresh read evidence, preserving H's real semantics and strengthening Ready assertions.
+
+Executed after `source /workspace/partituras-tools/activate.sh` for SDK/JDK commands:
+
+```bash
+bash ./gradlew -I /tmp/i08-coverage.init.gradle \
+  :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug \
+  :app:testDebugUnitTest --rerun :app:i08Verify :app:i08ReaderCoverage :app:i08AllCoverage \
+  --no-configuration-cache --max-workers=4 --console=plain
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/validate_localization.py
+python3 test-fixtures/scripts/verify_fixtures.py
+python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest \
+  --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect
+adb devices
+git diff --check
+```
+
+| Evidence | Actual result |
+| --- | --- |
+| Debug/instrumentation APK builds | PASS; new methods compile as JUnit4 void; not Android execution |
+| JVM JUnit | **604 executed, 0 failures/errors/skips** (I07 575 +29) |
+| Python infrastructure | **289 PASS** |
+| Lint | **0 errors, 27 warnings**; I07 had25; details below |
+| Localization | PASS; unchanged complete Spanish-default/es/ca/en,155 main IDs |
+| Canonical verifier | **15 PASS**, hashes/structure/render integrity unchanged |
+| APK PDF ZIP inventory | Debug0; instrumentation15 canonical fixtures |
+| Compiled APK resources | aapt2 dump confirms app_settings default/es Ajustes, ca Configuració, en Settings |
+| Android source inventory | 403 standard +14 diagnostics =417; source counts, not executed tests |
+| API26/27/36, native/surface/window, real language/night changes, physical device | **NOT RUN**, adb devices empty; no emulator created/adopted/modified |
+| Hosted CI | **NOT RUN**, owner-reported outage; no investigation, dispatch or CI changes |
+
+APK resources inspected with existing SDK `build-tools/37.0.0/aapt2 dump resources
+app/build/outputs/apk/debug/app-debug.apk`; PDF ZIP counts and void signatures were inspected
+locally. Raw `/tmp/i08-delivery-validation.log`, `/tmp/i08-python.log`, `/tmp/i08-fixtures.log`,
+`/tmp/i08-apk-resources.txt` and coverage reports are temporary, excluded from Git. The final
+whitespace correction changes no executable line and final diff/staged checks pass.
+
+The two new Lint warnings are reported without suppression: the retained historical
+app_integration_boundary ID is now unused after removing the obsolete banner; and
+AppBundleLocaleChanges warns that default **AAB language splits** can omit a language after
+runtime/system-language changes without language-delivery handling. The inspected universal
+debug APK contains all translations. AAB/split-delivery behavior is **not validated or certified**;
+if AAB distribution is adopted, the owner must approve the appropriate packaging/language-delivery
+scope (for example disabling language splits) before relying on switching to a not-installed
+language. No Gradle/dependency/Play Core change is inferred from this assignment or made merely
+to silence Lint. This is a concrete packaging warning, not a demonstrated universal-APK failure.
+
+### Authentic JaCoCo scope and denominators
+
+Existing JaCoCo0.8.14 reads actual JVM execution and debug classes. All nested/coroutine classes
+inside scoped sources are included. No difficult branch is filtered. Theme/window pure policy
+is separated from the Android/Compose boundary because JVM execution cannot certify real Context,
+Window or surface effects. Source group totals are sums of actual sourcefile counters.
+
+| Scope / source | LINE | BRANCH |
+| --- | --- | --- |
+| New AppPresentationState.kt | **20/20 (100%)** | **41/49 (83.67%)** |
+| Theme mapping method | 5/5 (100%) | 9/9 (100%) |
+| Window eligibility + wakeup methods (rest of that source) | 15/15 (100%) | 32/40 (80%) |
+| ReaderHostLifetime.defaultFit method | 5/5 (100%) | 8/8 (100%) |
+| ReaderHostLifetime.kt full scope, including pending fit/lifecycle integration | **173/173 (100%)** | **167/188 (88.83%)** |
+| AppHostViewModel.kt full scope, including H observation | **259/262 (98.85%)** | **327/386 (84.72%)** |
+| Three affected policy/host/lifetime sources | **452/455 (99.34%)** | **535/623 (85.87%)** |
+| Host/navigation logic aggregate | **575/578 (99.48%)** | **658/750 (87.73%)** |
+| Unfiltered host/navigation/locale/MainActivity, including Android/Compose glue | 576/834 (69.06%) | 658/920 (71.52%) |
+
+Each new testable policy scope and affected source group satisfies >=90% LINE /80% BRANCH.
+The 8 uncovered branches in readerVisible are visible in the denominator; no manufactured
+state or unsafe resource is injected solely to cover defensive checks. Actual AppPresentation
+Android/Compose code is0/35 lines,0/8 branches here; MainActivity0/52 lines,0/38 branches;
+AppLocaleContext1/10 lines is only the pure existing-policy forwarding call. The other9 Context/
+system-resource lines remain NOT RUN, not “covered by compilation”. Existing locale-policy JVM
+regressions pass; actual locale contexts/resources must execute in Android. This is not feature/
+worker recertification, combined Android coverage or an acceptance waiver.
+
+### Prompt 8 handoff — I11 still reserved
+
+Remaining integration-recovery scenarios must preserve the now-installed effects:
+
+- Permission revocation during navigation: retain registration/favorites and explicit authorization recovery.
+- Provider unavailable during registered reopen: typed access failure, no inferred deletion or busy retry.
+- Delayed Activity Result: retain request/generation checks; never synthesize flags or accept an obsolete result.
+- Native worker failure: existing typed/exception semantics and graphical/native cleanup; no replacement renderer.
+- Back versus recovery: no stale reopen, fit dispatch or screen-on re-enable into a retired destination.
+- Failed checkpoint flush: inspect actual durability result; presentation is not a committed position.
+- Uncertain settings write: reconcile observed values; no desired-value theme/default substitute or duplicate writer.
+- Saved-state recovery inconsistency: keep I07 bounded/versioned registered-only eligibility and transient fallback.
+- Cancellation/stale cleanup: await mandatory barriers; retain original causes, close uncertain sessions safely.
+
+No full I11 recovery matrix, Prompt8/9 closeout, performance profiling, backup/D2D, physical
+Android8.1/TalkBack/external-provider acceptance or worker exporter is implemented. Remaining
+runtime evidence is NOT RUN/DEFERRED, not a newly confirmed production defect. The confirmed
+one-use Android test helper defect is fixed above. AAB language delivery needs separate release
+packaging validation/owner decision if applicable. No protected-source correction was necessary
+for the implemented universal-APK path. Stop after I08–I10 for owner review.
+
+### Reproducing I08–I10 scoped coverage
+
+Save this tested external script as `/tmp/i08-coverage.init.gradle`, then run the command above.
+The external task named i08ReaderCoverage selects AppPresentationState only (`reader.xml`);
+report.xml contains host/lifetime source counters; all.xml exposes the Android-inclusive misses.
+No project Gradle/CI file is changed. Compare policy/window scopes independently, not only the
+aggregate verification task.
+
+```groovy
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+gradle.beforeProject { p ->
+ if (p.path == ':app') p.plugins.withId('com.android.application') { p.afterEvaluate {
+  def classes=p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+   include 'com/abdev/partituraspdf/app/host/AppHostViewModel*'
+   include 'com/abdev/partituraspdf/app/host/AppHostState*'
+   include 'com/abdev/partituraspdf/app/host/AppPresentationState*'
+   include 'com/abdev/partituraspdf/app/host/AppHostFeatures*'
+   include 'com/abdev/partituraspdf/app/host/AppHostSession*'
+   include 'com/abdev/partituraspdf/app/host/RootPickerCoordinator*'
+   include 'com/abdev/partituraspdf/app/host/Reader*'
+   include 'com/abdev/partituraspdf/app/host/AndroidReaderLifecycle*'
+   include 'com/abdev/partituraspdf/app/navigation/**'
+  }
+  def data=p.layout.buildDirectory.file('jacoco/testDebugUnitTest.exec')
+  def report=p.tasks.register('i08Coverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports { xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i08-coverage/report.xml'))
+    html.outputLocation.set(new File('/tmp/i08-coverage/html')) }
+   doFirst { if(classes.files.empty || !data.get().asFile.isFile()) throw new GradleException('Missing real host classes/JVM execution') }
+  }
+  p.tasks.register('i08ReaderCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/AppPresentationState*'
+
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i08-coverage/reader.xml'))
+    html.outputLocation.set(new File('/tmp/i08-coverage/reader-html'))}
+  }
+  p.tasks.register('i08AllCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/**', 'com/abdev/partituraspdf/app/navigation/**', 'com/abdev/partituraspdf/app/localization/**', 'com/abdev/partituraspdf/MainActivity*'
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i08-coverage/all.xml'))
+    html.outputLocation.set(new File('/tmp/i08-coverage/all-html'))}
+  }
+  p.tasks.register('i08Verify',JacocoCoverageVerification) {
+   dependsOn report
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   violationRules { rule { limit {counter='LINE';minimum=0.90};limit {counter='BRANCH';minimum=0.80} } }
+  }
+ } }
+}
+```

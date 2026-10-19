@@ -337,3 +337,16 @@ No new blocking production defect was reproduced by available local checks. Nati
 acceptance remains incomplete, not PASS. The branch/document can be reviewed; mandatory latest-head
 hosted CI and applicable compatibility evidence remain required before any merge recommendation.
 Only the human owner may approve and merge. No branch protection or policy exception is implied.
+
+## Current merged F/G/H snapshot — 2026-10-19
+
+Verified Git baseline: `adcca2bd07693e0d985eee1c611bc931be1dfed1`. F merged in [PR #18](https://github.com/alexbonavila/PartiturasPDF/pull/18), G plus isolated native renderer in [PR #19](https://github.com/alexbonavila/PartiturasPDF/pull/19), H in [PR #20](https://github.com/alexbonavila/PartiturasPDF/pull/20). This section supersedes earlier *current* claims below that these components or their foundation/policy PRs remain unimplemented/unmerged. Dated historical results remain unchanged.
+
+- **F:** folder browsing, bounded registration lookup, explicit registration, metadata/favorites and registered/transient open requests, with Compose presentation. No global search or file mutations.
+- **G:** bounded one-page reading, page navigation, PAGE/WIDTH fitting, visual-only zoom, lifecycle/frame ownership and presented-page checkpoint scheduling. Production native work is isolated in a nonexported `:pdf` service. No editing, annotations or adjacent-page prefetch.
+- **H:** theme SYSTEM/LIGHT/DARK and page-fit PAGE/WIDTH settings, typed commands, authoritative observation, explicit retries and uncertain-write reconciliation. No manual language selector.
+- **I remains unimplemented:** starter `MainActivity` has no real F/G/H navigation, picker Activity Results, retained host lifecycle or global theme/fit/locale effect wiring. Implemented components do not prove a navigable app.
+
+The owner-supplied handoff attributes [post-merge CI 39251879166](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39251879166) to this exact baseline: nine jobs PASS (seven mandatory plus API27/36), 420 JVM and 357 ordinary Android tests on each API26/27/36, plus separately validated controlled PDFium diagnostics. This is attributed baseline evidence; raw hosted artifacts have not been independently downloaded in this closeout. Known raw diagnostic failures must remain visible under the existing classification policy. Neither historical CI nor a merge certifies the changed closeout revision.
+
+See [FGH_PRE_I_CLOSEOUT](../acceptance/FGH_PRE_I_CLOSEOUT.md) for current translation/coverage results, source attribution, Phase-I ownership and remaining acceptance. Physical Android8.1, backup/restore/D2D, external providers and manual accessibility remain open. Performance/memory measurement is deferred until after a functional Phase I; none is authorized here. The specification's 25% edge zones/center toggle versus G's 15%-minimum-48dp bands is a later owner product-fit decision, not changed here.

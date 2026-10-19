@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Approved Spanish-first feature resources only. English/Catalan are mandatory deferred
-     translation work, not translated PASS. Remove this narrow MissingTranslation annotation
-     when those approved bundles are delivered. Spanish parity/format validation remains active. -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+<resources>
     <string name="library_title">Biblioteca de partituras</string>
     <string name="library_select_folder">Seleccionar carpeta</string>
     <string name="library_change_folder">Cambiar carpeta</string>

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Approved staged Spanish feature copy. Complete English/Catalan delivery remains deferred. -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+<resources>
     <string name="reader_back">Volver</string>
     <string name="reader_previous">Anterior</string>
     <string name="reader_next">Siguiente</string>

@@ -290,3 +290,304 @@ gradle.beforeProject { p ->
  } }
 }
 ```
+
+## I05 implementation update — 2026-10-19 (Prompt4)
+
+The preceding I03/I04 report is historical evidence. This update supersedes its temporary
+Reader-unsupported boundary; it does not retroactively claim device execution for that report.
+Starting revision: `86ee91ca0f5be90607f83261450b37add152d2c7`, clean, on
+`feat/app-mvp-integration-i`. I05 source revision:
+`f6e9e180bb67f47406a1325694d60f922e055fa0`. A subsequent documentation-only commit records this
+update; its exact SHA is available from `git log -1 --format=%H -- docs/integration/I_APP_MVP_HANDOFF.md`.
+No branch publication, PR, merge or Prompt5 implementation is authorized/performed here.
+
+### Production connection and opening arbitration
+
+ProductionHostSession now supplies `open = { reading.accept(it) }` to the existing
+FoundationDependencies.host callback. FoundationDependencies.reader(scope) constructs the existing
+ReaderRouteOwner using the same graph's registry, read adapter, positions and isolated PDF engine.
+No new engine, Room/DataStore instance or feature implementation is introduced.
+
+ReaderHostLifetime owns one route/controller lifetime. Before dispatching F's Open/RetryOpen action,
+the ViewModel arms a permit containing its observed row key and rendered navigation revision. When
+F returns its registered/transient DocumentOpenRequest, the host verifies the current Library route,
+revision and exact current row/association. It uses F's existing registered identity without an
+extra registry lookup, and preserves an unregistered row's transient capability without registering
+it. Missing, stale, failed-lookup or identity-mismatched rows cannot allocate a Reader. The permit is
+consumed once. A live/exiting Reader rejects competing opens; ordinary Back cannot jump past its
+retirement barrier. No resource appears in AppNavigation, only destination and revision.
+
+After validation and confirmed fit, ownership is allocated, an increasing ReaderOpenIntent is
+published, navigation enters Reader, and only ReaderController.open(intent) initiates route opening.
+The returned Success(Unit) acknowledges that ownership/navigation intent, not PDF/session/render/
+presentation/checkpoint success. Recomposition and recreation never call open. A later eligible
+Library opening gets a new sequence and fresh route/controller after the retired lifetime closes.
+
+Initial PAGE/WIDTH comes from H's existing authoritative preferences observation. The host reads
+its current Ready snapshot once per accepted opening, with no additional DataStore observer.
+Loading rejects the opening with STALE_SESSION (explicit retry after preferences become ready);
+Failed preserves its exact error. Neither fabricates a persisted default or allocates a Reader.
+Reader-local fit changes remain local. Continuous global fit/theme/locale effects remain Prompt7.
+A fresh Runtime maxMemory/totalMemory/freeMemory snapshot supplies validated HeapAvailability
+before G plans each render. Existing ReaderMemoryPolicy and graph/session ceilings do the bounding;
+no physical-RAM substitute, new allocation policy, cache, adjacent prefetch or benchmark is added.
+
+AppHost collects the retained G StateFlow with lifecycle-aware observation and forwards its existing
+ReaderScreen actions unchanged through sequence/revision guards. Its Back callback and Android Back
+use the same asynchronous exit. Requested, rendered, drawn and durably checkpointed pages remain
+different states. Only the existing software SurfaceView/presenter can issue Presented; the host
+never manufactures it or writes requested/rendered page positions.
+
+### Exit, graphical release and terminal graph ownership
+
+Reader Back synchronously marks `leaving`, rejects conflicting Reader actions, and exposes loading
+while cleanup is pending. It does not prematurely announce that native closure succeeded.
+The Reader lifetime's retirement StateFlow is collected **without lifecycle suspension**, separately
+from the lifecycle-aware PDF state collector. `leaving` removes ReaderScreen and its AndroidView,
+allowing the existing synchronous onRelease/onDetachedFromWindow presenter cleanup to run. Normal
+Activity destruction also releases the old View; window invisibility uses G's existing detach path.
+No Activity, SurfaceView, bitmap or launcher is retained by this host owner.
+
+The one shared exit Deferred performs the following suspended operations, in order:
+
+1. Await controller.quiesce(BACKGROUND), including pending native work and explicit frame release.
+2. Inspect route.background() (actual pending checkpoint flush).
+3. Await controller.retire().
+4. Close the route and inspect the result.
+5. Cancel/join the Reader-owned scope.
+6. Publish the exit report; only then return to Library and dispatch its existing Refresh.
+
+Unmount and quiescence may overlap; quiescence cannot finish early while an actual consumer still
+holds the frame. The surface detaches after main-thread software drawing. No host timeout, forced
+bitmap recycle, synthetic detach or main-thread runBlocking bypasses that barrier. Repeated Back
+observes the same Deferred. Refresh resets F's Accepted row state and preserves the navigator,
+registration and favorite metadata, permitting reopening the same/different document.
+
+Cleanup runs NonCancellable in the retained host scope, not the Reader scope it must eventually
+cancel. Each ordered step is inspected even if a previous step reports failure. Original exceptions
+(including cancellation) and secondary suppressed failures remain inspectable. Typed errors retain
+their exact stage/AppError in ReaderExitReport. Checkpoint failures are shown on Library with the
+existing localized unconfirmed-checkpoint text and logged; other typed cleanup failures use the
+existing localized action-failure text. None is a durable-save success. Unexpected cleanup defects
+terminate the host after ordered Reader cleanup, preserving the original cause. Failed/retired
+lifetimes are never reused. A prior typed report also remains available to final shutdown unless a
+new accepted lifetime replaces it; its earlier logged evidence is retained.
+
+AppHostSession.retireReader is a suspend shutdown hook. Final ViewModel disposal rejects opens,
+closes the picker, marks Reader terminal and unmounts the UI via Closing. It awaits the same Reader
+exit before stopping other features, canceling/joining graph users and closing the factory on IO.
+An active route resolving Room or a delayed native operation therefore cannot race graph closure.
+If terminal disposal arrives during Back, it shares cleanup and suppresses the normal navigation
+return. This extends the existing independent owner scope; ViewModel's automatic viewModelScope
+cancellation cannot interrupt it.
+
+On configuration recreation the same ViewModel, lifetime, controller, route and intent remain.
+The old surface detaches; the replacement surface borrows the same eligible frame and must draw
+before its own presentation acknowledgment. No native reopen or fake checkpoint follows recreation.
+No Reader process-death state is serialized or restored by this assignment.
+
+### Changed files (I05 only)
+
+All paths below are relative to `app/src/`:
+
+| Kind | File |
+| --- | --- |
+| Modified | main/java/com/abdev/partituraspdf/app/host/AppHost.kt |
+| Modified | main/java/com/abdev/partituraspdf/app/host/AppHostFactory.kt |
+| Modified | main/java/com/abdev/partituraspdf/app/host/AppHostState.kt |
+| Modified | main/java/com/abdev/partituraspdf/app/host/AppHostViewModel.kt |
+| Modified | main/java/com/abdev/partituraspdf/app/navigation/AppNavigation.kt |
+| Added | main/java/com/abdev/partituraspdf/app/host/ReaderHostLifetime.kt |
+| Modified | main/res/values/app.xml |
+| Modified | main/res/values-es/app.xml |
+| Modified | main/res/values-ca/app.xml |
+| Modified | main/res/values-en/app.xml |
+| Added | test/java/com/abdev/partituraspdf/app/host/ReaderHostLifetimeTest.kt |
+| Added | test/java/com/abdev/partituraspdf/app/host/ReaderHostIntegrationTest.kt |
+| Added | test/java/com/abdev/partituraspdf/app/navigation/ReaderNavigationTest.kt |
+| Added | androidTest/java/com/abdev/partituraspdf/app/integration/ReaderHostNativeIntegrationTest.kt |
+
+The fifteenth changed file is this handoff. No files were deleted. MainActivity and all existing
+tests are unchanged. F/G/H production logic, shared contracts, ReaderRouteOwner, native engine,
+worker/AIDL/isolation, SAF/persistence, schemas, Gradle/dependencies, policies/CI and canonical
+fixtures are unchanged. The boundary text now describes only deferred global settings effects;
+all155 resource IDs and complete Spanish-default/es/ca/en translations remain intact.
+
+### I05 tests and actual evidence
+
+| Validation | Actual result |
+| --- | --- |
+| Debug APK and instrumentation APK compilation | PASS |
+| JVM full suite and existing contract gate | PASS:511 tests,0 failures/errors/skips |
+| Python infrastructure | PASS:289 tests |
+| Lint | PASS:0 errors,25 warnings |
+| Complete localization and formatting | PASS:155 main resources per locale, debug resources unchanged |
+| Canonical fixture verification | PASS:all15 checksums/structure/rendering expectations |
+| APK fixture inventory | PASS:debug0 PDFs, test APK15 canonical PDFs |
+| Diff whitespace/protected-source inventory | PASS |
+| Android native/display/PixelCopy/recreation tests | NOT RUN:no connected device/usable authorized emulator |
+| API26/27/36 hosted checks | NOT RUN:owner-reported outage; no platform investigation/dispatch |
+| Physical tablet/provider/TalkBack/manual UI acceptance | NOT RUN/deferred |
+
+The additional Lint warning is UnusedResources for `app_reader_unavailable`, whose identifier is
+preserved after replacing the stub. The other24 warnings remain. No suppression/gate change is used.
+
+There are33 new JVM tests:19 Reader lifetime tests,11 ViewModel/F integration tests and3 explicit
+Reader navigation tests. They exercise the actual G controller with contract route/native doubles,
+not JVM-fabricated Android bitmaps. Coverage includes registered/transient identities, permits,
+sequences, stale/duplicate callbacks, confirmed fit, fresh heap requests, native errors/cancellation,
+delayed noncooperative opens/renders, explicit late frame detach, lease-release defects, exact
+flush/retire/close order, original/secondary failures, repeated Back, final shutdown sharing the
+exit, and F refresh enabling a fresh lifetime. All I01–I04/F/G/H regressions remain enabled.
+Initial new test failures exposed a test-double property/method naming recursion; the fixture was
+corrected without changing production semantics, existing tests or assertions.
+
+Four new Android methods compile as public void JUnit4 tests. They connect a retained test-owned
+host, real F/controller/route/Room/SharedPreferences, the real isolated engine and real G surface.
+Canonical assets are hash-verified and copied to unique owned directories and opened read-only; the
+file capability/listing seam is test-only and does **not** prove authentic SAF authorization.
+Room is in-memory; positions use unique test-only preferences. Cleanup detaches the tracked
+composition, awaits host retirement, then removes only owned files/preferences. The recreation
+case tracks the replacement composition too, rather than treating old composition state as a
+release barrier for the new View.
+
+The tests require actual eligible Presented callbacks, native page navigation and local WIDTH fit;
+PixelCopy verifies ink and paper inside the posted page bounds. They also require Back/reopening,
+registered visible-page flush, transient nonregistration/no position persistence, unchanged
+controller/route intent across Activity recreation with a new graphical consumer, private isolated
+service flags and malformed/protected canonical failures. No host/test directly fabricates a
+Presented signal in these Android tests. **None executed here**; APK compilation, test inventory
+and the Python fixture renderer are not proof of Android PDF display or worker execution.
+Source inventory is382 standard tests plus14 assigned diagnostics (396 total), not execution counts.
+
+#### JVM coverage scope
+
+The existing JaCoCo0.8.14 execution data/class outputs are reused through an external temporary init
+script. No repository build or CI configuration changes. Exact source attribution, including
+nested/coroutine classes:
+
+| Source/scope | LINE | BRANCH |
+| --- | --- | --- |
+| ReaderHostLifetime.kt (coordinator + fit policy) |83/83=100% |47/52=90.38% |
+| AppHostViewModel.kt |159/159=100% |162/192=84.38% |
+| AppNavigation.kt |13/13=100% |16/16=100% |
+| Combined host/state/navigation/SAF-picker/Reader logic |342/342=100% |297/336=88.39% |
+| Unfiltered host/navigation packages, informational only |342/494=69.23% |297/446=66.59% |
+
+Both new coordinator and affected ViewModel/navigation logic satisfy90/80 independently; the
+combined average is not used to hide a deficient feature. Android composition, registry binding,
+ProductionHostSession/AppHostFactory and Compose UI are outside the JVM logic gate and included
+as misses in the informational whole-package row. Their authentic Android coverage is unmeasured.
+No worker-process coverage is claimed. The generated XML was checked directly for90/80 on both
+the Reader-only and aggregate scopes in addition to the aggregate Gradle verification task.
+
+Final commands (Bash wrapper, existing activated toolchain):
+
+```bash
+source /workspace/partituras-tools/activate.sh
+bash ./gradlew -I /tmp/i05-coverage.init.gradle \
+  :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug \
+  :app:testDebugUnitTest --rerun :app:i05Verify :app:i05ReaderCoverage :app:i05AllCoverage \
+  --no-configuration-cache --max-workers=4 --console=plain
+# After final test-only teardown/transient assertions:
+bash ./gradlew :app:assembleDebugAndroidTest :app:lintDebug --max-workers=4 --console=plain
+python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest \
+  --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/validate_localization.py
+python3 test-fixtures/scripts/verify_fixtures.py
+adb devices -l
+git diff --check
+git diff --cached --check
+```
+
+The device list is empty; no unknown/physical device was used and no emulator was provisioned or
+started. The established environment lacks usable acceleration. Toolchain/dependencies/setup
+configuration remain unchanged. Logs, coverage HTML/XML and signatures are under `/tmp/i05-*`.
+The current source commit is the validated code; this append is documentation only. Authentic
+API26 execution and hosted gates remain mandatory outstanding evidence. Use the owner-authorized
+emulator command documented above, inspect real JUnit XML, and never infer PASS from compilation.
+
+### Prompt5 extension point and deferred requirements
+
+Current ReaderHostLifetime serializes acceptance against final Back/retirement. AppHostSession's
+retireReader hook is already joined before graph shutdown. Prompt5 must extend this foundation,
+not introduce a competing manager or cancel the cleanup's owner first.
+
+Still missing: Activity/host BACKGROUND, LOW_MEMORY, CRITICAL and RESUME event callbacks and their
+serialized interaction with opening/Back/terminal disposal. For nonterminal background/trim,
+quiesce G with graphical cleanup possible, inspect route.background(), apply the existing trim
+policy's closeSession decision (LOW_MEMORY keeps it; BACKGROUND/CRITICAL close it), and finish
+all mutations before G.resume(). Resume must use G's route.current identity/reopen mechanism;
+the host must not separately call route.open or reuse retired controllers. Remount only when
+barriers permit, with a genuine new graphical acknowledgment. Existing exit always retires and
+therefore cannot serve as a resumable pause without an explicitly implemented extension.
+
+No full process-death restore, live global settings/locale/window effects, expanded recovery
+matrix, native worker instrumentation, memory/performance benchmark or acceptance closeout is
+implemented here. No confirmed protected-component defect requiring owner approval was found.
+Graphical detachment is protocol-tested and Android-test-defined, but actual device scheduling,
+recreation and isolated native execution remain unverified here. These are pending validation,
+not an acceptance waiver. Stop at I05 for owner review before Prompt5.
+
+### Reproducing I05 local scoped coverage
+
+Save the following tested script outside the checkout as `/tmp/i05-coverage.init.gradle`
+and run the command above. Reader-only XML must also meet90% LINE/80% BRANCH; the aggregate
+verification task alone is insufficient evidence for that separate scope. No project build
+configuration is modified.
+
+```groovy
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+gradle.beforeProject { p ->
+ if (p.path == ':app') p.plugins.withId('com.android.application') { p.afterEvaluate {
+  def classes=p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+   include 'com/abdev/partituraspdf/app/host/AppHostViewModel*'
+   include 'com/abdev/partituraspdf/app/host/AppHostState*'
+   include 'com/abdev/partituraspdf/app/host/AppHostFeatures*'
+   include 'com/abdev/partituraspdf/app/host/AppHostSession*'
+   include 'com/abdev/partituraspdf/app/host/RootPickerCoordinator*'
+   include 'com/abdev/partituraspdf/app/host/Reader*'
+   include 'com/abdev/partituraspdf/app/navigation/**'
+  }
+  def data=p.layout.buildDirectory.file('jacoco/testDebugUnitTest.exec')
+  def report=p.tasks.register('i05Coverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports { xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i05-coverage/report.xml'))
+    html.outputLocation.set(new File('/tmp/i05-coverage/html')) }
+   doFirst { if(classes.files.empty || !data.get().asFile.isFile()) throw new GradleException('Missing real host classes/JVM execution') }
+  }
+  p.tasks.register('i05ReaderCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/Reader*'
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i05-coverage/reader.xml'))
+    html.outputLocation.set(new File('/tmp/i05-coverage/reader-html'))}
+  }
+  p.tasks.register('i05AllCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/**', 'com/abdev/partituraspdf/app/navigation/**'
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i05-coverage/all.xml'))
+    html.outputLocation.set(new File('/tmp/i05-coverage/all-html'))}
+  }
+  p.tasks.register('i05Verify',JacocoCoverageVerification) {
+   dependsOn report
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   violationRules { rule { limit {counter='LINE';minimum=0.90};limit {counter='BRANCH';minimum=0.80} } }
+  }
+ } }
+}
+```

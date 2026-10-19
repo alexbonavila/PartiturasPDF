@@ -20,12 +20,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 
 /** Android composition edge only; no graph is built in the isolated service or a Composable. */
-internal class AppHostFactory(private val application: Application) : ViewModelProvider.Factory {
+internal class AppHostFactory(private val application: Application, private val savedNavigation: String? = null) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         require(modelClass == AppHostViewModel::class.java)
         @Suppress("UNCHECKED_CAST")
         return AppHostViewModel(
-            createSession = { ProductionHostSession(application) },
+            createSession = { ProductionHostSession(application) }, savedNavigation = savedNavigation,
             dispatcher = Dispatchers.Main.immediate, io = Dispatchers.IO,
             recoverable = { it is IOException || it is SQLiteCantOpenDatabaseException ||
                 it is SQLiteDiskIOException || it is SQLiteFullException },

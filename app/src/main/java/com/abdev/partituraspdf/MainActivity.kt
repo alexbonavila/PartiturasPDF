@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         val pending = (host.state.value as? AppHostState.Ready)?.features?.picker?.request?.value
         outState.putString("app.saf.pending", pending)
         outState.putString("app.host.lifetime", host.lifetimeId)
+        outState.putString("app.navigation", host.saveNavigation())
         super.onSaveInstanceState(outState)
     }
     override fun onStart() {
@@ -56,7 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        host = ViewModelProvider(this, AppHostFactory(application))[AppHostViewModel::class.java]
+        host = ViewModelProvider(this, AppHostFactory(application, savedInstanceState?.getString("app.navigation")))[AppHostViewModel::class.java]
         host.activityCreated(activityIdentity)
         restoredPicker = if (savedInstanceState?.getString("app.host.lifetime") != host.lifetimeId)
             savedInstanceState?.getString("app.saf.pending") else null

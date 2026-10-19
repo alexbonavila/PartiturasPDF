@@ -11,8 +11,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.abdev.partituraspdf.core.document.PageIndex
+import com.abdev.partituraspdf.core.document.DocumentRef
 
-internal data class ReaderOpenPermit(val key: LibraryRowKey, val revision: Long)
+internal data class ReaderOpenPermit(val key: LibraryRowKey?, val revision: Long, val restoredDocument: DocumentRef? = null)
 internal data class ReaderHostEntry(val intent: ReaderOpenIntent, val controller: ReaderController,
     internal val route: ReaderRoute, internal val owner: Job)
 internal enum class ReaderCleanupStage { QUIESCE, CHECKPOINT, RETIRE, CLOSE }
@@ -62,6 +63,12 @@ internal class ReaderHostLifetime(
     }
     fun arm(key: LibraryRowKey, revision: Long) {
         if (!terminal && state.value.entry == null) permit = ReaderOpenPermit(key, revision)
+    }
+    /** Separate registered entry permit; the host validates its one-shot restoration generation. */
+    fun restore(document: DocumentRef, revision: Long): Outcome<Unit> {
+        if (terminal || state.value.entry != null) return Outcome.Failure(AppError.Conflict.STALE_SESSION)
+        permit = ReaderOpenPermit(null, revision, document)
+        return accept(DocumentOpenRequest.Registered(document))
     }
     fun accept(request: DocumentOpenRequest): Outcome<Unit> {
         val ticket = permit ?: return Outcome.Failure(AppError.Conflict.STALE_SESSION)

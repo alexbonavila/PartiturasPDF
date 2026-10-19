@@ -69,6 +69,14 @@ class AppHostActivityTest {
         assertEquals(1L, host.navigation.value.revision)
         compose.onNodeWithTag("settings_content").assertExists()
     }
+    @Test fun libraryRecreationKeepsTheSameGraphControllersAndNavigationSnapshot() {
+        val host = ready(); val features = (host.state.value as AppHostState.Ready).features
+        val route = host.navigation.value
+        compose.activityRule.scenario.recreate(); compose.waitForIdle()
+        assertSame(host, owner()); assertSame(features, (host.state.value as AppHostState.Ready).features)
+        assertEquals(route, host.navigation.value); assertEquals("1:library", host.saveNavigation())
+    }
+
     @Test fun oldCallbacksAfterBackCannotReopenSettingsOrEnterReader() {
         val host = ready()
         val oldClick = checkNotNull(compose.onNodeWithTag("app_settings").fetchSemanticsNode()

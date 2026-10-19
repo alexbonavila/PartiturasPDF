@@ -45,6 +45,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.*
@@ -65,13 +66,14 @@ class ReaderHostNativeIntegrationTest {
     private var callbackIdentity = ""
     private lateinit var factory: ViewModelProvider.Factory
 
-    private inner class Session(val fixture: JSONObject) : AppHostSession {
-        val directory = File(context.cacheDir, "i05-${UUID.randomUUID()}").apply { check(mkdir()) }
+    private inner class Session(val fixture: JSONObject, persistent: Boolean = false, reuse: Session? = null) : AppHostSession {
+        val directory: File = reuse?.directory ?: File(context.cacheDir, "i05-${UUID.randomUUID()}").apply { check(mkdir()) }
         val source = File(directory, "score.pdf")
-        val preferencesName = "i05-positions-${UUID.randomUUID()}"
+        val preferencesName: String = reuse?.preferencesName ?: "i05-positions-${UUID.randomUUID()}"
         val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
         val positions = SharedPreferencesReaderPositions(preferences)
-        val db = Room.inMemoryDatabaseBuilder(context, MetadataDatabase::class.java).build()
+        val db = if (persistent) Room.databaseBuilder(context, MetadataDatabase::class.java, File(directory, "metadata.db").absolutePath).build()
+            else Room.inMemoryDatabaseBuilder(context, MetadataDatabase::class.java).build()
         val registry = RoomDocumentRegistry(db)
         val metadata = RoomDocumentMetadataRepository(db)
         val root = FolderRef("fixture", "root")
@@ -79,6 +81,7 @@ class ReaderHostNativeIntegrationTest {
         val ceiling = RenderLimits(512, 512L * 512)
         val engine = IsolatedPdfReadEngine(context, ceiling)
         var afterRender: (suspend (RenderedPage) -> Unit)? = null
+        var accessError: AppError? = null
         val observedEngine = object : PdfReadEngine {
             override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> = when (val result = engine.open(source)) {
                 is Outcome.Failure -> result
@@ -99,7 +102,8 @@ class ReaderHostNativeIntegrationTest {
             assertEquals(fixture.getLong("bytes"), bytes.size.toLong())
             val hash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
             assertEquals(fixture.getString("sha256"), hash)
-            source.writeBytes(bytes) // Independent read-only input; canonical original is untouched.
+            if (reuse == null) source.writeBytes(bytes) // Independent read-only input; canonical original is untouched.
+            else assertArrayEquals(bytes, source.readBytes())
         }
         override fun load(scope: CoroutineScope): AppHostFeatures {
             val nav = object : FolderNavigation {
@@ -119,6 +123,7 @@ class ReaderHostNativeIntegrationTest {
                     try {
                         return withContext(Dispatchers.IO) {
                             check(document == storage)
+                            accessError?.let { return@withContext Outcome.Failure(it) }
                             Outcome.Success(ReadHandle(object : ReadResource {
                                 override val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
                                 override fun close() { descriptor.close() }
@@ -159,10 +164,10 @@ class ReaderHostNativeIntegrationTest {
         override fun stop() { features.library.close(); features.settings.close() }
         override fun close() { db.close() }
     }
-    private fun mount(id: String) {
+    private fun mount(id: String, persistent: Boolean = false) {
         val entries = InstrumentationRegistry.getInstrumentation().context.assets.open("manifest.json").bufferedReader().use { JSONObject(it.readText()).getJSONArray("files") }
         val row = (0 until entries.length()).map(entries::getJSONObject).single { it.getString("id") == id }
-        val session = Session(row).also { this.session = it }
+        val session = Session(row, persistent).also { this.session = it }
         factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
@@ -326,6 +331,88 @@ class ReaderHostNativeIntegrationTest {
             compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
             visible(); back()
         } finally { release.complete(Unit) }
+    }
+
+    /** Synthetic Bundle reconstruction with fresh host/controllers and reopened disk Room.
+     * This is not Activity recreation, system process death, or proof of a real SAF grant. */
+    private fun reconstruct(saved: android.os.Bundle, accessError: AppError? = null) {
+        composition.unmount()
+        val old = session!!
+        runBlocking { withContext(Dispatchers.Main.immediate) { host!!.dispose() }.await() }
+        val next = Session(old.fixture, persistent = true, reuse = old).also { it.accessError = accessError; session = it }
+        compose.runOnUiThread {
+            host = AppHostViewModel({ next }, Dispatchers.Main.immediate, Dispatchers.IO, { false }, failures::add,
+                saved.getString("app.navigation"))
+            installLifecycleBridge()
+        }
+        composition.mount { PartiturasPDFTheme { AppHost(host!!) } }
+        compose.waitUntil(20_000) { (host!!.state.value as? AppHostState.Ready)?.features?.library?.state?.value?.content is LibraryContent.Ready }
+    }
+    private fun snapshot() = android.os.Bundle().apply {
+        compose.runOnUiThread { putString("app.navigation", host!!.saveNavigation()) }
+    }
+    private fun register() {
+        compose.runOnUiThread { host!!.library(LibraryAction.Register(pdf().key), 0) }
+        compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
+    }
+    @Test fun syntheticSavedBundleReopensDiskRegisteredScoreAtDurablyPresentedPageWithFreshNativeSession() {
+        mount("02", persistent = true); register(); open(); visible()
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
+        compose.waitUntil(20_000) { entry().controller.state.value.presentedPage == PageIndex(1) }
+        val previous = entry(); val native = previous.controller.state.value.session!!.id
+        val saved = snapshot()
+        runBlocking { assertEquals(Outcome.Success(Unit), session!!.metadata.setFavorite((previous.intent.request as DocumentOpenRequest.Registered).document, true)) }
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.waitUntil(20_000) { routeClosed() }
+        assertEquals(PageIndex(1), runBlocking { session!!.positions.restore((previous.intent.request as DocumentOpenRequest.Registered).document, 2) }.let { (it as Outcome.Success).value })
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        // Await the legitimate I06 resume before reconstructing, rather than racing two owners.
+        visible(); reconstruct(saved)
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.READER }
+        visible(); assertNotSame(previous.controller, entry().controller)
+        assertNotEquals(native, entry().controller.state.value.session!!.id)
+        assertEquals(PageIndex(1), entry().controller.state.value.presentedPage)
+        val metadata = runBlocking { session!!.metadata.observe((entry().intent.request as DocumentOpenRequest.Registered).document).first { it is Observation.Ready } }
+        assertTrue((metadata as Observation.Ready).value.favorite)
+        assertEquals(1, session!!.constructions); back()
+    }
+    @Test fun syntheticRegisteredRestoreClampsOldLongerDocumentPositionUsingRealOpenedPageCount() {
+        mount("02", persistent = true); register(); open(); visible()
+        val document = (entry().intent.request as DocumentOpenRequest.Registered).document
+        val saved = snapshot(); back()
+        assertTrue(session!!.preferences.edit().putInt(document.id.value, 99).commit())
+        reconstruct(saved)
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.READER }
+        visible(); assertEquals(PageIndex(1), entry().controller.state.value.presentedPage); back()
+    }
+    @Test fun syntheticSettingsBundleRestoresDestinationWithFreshControllers() {
+        mount("02", persistent = true)
+        val previous = (host!!.state.value as AppHostState.Ready).features
+        compose.runOnUiThread { host!!.showSettings(0) }
+        val saved = snapshot(); assertEquals("1:settings", saved.getString("app.navigation"))
+        reconstruct(saved)
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.SETTINGS }
+        val next = (host!!.state.value as AppHostState.Ready).features
+        assertNotSame(previous.library, next.library); assertNotSame(previous.settings, next.settings)
+        assertEquals(0, session!!.constructions)
+    }
+
+    @Test fun syntheticTransientSnapshotCannotAutomaticallyReopenOrCreateRegisteredPosition() {
+        mount("02", persistent = true); open(); visible(); val saved = snapshot()
+        assertEquals("1:library", saved.getString("app.navigation"))
+        reconstruct(saved)
+        assertEquals(AppDestination.LIBRARY, host!!.navigation.value.destination)
+        assertEquals(0, session!!.constructions); assertTrue(session!!.preferences.all.isEmpty())
+    }
+    @Test fun syntheticRegisteredAccessRevocationKeepsRoomIdentityAndAllowsBack() {
+        mount("02", persistent = true); register(); open(); visible(); val saved = snapshot()
+        val document = (entry().intent.request as DocumentOpenRequest.Registered).document
+        reconstruct(saved, AppError.Access.PERMISSION_REVOKED) // Contract failure, not real Android grant revocation.
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.READER && entry().controller.state.value.failure != null }
+        assertEquals(AppError.Access.PERMISSION_REVOKED, entry().controller.state.value.failure!!.error)
+        assertNull(entry().controller.state.value.frame)
+        assertTrue(runBlocking { session!!.registry.resolve(document) } is Outcome.Success)
+        back()
     }
 
     @Test fun malformedCanonicalPdfFailsInIsolatedReaderAndStillReturnsSafely() {

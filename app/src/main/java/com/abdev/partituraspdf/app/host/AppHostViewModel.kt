@@ -2,6 +2,12 @@ package com.abdev.partituraspdf.app.host
 
 import androidx.lifecycle.ViewModel
 import com.abdev.partituraspdf.app.navigation.AppNavigation
+import com.abdev.partituraspdf.app.navigation.AppRestoration
+import com.abdev.partituraspdf.library.LibraryLocation
+import com.abdev.partituraspdf.core.result.Observation
+import com.abdev.partituraspdf.core.result.Outcome
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import com.abdev.partituraspdf.library.LibraryAction
 import com.abdev.partituraspdf.library.LibraryAssociation
 import com.abdev.partituraspdf.library.LibraryContent
@@ -25,7 +31,10 @@ internal class AppHostViewModel(
     private val io: CoroutineDispatcher,
     private val recoverable: (Throwable) -> Boolean,
     private val reportFailure: (Throwable) -> Unit,
+    savedNavigation: String? = null,
 ) : ViewModel() {
+    private var restoration: AppRestoration? = AppRestoration.decode(savedNavigation).takeUnless { it == AppRestoration.Library }
+    private var restorationJob: Job? = null
     private var activityVisible = false
     private var activityIdentity: String? = null
     private var foreground = true
@@ -83,16 +92,24 @@ internal class AppHostViewModel(
                         if (closing || state.value !is AppHostState.Ready || navigation.value.destination != AppDestination.LIBRARY ||
                             navigation.value.revision != permit.revision) false
                         else {
-                            val row = (features.library.state.value.content as? LibraryContent.Ready)?.rows
-                                ?.singleOrNull { it.key == permit.key } as? LibraryRow.Pdf
-                            when (val association = row?.association) {
-                                is LibraryAssociation.Registered -> request == DocumentOpenRequest.Registered(association.value.document)
-                                LibraryAssociation.Unregistered -> request == DocumentOpenRequest.Transient(row.entry.storage)
-                                else -> false
+                            if (permit.restoredDocument != null) {
+                                restoration == AppRestoration.Reader(permit.restoredDocument) &&
+                                    request == DocumentOpenRequest.Registered(permit.restoredDocument)
+                            } else {
+                                val row = (features.library.state.value.content as? LibraryContent.Ready)?.rows
+                                    ?.singleOrNull { it.key == permit.key } as? LibraryRow.Pdf
+                                when (val association = row?.association) {
+                                    is LibraryAssociation.Registered -> request == DocumentOpenRequest.Registered(association.value.document)
+                                    LibraryAssociation.Unregistered -> request == DocumentOpenRequest.Transient(row.entry.storage)
+                                    else -> false
+                                }
                             }
                         }
                     } },
-                    entered = { permit -> synchronized(lock) { mutableNavigation.value = navigation.value.reader(permit.revision) } },
+                    entered = { permit -> synchronized(lock) {
+                        restoration = null
+                        mutableNavigation.value = navigation.value.reader(permit.revision)
+                    } },
                     returned = { report -> synchronized(lock) {
                         if (!closing) {
                             if (report.cause != null) dispose(report.failure())
@@ -112,6 +129,7 @@ internal class AppHostViewModel(
                 live = Attempt(session, children)
                 transferred = true
                 mutableState.value = AppHostState.Ready(features)
+                scheduleRestoration(features)
             }
         } catch (failure: Throwable) {
             problem = failure // Preserve cancellation/defects; never translate into provider errors.
@@ -149,15 +167,66 @@ internal class AppHostViewModel(
         Release(failure, clean)
     }
 
+    /** Library owns root restore/READ revalidation; H owns authoritative preference observation. */
+    private fun scheduleRestoration(features: AppHostFeatures) {
+        if (restoration == null) return
+        restorationJob = scope.launch {
+            combine(features.library.state, features.settings.state) { library, settings ->
+                library.location to settings.preferences
+            }.first { (location, preferences) -> location !is LibraryLocation.Initializing && preferences !is Observation.Loading }
+            synchronized(lock) { applyRestoration(features) }
+        }
+    }
+    private fun applyRestoration(features: AppHostFeatures) {
+        val saved = restoration ?: return
+        if (closing || navigation.value != AppNavigation() || state.value !is AppHostState.Ready) {
+            restoration = null; return
+        }
+        when (saved) {
+            AppRestoration.Settings -> { restoration = null; mutableNavigation.value = navigation.value.settings(0) }
+            is AppRestoration.Reader -> {
+                if (!foreground) return // A later real onStart rechecks; never allocate while stopped.
+                if (features.library.state.value.location !is LibraryLocation.Available ||
+                    features.settings.state.value.preferences !is Observation.Ready || features.reader == null) {
+                    restoration = null; return
+                }
+                val result = features.reader.restore(saved.document, 0)
+                if (result is Outcome.Failure) restoration = null // No implicit retry loop.
+            }
+            AppRestoration.Library -> restoration = null
+        }
+    }
+    private fun cancelRestoration() { restoration = null; restorationJob?.cancel() }
+
+    /** Called by Android saved-instance-state, never persists frames/capabilities/pages. */
+    fun saveNavigation(): String = synchronized(lock) {
+        val features = (state.value as? AppHostState.Ready)?.features
+        val reader = features?.reader?.state?.value
+        val saved = when {
+            closing || reader?.leaving == true -> AppRestoration.Library
+            navigation.value.destination == AppDestination.SETTINGS -> AppRestoration.Settings
+            navigation.value.destination == AppDestination.READER ->
+                if (reader?.entry?.controller?.state?.value?.failure?.error == com.abdev.partituraspdf.core.result.AppError.Access.NOT_REGISTERED)
+                    AppRestoration.Library
+                else (reader?.entry?.intent?.request as? DocumentOpenRequest.Registered)?.let { AppRestoration.Reader(it.document) }
+                    ?: AppRestoration.Library
+            else -> restoration ?: AppRestoration.Library
+        }
+        saved.encode()
+    }
+
     fun showSettings(expectedRevision: Long) = synchronized(lock) {
-        if (!closing && state.value is AppHostState.Ready)
+        if (!closing && state.value is AppHostState.Ready && navigation.value.revision == expectedRevision) {
+            cancelRestoration()
             mutableNavigation.value = navigation.value.settings(expectedRevision)
+        }
     }
 
     fun back(expectedRevision: Long) = synchronized(lock) {
-        if (!closing && state.value is AppHostState.Ready && navigation.value.revision == expectedRevision) {
+        if (!closing && navigation.value.revision == expectedRevision) {
+            cancelRestoration()
             if (navigation.value.destination == AppDestination.READER)
-                (state.value as AppHostState.Ready).features.reader?.leave()
+                (state.value as? AppHostState.Ready)?.features?.reader?.leave()
             else mutableNavigation.value = navigation.value.back(expectedRevision)
         }
     }
@@ -166,6 +235,7 @@ internal class AppHostViewModel(
         if (!closing && navigation.value.revision == expectedRevision &&
             navigation.value.destination == com.abdev.partituraspdf.app.navigation.AppDestination.LIBRARY)
             (state.value as? AppHostState.Ready)?.features?.let { features ->
+                cancelRestoration()
                 if (features.picker?.recovery?.value == null || action == LibraryAction.ChooseRoot) {
                     when (action) {
                         is LibraryAction.Open -> features.reader?.arm(action.key, expectedRevision)
@@ -185,7 +255,11 @@ internal class AppHostViewModel(
         if (!closing && activityIdentity == identity && !activityVisible) {
             activityVisible = true
             foreground = true
-            (state.value as? AppHostState.Ready)?.features?.reader?.foreground(true)
+            (state.value as? AppHostState.Ready)?.features?.let { features ->
+                features.reader?.foreground(true)
+                // Only a completed initialization barrier may admit the deferred registered intent.
+                if (restorationJob?.isCompleted == true) applyRestoration(features)
+            }
         }
     }
     fun activityStopped(identity: String, configurationChange: Boolean) = synchronized(lock) {
@@ -201,6 +275,8 @@ internal class AppHostViewModel(
             val reader = (state.value as? AppHostState.Ready)?.features?.reader
             val sequence = reader?.state?.value?.entry?.intent?.sequence
             if (trim == com.abdev.partituraspdf.core.foundation.ReaderTrim.BACKGROUND) { foreground = false; activityVisible = false }
+            if (trim != null && trim != com.abdev.partituraspdf.core.foundation.ReaderTrim.BACKGROUND && restoration is AppRestoration.Reader)
+                cancelRestoration() // Pressure before admission: stay in Library, never allocate automatically.
             if (trim != null && sequence != null) reader.trim(sequence, trim)
         }
     }
@@ -227,6 +303,7 @@ internal class AppHostViewModel(
             return@synchronized disposed
         }
         closing = true
+        cancelRestoration()
         (state.value as? AppHostState.Ready)?.features?.let { it.picker?.close(); it.reader?.stopAccepting() }
         terminalFailure = combine(terminalFailure, cause)
         mutableState.value = AppHostState.Closing

@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.abdev.partituraspdf.ui.theme.PartiturasPDFTheme
 
 class MainActivity : ComponentActivity() {
+    private val activityIdentity = java.util.UUID.randomUUID().toString()
     private lateinit var host: AppHostViewModel
     private var restoredPicker: String? = null
 
@@ -36,10 +37,27 @@ class MainActivity : ComponentActivity() {
         outState.putString("app.host.lifetime", host.lifetimeId)
         super.onSaveInstanceState(outState)
     }
+    override fun onStart() {
+        super.onStart()
+        host.activityStarted(activityIdentity)
+    }
+    override fun onStop() {
+        host.activityStopped(activityIdentity, isChangingConfigurations)
+        super.onStop()
+    }
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::host.isInitialized) host.activityMemory(activityIdentity, level, isChangingConfigurations)
+    }
+    override fun onLowMemory() {
+        super.onLowMemory()
+        if (::host.isInitialized) host.activityMemory(activityIdentity, android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         host = ViewModelProvider(this, AppHostFactory(application))[AppHostViewModel::class.java]
+        host.activityCreated(activityIdentity)
         restoredPicker = if (savedInstanceState?.getString("app.host.lifetime") != host.lifetimeId)
             savedInstanceState?.getString("app.saf.pending") else null
         lifecycleScope.launch {

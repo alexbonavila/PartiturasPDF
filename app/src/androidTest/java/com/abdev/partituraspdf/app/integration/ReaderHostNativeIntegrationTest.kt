@@ -14,6 +14,10 @@ import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.lifecycle.ViewModelProvider
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -58,6 +62,7 @@ class ReaderHostNativeIntegrationTest {
     private val failures = CopyOnWriteArrayList<Throwable>()
     private var host: AppHostViewModel? = null
     private var session: Session? = null
+    private var callbackIdentity = ""
     private lateinit var factory: ViewModelProvider.Factory
 
     private inner class Session(val fixture: JSONObject) : AppHostSession {
@@ -73,6 +78,19 @@ class ReaderHostNativeIntegrationTest {
         val storage = StorageDocumentRef("fixture", "test-owned-score")
         val ceiling = RenderLimits(512, 512L * 512)
         val engine = IsolatedPdfReadEngine(context, ceiling)
+        var afterRender: (suspend (RenderedPage) -> Unit)? = null
+        val observedEngine = object : PdfReadEngine {
+            override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> = when (val result = engine.open(source)) {
+                is Outcome.Failure -> result
+                is Outcome.Success -> Outcome.Success(object : PdfReadSession by result.value {
+                    override suspend fun render(request: RenderRequest): Outcome<RenderedPage> {
+                        val rendered = result.value.render(request)
+                        if (rendered is Outcome.Success) afterRender?.invoke(rendered.value)
+                        return rendered
+                    }
+                })
+            }
+        }
         var constructions = 0
         val routes = mutableListOf<ReaderRoute>()
         lateinit var features: AppHostFeatures
@@ -122,7 +140,7 @@ class ReaderHostNativeIntegrationTest {
             val settings = SettingsController(scope, preferencesRepository, RepositorySettingsCommands(preferencesRepository))
             val reading = ReaderHostLifetime(scope, routeFactory = { readerScope ->
                 constructions++
-                ReaderRouteOwner(readerScope, registry, access, engine, positions, ReadAccessLimits(64L * 1024 * 1024)).also { routes += it }
+                ReaderRouteOwner(readerScope, registry, access, observedEngine, positions, ReadAccessLimits(64L * 1024 * 1024)).also { routes += it }
             }, renderCeiling = ceiling, heap = {
                 val runtime = Runtime.getRuntime(); val maximum = runtime.maxMemory()
                 HeapAvailability(maximum, (runtime.totalMemory() - runtime.freeMemory()).coerceIn(0, maximum))
@@ -151,11 +169,28 @@ class ReaderHostNativeIntegrationTest {
                 return AppHostViewModel({ session }, Dispatchers.Main.immediate, Dispatchers.IO, { false }, failures::add) as T
             }
         }
-        compose.runOnUiThread { host = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java] }
+        compose.runOnUiThread {
+            host = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java]
+            installLifecycleBridge()
+        }
         composition.mount { PartiturasPDFTheme { AppHost(host!!) } }
         compose.waitUntil(15_000) { (host!!.state.value as? AppHostState.Ready)?.features?.library?.state?.value?.content is LibraryContent.Ready }
         compose.waitUntil(15_000) { pdf().association !is LibraryAssociation.LookingUp }
     }
+    /** Test-owned host receives genuine Activity lifecycle callbacks; no production factory override. */
+    private fun installLifecycleBridge() {
+        val activity = compose.activity
+        val retained = host!!
+        val identity = UUID.randomUUID().toString().also { callbackIdentity = it }
+        retained.activityCreated(identity)
+        activity.lifecycle.addObserver(LifecycleEventObserver { _, event -> when (event) {
+            Lifecycle.Event.ON_START -> retained.activityStarted(identity)
+            Lifecycle.Event.ON_STOP -> retained.activityStopped(identity, activity.isChangingConfigurations)
+            else -> Unit
+        } })
+    }
+    private fun routeClosed() = runBlocking { session!!.routes.last().current() == null }
+
     private fun pdf() = ((host!!.state.value as AppHostState.Ready).features.library.state.value.content as LibraryContent.Ready).rows.single() as LibraryRow.Pdf
     private fun entry() = session!!.features.reader!!.state.value.entry!!
     private fun open() {
@@ -220,17 +255,18 @@ class ReaderHostNativeIntegrationTest {
         compose.runOnUiThread { host!!.library(LibraryAction.Register(pdf().key), 0) }
         compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
         val document = (pdf().association as LibraryAssociation.Registered).value.document
-        open(); visible(); val first = entry(); val consumer = first.controller.state.value.checkpointConsumer
+        open(); visible(); val first = entry(); val nativeSession = first.controller.state.value.session!!.id; val consumer = first.controller.state.value.checkpointConsumer
         compose.activityRule.scenario.recreate()
         compose.runOnUiThread {
             val retained = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java]
             assertSame(host, retained)
+            installLifecycleBridge()
         }
         // The old Activity destroyed its composition. Track the replacement composition for teardown too.
         composition = ReaderTestComposition(compose)
         composition.mount { PartiturasPDFTheme { AppHost(host!!) } }
         compose.waitUntil(20_000) { first.controller.state.value.checkpointConsumer != null && first.controller.state.value.checkpointConsumer !== consumer }
-        assertSame(first, entry()); assertEquals(1, session!!.constructions)
+        assertSame(first, entry()); assertEquals(nativeSession, entry().controller.state.value.session!!.id); assertEquals(1, session!!.constructions)
         compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
         compose.waitUntil(20_000) { first.controller.state.value.presentedPage == PageIndex(1) }
         back()
@@ -240,6 +276,58 @@ class ReaderHostNativeIntegrationTest {
         assertFalse(service.exported); assertTrue(service.flags and ServiceInfo.FLAG_ISOLATED_PROCESS != 0)
         assertTrue(service.processName.endsWith(":pdf"))
     }
+    @Test fun genuineActivityBackgroundFlushesAndResumeReopensWithoutNewUserIntent() {
+        mount("02"); open(); visible()
+        val retained = entry(); val native = retained.controller.state.value.session!!.id
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.waitUntil(20_000) { session!!.features.reader!!.state.value.suspended && routeClosed() }
+        assertEquals(ReaderPhase.QUIESCED, retained.controller.state.value.phase)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        visible(); assertSame(retained, entry()); assertEquals(1, session!!.constructions)
+        assertNotEquals(native, entry().controller.state.value.session!!.id)
+        back()
+    }
+    @Test fun simulatedLowMemoryReleasesFrameKeepsSessionAndPreservesLocalZoomOnExplicitRecovery() {
+        mount("02"); open(); visible()
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_options)).performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_zoom_in)).performClick()
+        // Close the existing options menu by selecting the already selected fit.
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_fit_page)).performClick()
+        val description = compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+        val native = entry().controller.state.value.session!!.id
+        compose.runOnUiThread { host!!.activityMemory(callbackIdentity, android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) }
+        compose.waitUntil(20_000) { entry().controller.state.value.frame == null && session!!.features.reader!!.state.value.suspended }
+        assertFalse(routeClosed())
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).performClick()
+        visible(); assertEquals(native, entry().controller.state.value.session!!.id)
+        assertEquals(description, compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+        back()
+    }
+    @Test fun simulatedCriticalMemoryClosesNativeSessionBeforeUserRecovery() {
+        mount("02"); open(); visible(); val native = entry().controller.state.value.session!!.id
+        compose.runOnUiThread { host!!.activityMemory(callbackIdentity, android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) }
+        compose.waitUntil(20_000) { routeClosed() }
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).performClick()
+        visible(); assertNotEquals(native, entry().controller.state.value.session!!.id); back()
+    }
+    @Test fun backgroundWaitsForDelayedRealNativeRenderOutputAndDiscardsItsBitmap() {
+        mount("02")
+        val rendered = CompletableDeferred<RenderedPage>(); val release = CompletableDeferred<Unit>()
+        session!!.afterRender = { page -> withContext(NonCancellable) { rendered.complete(page); release.await() } }
+        try {
+            open(); compose.waitUntil(20_000) { rendered.isCompleted }
+            val page = runBlocking { rendered.await() }
+            val bitmap = page.bitmap // Observation only; never draw after G retires the lease.
+            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            assertFalse(bitmap.isRecycled)
+            session!!.afterRender = null; release.complete(Unit)
+            compose.waitUntil(20_000) { bitmap.isRecycled && routeClosed() }
+            assertNull(entry().controller.state.value.frame)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            visible(); back()
+        } finally { release.complete(Unit) }
+    }
+
     @Test fun malformedCanonicalPdfFailsInIsolatedReaderAndStillReturnsSafely() {
         mount("15"); open()
         compose.waitUntil(20_000) { entry().controller.state.value.phase == ReaderPhase.ERROR }

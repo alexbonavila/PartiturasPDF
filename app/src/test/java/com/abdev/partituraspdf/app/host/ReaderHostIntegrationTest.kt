@@ -152,6 +152,81 @@ class ReaderHostIntegrationTest {
         assertTrue(s.routes.isEmpty()); h.dispose().await()
     }
 
+    @Test fun configurationStopAndObsoleteActivityCallbacksDoNotCloseOrReopenReader() = runTest {
+        val s = Session(); val h = host(s); h.activityCreated("old"); h.activityStarted("old"); runCurrent(); open(h, s)
+        val entry = s.features.reader!!.state.value.entry
+        h.activityStopped("old", true); h.activityCreated("new"); h.activityStopped("old", false)
+        h.activityMemory("old", android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE); h.activityStarted("new"); runCurrent()
+        assertSame(entry, s.features.reader!!.state.value.entry); assertEquals(1, s.requests.size)
+        assertFalse("route-close" in s.events); h.dispose().await()
+    }
+    @Test fun realBoundaryBackgroundAndForegroundSerializeWithoutChangingUserIntent() = runTest {
+        val s = Session(); val h = host(s); h.activityCreated("activity"); h.activityStarted("activity"); runCurrent(); open(h, s)
+        val entry = s.features.reader!!.state.value.entry!!
+        val gate = CompletableDeferred<Unit>(); s.flush = { gate.await(); Outcome.Success(Unit) }
+        h.activityStopped("activity", false); runCurrent(); h.activityStarted("activity"); runCurrent()
+        assertEquals(1, s.requests.size); assertFalse("route-close" in s.events)
+        gate.complete(Unit); runCurrent()
+        assertEquals(2, s.requests.size); assertSame(entry, s.features.reader!!.state.value.entry)
+        assertEquals(1L, entry.intent.sequence); h.dispose().await()
+    }
+    @Test fun lowAndCriticalCallbacksUseDistinctPoliciesAndConfigurationHintsAreIgnored() = runTest {
+        val s = Session(); val h = host(s); h.activityCreated("activity"); runCurrent(); open(h, s)
+        h.activityMemory("activity", -1)
+        h.activityMemory("activity", android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN, true)
+        assertFalse(s.features.reader!!.state.value.suspended)
+        h.activityMemory("activity", android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW); runCurrent()
+        assertTrue(s.features.reader!!.state.value.suspended); assertFalse("route-close" in s.events)
+        h.activityMemory("activity", android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL); runCurrent()
+        assertEquals(1, s.events.count { it == "route-close" })
+        h.resumeReader(99); assertTrue(s.features.reader!!.state.value.suspended)
+        h.resumeReader(h.navigation.value.revision); runCurrent(); assertEquals(2, s.requests.size)
+        h.dispose().await()
+    }
+    @Test fun backgroundBeforeStartupRejectsOpeningWithoutAllocatingNativeOwnership() = runTest {
+        val s = Session(); val h = host(s); h.activityCreated("activity"); h.activityStopped("activity", false); runCurrent()
+        open(h, s); assertTrue(s.routes.isEmpty()); assertEquals(AppDestination.LIBRARY, h.navigation.value.destination)
+        h.activityStarted("activity"); h.library(LibraryAction.RetryOpen(s.f.pdf.key), 0); runCurrent()
+        assertEquals(1, s.requests.size); h.dispose().await()
+    }
+    @Test fun lifecycleDefectIsTerminalOriginalEvidenceAndGraphClosesOnlyAfterReader() = runTest {
+        val s = Session(); val errors = mutableListOf<Throwable>(); val h = host(s, errors)
+        h.activityCreated("activity"); runCurrent(); open(h, s)
+        val defect = IllegalStateException("background flush"); s.flush = { throw defect }
+        h.activityStopped("activity", false); runCurrent()
+        assertSame(defect, h.dispose().await())
+        assertTrue(s.events.indexOf("route-close") < s.events.indexOf("graph-close"))
+        h.activityStarted("activity"); h.activityMemory("activity", 15); h.resumeReader(1); runCurrent()
+        assertEquals(1, s.requests.size)
+    }
+    @Test fun typedLifecycleFailureIsLoggedAndRetainsSafeBackAndLibraryState() = runTest {
+        val s = Session(); val errors = mutableListOf<Throwable>(); val h = host(s, errors)
+        h.activityCreated("activity"); runCurrent(); open(h, s)
+        s.flush = { Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE) }
+        h.activityStopped("activity", false); runCurrent()
+        assertTrue(errors.single() is ReaderExitException)
+        h.back(1); runCurrent(); assertEquals(AppDestination.LIBRARY, h.navigation.value.destination)
+        assertEquals(LibraryOpening.Idle, s.f.pdf.opening); h.dispose().await()
+    }
+
+    @Test fun duplicateStartedCallbackCannotUndoAForegroundMemorySuspension() = runTest {
+        val s = Session(); val h = host(s); h.activityCreated("activity"); h.activityStarted("activity"); runCurrent(); open(h, s)
+        h.activityMemory("activity", android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW); runCurrent()
+        h.activityStarted("activity"); runCurrent()
+        assertTrue(s.features.reader!!.state.value.suspended)
+        h.resumeReader(1); runCurrent(); assertFalse(s.features.reader!!.state.value.suspended)
+        h.dispose().await()
+    }
+
+    @Test fun uiHiddenNotificationDoesNotSuppressTheNextForegroundAcknowledgment() = runTest {
+        val s = Session(); val h = host(s); h.activityCreated("activity"); h.activityStarted("activity"); runCurrent(); open(h, s)
+        h.activityMemory("activity", android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN); runCurrent()
+        assertTrue(s.features.reader!!.state.value.suspended)
+        h.activityStarted("activity"); runCurrent()
+        assertFalse(s.features.reader!!.state.value.suspended); assertEquals(2, s.requests.size)
+        h.dispose().await()
+    }
+
     @Test fun retirementEntryPointFailureStillStopsDependentsAndPreservesOriginalShutdownError() = runTest {
         val s = Session(); val h = host(s); runCurrent(); val failure = IllegalArgumentException("cleanup hook")
         s.retiringFailure = failure

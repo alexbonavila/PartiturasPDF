@@ -26,6 +26,9 @@ internal class AppHostViewModel(
     private val recoverable: (Throwable) -> Boolean,
     private val reportFailure: (Throwable) -> Unit,
 ) : ViewModel() {
+    private var activityVisible = false
+    private var activityIdentity: String? = null
+    private var foreground = true
     val lifetimeId: String = java.util.UUID.randomUUID().toString()
     private val lock = Any()
     private val owner = SupervisorJob()
@@ -74,6 +77,8 @@ internal class AppHostViewModel(
             synchronized(lock) {
                 if (closing) throw CancellationException("Host disposal")
                 features.reader?.connect(
+                    lifecycleFailure = { report -> if (report.cause != null) dispose(report.failure())
+                        else report.failure()?.let(reportFailure) },
                     allowed = { permit, request -> synchronized(lock) {
                         if (closing || state.value !is AppHostState.Ready || navigation.value.destination != AppDestination.LIBRARY ||
                             navigation.value.revision != permit.revision) false
@@ -99,6 +104,7 @@ internal class AppHostViewModel(
                         }
                     } },
                 )
+                features.reader?.foreground(foreground)
                 features.library.start()
                 if (closing) throw CancellationException("Host disposal")
                 features.settings.start()
@@ -169,6 +175,38 @@ internal class AppHostViewModel(
                     features.library.dispatch(action)
                 }
             }
+    }
+
+    /** Activity identity is data, never an Activity/launcher reference. */
+    fun activityCreated(identity: String) = synchronized(lock) {
+        if (!closing && activityIdentity != identity) { activityIdentity = identity; activityVisible = false }
+    }
+    fun activityStarted(identity: String) = synchronized(lock) {
+        if (!closing && activityIdentity == identity && !activityVisible) {
+            activityVisible = true
+            foreground = true
+            (state.value as? AppHostState.Ready)?.features?.reader?.foreground(true)
+        }
+    }
+    fun activityStopped(identity: String, configurationChange: Boolean) = synchronized(lock) {
+        if (!closing && activityIdentity == identity && !configurationChange) {
+            activityVisible = false
+            foreground = false
+            (state.value as? AppHostState.Ready)?.features?.reader?.foreground(false)
+        }
+    }
+    fun activityMemory(identity: String, level: Int, configurationChange: Boolean = false) = synchronized(lock) {
+        if (!closing && activityIdentity == identity) {
+            val trim = readerTrimForAndroid(level, configurationChange)
+            val reader = (state.value as? AppHostState.Ready)?.features?.reader
+            val sequence = reader?.state?.value?.entry?.intent?.sequence
+            if (trim == com.abdev.partituraspdf.core.foundation.ReaderTrim.BACKGROUND) { foreground = false; activityVisible = false }
+            if (trim != null && sequence != null) reader.trim(sequence, trim)
+        }
+    }
+    fun resumeReader(expectedRevision: Long) = synchronized(lock) {
+        if (!closing && foreground && navigation.value.revision == expectedRevision && navigation.value.destination == AppDestination.READER)
+            (state.value as? AppHostState.Ready)?.features?.reader?.foreground(true)
     }
 
     fun reader(action: ReaderAction, sequence: Long, expectedRevision: Long) = synchronized(lock) {

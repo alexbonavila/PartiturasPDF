@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import com.abdev.partituraspdf.reader.ReaderScreen
+import com.abdev.partituraspdf.reader.ReaderPhase
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -101,8 +102,20 @@ internal fun AppHost(owner: AppHostViewModel) {
                                 val entry = reading.entry
                                 if (reading.leaving || entry == null) AppStartupLoading()
                                 else {
-                                    val pdf by entry.controller.state.collectAsStateWithLifecycle()
-                                    ReaderScreen(pdf, { owner.reader(it, entry.intent.sequence, revision) }, { owner.back(revision) })
+                                    // Keep the mounted screen and local zoom while temporary suspension removes its frame.
+                                    // This delivery must outlive STOPPED, independently of ordinary lifecycle collectors.
+                                    val pdf by entry.controller.state.collectAsState()
+                                    Column {
+                                        if (reading.suspended) {
+                                            reading.report.failures.forEach { failure -> Text(stringResource(if (failure.stage == ReaderCleanupStage.CHECKPOINT)
+                                                R.string.reader_checkpoint_failure else R.string.library_action_error)) }
+                                            if (reading.recoveryBlocked) Text(stringResource(R.string.library_action_error))
+                                            else TextButton(onClick = { owner.resumeReader(revision) }) { Text(stringResource(R.string.reader_retry)) }
+                                        }
+                                        ReaderScreen(if (reading.suspended) pdf.copy(frame = null, phase = ReaderPhase.QUIESCED,
+                                            requestedPage = reading.suspendedPage) else pdf,
+                                            { owner.reader(it, entry.intent.sequence, revision) }, { owner.back(revision) })
+                                    }
                                 }
                             }
                         }

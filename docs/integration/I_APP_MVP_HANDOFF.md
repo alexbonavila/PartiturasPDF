@@ -1923,3 +1923,47 @@ status correction requires a separately approved task and was not made here.
 merge-readiness, physical/device/backup/performance or full security certification follows.
 Owner must approve packaging scope and publication separately, obtain latest-revision mandatory
 CI/API26/API27/API36/manual evidence and decide formal acceptance. No next phase is started.
+
+
+## Offline language delivery correction — 2026-10-20
+
+The owner separately approved disabling **only** Android App Bundle language splitting after I12.
+Starting branch `feat/app-mvp-integration-i`, clean baseline
+`f11ca0c6e3324ea6db00b792333fe7217152026b`; no advanced commits or synchronization required.
+The baseline branch is published, but this correction remains local-only; no push/PR/merge.
+
+`app/build.gradle.kts` now has `android { bundle { language { enableSplit = false } } }`.
+No APK split setting, ABI/density configuration, SDK/version/identity, dependency/signing,
+R8/resource optimization, worker/AIDL/isolation, fixture wiring or quality policy is changed.
+Locale Kotlin/resources are untouched: primary es/ca/en, unsupported→Spanish, no manual selector.
+Exact validated Gradle blob: `8fc68429518a66b131217466bf05f05762123965`; final correction SHA is
+`git log -1 --format=%H -- app/build.gradle.kts` (also recorded in the delivery response).
+
+[Acceptance correction addendum](../acceptance/I_APP_MVP_ACCEPTANCE.md#owner-approved-offline-language-delivery-correction--2026-10-20)
+records full authorization, baseline red regression, commands, artifact sizes/hashes, metadata and
+per-initial-language results. Both actual release/debug bundles show LANGUAGE negate=true, with
+all other parsed BundleConfig fields unchanged. All8 API26/x86_64/mdpi en/ca/es/fr selected sets
+retain default/es/ca/en in base; no extra language APK exists/needs downloading. Debug checks155
+main strings, optimized release154; obsolete banner already shrunk in baseline release, no source
+resource removal. Same base hash across locales. ABI APK inventories remain identical; debug
+retains mdpi, release has no density-specific APK before or after optimization. No universal-APK
+shortcut is used as language-split evidence. Bundled dependency locales are also co-located.
+
+Fresh PASS: bundleRelease/bundleDebug, debug/release APKs (R8), instrumentation APK compilation,
+620 JVM tests0 failures/errors/skips,289 Python, localization155 main/20 debug IDs per bundle,
+15 canonical fixtures, production APK/AAB0 PDFs and test APK15 exact hashes, isolated nonexported
+worker manifest. Lint0 errors/**25 warnings**: AppBundleLocaleChanges disappears without suppression;
+all other25, including obsolete unused banner, remain. No production Kotlin/test/translation or
+infrastructure code changes. Existing business coverage gates remain intact, not Android-certified.
+
+Only4 paths change: Gradle plus the three Phase I acceptance/handoff/PR-description documents.
+Historical I12 evidence above is retained; its pending approval/proposal and26-warning count are
+superseded by this explicit approved correction. README/status/roadmap snapshots are not edited
+outside the authorized documentation scope. Prepared PR material reflects the correction.
+
+**Real offline switching remains NOT RUN.** Doctor BLOCKED (no KVM, dedicated AVD unprovisioned),
+devices empty; no emulator/physical data/grants/settings changed. No API26/27/36, physical8.1,
+real SAF/Surface/native/process-death/manual acceptance or new hosted CI PASS. Use the acceptance
+addendum's English-install→offline Catalan→Spanish→English/French device procedure on a verified
+owner-authorized disposable target only. I09/Phase I remains pending formal acceptance; no next
+phase, automatic publication or merge follows from artifact PASS.

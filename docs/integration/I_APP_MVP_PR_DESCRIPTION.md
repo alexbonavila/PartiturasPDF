@@ -2,8 +2,9 @@
 
 Proposed title: **feat(app): integrate Library Reader and Settings MVP (Phase I)**
 
-Target: `main`; source: `feat/app-mvp-integration-i`. **NOT PUBLISHED.** No PR exists for this
-local delivery. The owner must authorize publication/PR creation separately. No auto-merge.
+Target: `main`; source: `feat/app-mvp-integration-i`. The audited baseline branch was published at
+`f11ca0c6e3324ea6db00b792333fe7217152026b`. **The language correction is local-only and NOT PUSHED.**
+No PR was created; correction publication/PR creation require separate authorization. No auto-merge.
 
 ## Problem and resulting application behavior
 
@@ -37,8 +38,10 @@ registered logical identity and actual committed positions, never transient gran
   Lint/AAB investigation, manual scripts and truthful status updates. Documentation-only closeout;
   no further functionality or protected-component corrections.
 
-No public API, F/G/H internals, shared persistence/schema, worker/AIDL/isolation, dependencies,
-minimum SDK, Gradle, CI, quality threshold, policy or immutable fixture change. MainActivity and
+The sole approved Gradle change is `android.bundle.language.enableSplit=false`, retaining all
+supported translations in every base APK. No public API, F/G/H internals, shared persistence/schema,
+worker/AIDL/isolation, dependencies, minimum SDK, other packaging/signing/optimization setting, CI,
+quality threshold, policy or immutable fixture change. MainActivity and
 app host/navigation/locale packages are the integration owners. The sole shared infrastructure
 change is the previously separately owner-approved localization inventory count147→155; all parity,
 format/negative/control assertions remain. Foundation launcher test now asserts Library rather
@@ -67,7 +70,7 @@ Recheck before eventual publication/merge; do not silently rebase/merge if it ch
 | Localization |PASS155 main+20 debug IDs in each default/es/ca/en; primary policy JVM PASS |
 | Immutable fixture verifier |15 PASS, original bytes/manifest unchanged |
 | Production packaging |0 PDFs in debug/release APKs and inspected debug AAB;15 exact canonical hashes in test APK;421 source IDs in test DEX; opt-in SAF class absent |
-| Lint |0 errors,26 warnings, all classified; no suppression |
+| Lint |0 errors,25 warnings after the approved language correction; AppBundleLocaleChanges resolved without suppression |
 | Each JVM logic source |>=90% LINE/80% BRANCH; aggregate600/603 lines99.50%,689/786 branches87.66% |
 | Android/API26/27/36/native/surface/real grants/process kill |NOT RUN; no connected device/KVM, dedicated AVD UNPROVISIONED |
 | Hosted seven jobs and compatibility |NOT RUN; API access BLOCKED proxy403, no final-revision run/artifact |
@@ -79,12 +82,31 @@ misses are disclosed, not excluded as proven coverage. API counts are inventory,
 
 ## Lint, AAB and remaining blockers
 
-24 warnings are historical; unused obsolete `app_integration_boundary` and AppBundleLocaleChanges
-are Phase I findings. Initial en/API26 bundletool device selection actually omits ca; base Spanish
-fallback remains. Other language splits exist in the bundle but are not all selected initially.
-Actual language-change redelivery/offline switching is NOT RUN. **Separate owner approval is needed
-before a Gradle language-split correction** (minimal proposal: disable language splitting) or a
-runtime delivery solution. Universal APK resource completeness does not waive AAB acceptance.
+The owner approved `android.bundle.language.enableSplit=false` after I12. Fresh release/debug
+AAB metadata explicitly negates LANGUAGE splitting; removing that one entry leaves the complete
+parsed baseline BundleConfig unchanged. All8 API26 initial en/ca/es/fr selections retain all
+supported es/default,es,ca,en copy in the base, requiring no extra language APK. ABI/density
+inventories remain unchanged (debug mdpi retained; optimized release had no density split in either
+build). This includes bundled dependency locales; no resource pruning or Kotlin locale change.
+
+The old baseline base-resource regression fails; the same check passes all corrected bases for
+155 main strings/debug and154/release (unused banner already shrunk in baseline). Production APKs/
+AABs contain0 PDFs; test APK retains15 exact canonical hashes. Fresh builds,620 JVM,289 Python,
+localization and fixtures PASS. Lint is now0 errors/25 warnings; only AppBundleLocaleChanges disappears.
+The obsolete banner and all other warnings remain unchanged, not suppressed or deleted.
+
+Exact artifact/size/hash/reproduction and owner authorization evidence is in the
+[acceptance correction addendum](../acceptance/I_APP_MVP_ACCEPTANCE.md#owner-approved-offline-language-delivery-correction--2026-10-20).
+Corrected release AAB3,438,057 bytes (observed+4 versus fresh baseline); debug14,984,186 (−4).
+Base APK payload grows by including all bundled translations; AAB-byte deltas are not device
+install/download/performance claims. Exact final correction SHA:
+`git log -1 --format=%H -- app/build.gradle.kts`; validated Gradle blob `8fc68429518a66b131217466bf05f05762123965`.
+
+**Real-device offline switching remains NOT RUN**, as do final API26/27/36, physical Android8.1
+and hosted checks. No KVM/authorized connected device. English-install→offline Catalan→Spanish→
+English and unsupported-language Spanish fallback must be observed on a verified disposable target;
+artifact selection is not execution. Packaging approval is resolved, runtime I09/Phase I acceptance
+is not. Correction publication needs separate owner authorization; no PR or merge occurred.
 
 Mandatory current-head/current-base `build`, `lint`, `unit-tests`, `instrumented-api26`, `localization`,
 `pdf-fixtures`, `quality-gate`, independent API27/36, real SAF→F→G surface/checkpoint/worker recovery,
@@ -104,7 +126,7 @@ versus specification's25%/center-toggle proposal is a retained owner UX decision
 No performance, comprehensive security, Play delivery or physical tablet acceptance is claimed.
 
 Recommendation: **Ready for owner publication/review, acceptance pending.** Not merge-ready or
-formally accepted. Keep future PR draft while mandatory evidence/packaging decisions remain open.
+formally accepted. Keep future PR draft while mandatory runtime/manual/CI evidence remains open.
 Only the human owner decides publication, acceptance and merge. Do not begin another phase.
 
 ## Phase I commits before I12 closeout
@@ -131,6 +153,7 @@ commit was rewritten. Exact complete changed-file inventory against main (includ
 
 ```text
 README.md
+app/build.gradle.kts
 app/src/androidTest/java/com/abdev/partituraspdf/FoundationInstrumentedTest.kt
 app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppHostActivityTest.kt
 app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppLocaleIntegrationTest.kt
@@ -174,3 +197,12 @@ docs/integration/I_APP_MVP_HANDOFF.md
 docs/integration/I_APP_MVP_PR_DESCRIPTION.md
 scripts/tests/test_complete_localization.py
 ```
+
+
+## Local packaging correction after I12
+
+The owner-approved correction commit contains only app/build.gradle.kts and the three Phase I
+acceptance/handoff/PR-description files. Source locale policy/translation/Kotlin and repository
+infrastructure/tests stay unchanged. Historical I12 findings remain in the acceptance record;
+this updated description presents current packaging and unresolved runtime acceptance accurately.
+No next phase, push, PR, merge or policy/threshold change is authorized/performed by this correction.

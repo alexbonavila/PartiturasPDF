@@ -3,6 +3,12 @@
 Recorded **2026-10-20, Europe/Madrid**. I12 final audit; implementation delivered,
 **formal Phase I acceptance pending**. This document grants no waiver, publication or merge.
 
+> **Current packaging update (2026-10-20):** the owner-approved language-only Gradle correction
+> and generated debug/release delivery checks now PASS; Lint is25 warnings. Real offline switching
+> and formal acceptance remain pending. See the correction addendum at the end; preceding I12
+> results/proposals describe their original baseline, not the corrected packaging.
+
+
 ## Revision, environment and audit scope
 
 - Branch: `feat/app-mvp-integration-i`; I12 starting/tested source revision:
@@ -276,7 +282,7 @@ light/dark, keyboard focus and independent Spanish/Catalan/English linguistic re
 bitmap content is not structured accessible notation; no OCR/music-text promise. Physical/tablet
 performance/memory and external-provider matrices remain separately scheduled, not measured here.
 
-## Localization and actual AAB investigation
+## Historical I12 localization and AAB investigation
 
 Source audit:155 main strings (3 starter+72F+48G+24H+8app),20 debug SAF strings in each default/es/ca/en;
 no plurals/arrays currently, no staging, complete type/format/default-es parity. No new hardcoded UI
@@ -488,3 +494,233 @@ The final documentation commit adds this record, the local PR material and READM
 handoff updates; Git history and the delivery response identify its full SHA. All previous dated
 evidence is preserved. No logs, APKs, PDFs, generated execution/coverage files or local SDK paths are
 introduced as repository configuration.
+
+
+## Owner-approved offline language delivery correction — 2026-10-20
+
+**Current result:** Gradle correction IMPLEMENTED; generated debug/release artifact verification
+PASS; real-device offline switching **NOT RUN**. I09/Phase I is **not formally accepted**.
+This update supersedes only I12's pending packaging-approval/proposal and AppBundleLocaleChanges
+finding. All dated I12 measurements above remain historical evidence for their original revision.
+
+### Authorization, exact revision and scope
+
+The owner explicitly approved including Spanish, Catalan and English in every installation,
+independently of the initial device language and without subsequent Play language downloads.
+Work started clean on `feat/app-mvp-integration-i` at
+`f11ca0c6e3324ea6db00b792333fe7217152026b`, exactly the expected audit baseline; no newer commits.
+That baseline branch was already published. **This correction is local only: no push, PR or merge.**
+No reset/rebase/cherry-pick/history rewrite or worktree change.
+
+Only `app/build.gradle.kts` and the three authorized Phase I acceptance/handoff/PR-description
+files change. Production Kotlin, translations, resource IDs/formats/accessibility, DeviceLocalePolicy,
+AppLocaleContext, legacy setting behavior and manual-selector prohibition remain unchanged.
+The final correction revision is the commit containing this update:
+`git log -1 --format=%H -- app/build.gradle.kts`; the delivery response records its full SHA.
+The exact validated Gradle Git blob is `8fc68429518a66b131217466bf05f05762123965`; verify it with
+`git rev-parse HEAD:app/build.gradle.kts`. This identifies the tested executable configuration
+without attempting to embed a commit's own content-addressed SHA inside that same commit.
+
+The only executable diff, within the existing `android` block, is:
+
+```kotlin
+bundle {
+    language {
+        enableSplit = false
+    }
+}
+```
+
+This controls Android App Bundle language delivery, not `android.splits`/universal APK configuration.
+Bundled supported translations stay in each base APK so the existing automatic device-locale policy
+can use them offline. The option also co-locates bundled dependency translations; no resource-pruning
+or language-selector change is made. SDK26/37/37, identity, version, dependencies, signing, ABI/density
+optimizations, release R8/resource optimization, worker/AIDL, schemas, coverage/CI/policy and test-only
+PDF asset wiring remain unchanged. No new plugin, dependency or permanent infrastructure is necessary.
+
+### Generated artifacts, regression and actual delivery selection
+
+Existing cached official bundletool **1.18.3** uses the existing AGP runtime classpath via an external
+JavaExec init script; aapt2 is the installed SDK build-tools37.0.0 tool. Linux x86_64/JDK25/Gradle9.8.0/
+AGP9.4.1, minSdk26. No additional tool install or new signing configuration. Generated APK sets use
+only the existing local debug keystore for inspection, not production signing/distribution acceptance.
+
+A fresh baseline `bundleRelease bundleDebug` was built **before the source change** and copied to
+`/tmp/offline-language-evidence/before-{release,debug}.aab`. The external actual-resource regression
+failed on the old release base: `app_back` missing es/ca/en configurations. The same checker passes
+on every corrected selected base. This is a demonstrated failing-before/passing-after artifact
+regression, not a Kotlin string-matching test or fabricated Android execution.
+
+Generated current bundles:
+
+- `app/build/outputs/bundle/release/app-release.aab`
+- `app/build/outputs/bundle/debug/app-debug.aab`
+
+Actual `dump config` for **both** bundles reports:
+
+```json
+{"optimizations":{"splitsConfig":{"splitDimension":[{"value":"LANGUAGE","negate":true}]}}}
+```
+
+This excerpt is not the entire BundleConfig. After removing only the LANGUAGE entry, the complete
+parsed JSON equals the freshly built baseline configuration. No ABI/density/other optimization was
+disabled. Actual whole-set ABI/density APK inventories also match before/after for each build type.
+
+Each `extract-apks` uses a synthetic device spec: sdkVersion26, supportedAbis[x86_64], density160,
+one initial supportedLocales value. All4 initial languages were tested against **both** build types:
+
+| Initial language | Release selected APKs | Debug selected APKs | es/default + es + ca + en in base | Extra language APK needed |
+|---|---|---|---|---|
+| English en | base-master,base-x86_64 | base-master,base-mdpi,base-x86_64 | PASS both | No |
+| Catalan ca | same release set | same debug set | PASS both | No |
+| Spanish es | same release set | same debug set | PASS both | No |
+| French fr (unsupported) | same release set | same debug set | PASS both | No |
+
+The selected base hash is identical across all4 initial locales within each variant. No en/ca/es/fr
+language split exists/needs delivery. aapt2 checks **every retained main string**, not only one label:
+155 strings/configuration in debug;154 in optimized release, each with default/es/ca/en. Release's
+only absent source key is the obsolete unused `app_integration_boundary`, already resource-shrunk
+in the baseline; source/translations are untouched. Required app/Library/Reader/Settings controls
+are present; default equals es. Actual `app_settings`: default/es “Ajustes”, ca “Configuració”,
+en “Settings”. French initial configuration still has all supported copy available; the unchanged
+primary-locale policy selects Spanish, whose actual runtime application remains unexecuted here.
+
+Release has no density-specific APK in **either** baseline or corrected output after existing release
+resource optimization; requiring a nonexistent baseline density split would be an invalid check.
+Debug retains its actual mdpi split, and both variants retain ABI splits. The initial external
+assertion was refined to compare actual before/after dimension inventories rather than forcing a
+debug-only filename onto release. Repository tests/assertions were not changed or weakened.
+
+### Observed sizes and artifact identity
+
+These are exact local AAB ZIP byte sizes under the same installed tools/source baseline plus the
+one configuration change. Archive deltas are not estimates of installed size, Play download size,
+performance or memory. Shipping all bundled translations increases the base APK payload even
+though those resources were already inside the original AAB.
+
+| Variant | Baseline AAB bytes | Corrected AAB bytes | Observed delta | Corrected AAB SHA-256 |
+|---|---:|---:|---:|---|
+| release | 3,438,053 | 3,438,057 | +4 bytes | `426b520ffe6bd9cf3a015d23d54f91cc3b0714ae1dc62ddf8d4156dbc7c04c54` |
+| debug | 14,984,190 | 14,984,186 | -4 bytes | `c8f2bba65dc69443bcc3d109a1389c9451a4a9bdcc3248476f53c1658542adff` |
+
+For the API26 base-master APK, release changes1,644,728→1,792,184 bytes (+147,456);
+debug14,779,608→15,307,992 (+528,384). These are debug-key-signed generated base APK file sizes,
+not an all-device download or install-size claim. Retained density/ABI splits still vary by device.
+Comparing uncompressed AAB entry contents, release changes only `BundleConfig.pb`; debug changes
+that entry and its existing `META-INF` signing digests/signature. Every other entry is identical
+to the fresh baseline. No signing configuration/key, code, native library or resource payload changed.
+
+### Exact commands and local results
+
+From the repository, activate the existing JDK25/SDK37/declared fixture dependencies as needed.
+The task used `source /workspace/partituras-tools/activate.sh` in this cloud. Fresh final validation:
+
+```bash
+bash ./gradlew :app:bundleRelease :app:bundleDebug :app:assembleDebug :app:assembleRelease \
+ :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest --rerun \
+ --max-workers=4 --console=plain
+python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest \
+ --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/validate_localization.py
+python3 test-fixtures/scripts/verify_fixtures.py
+python3 scripts/local_e2e.py doctor
+adb devices -l
+git diff --check
+```
+
+| Check | Actual result / evidence |
+|---|---|
+| Release/debug AAB and APK, release R8, Android-test APK | PASS; `/tmp/offline-language-evidence/validation-gradle.log` |
+| Existing JVM JUnit/contract gate + original XML validator | **620 PASS**,0 failures/errors/skips; no tests removed/changed |
+| Python infrastructure incl. localization negative/control tests | **289 PASS**, `/tmp/offline-language-evidence/python.log` |
+| Localization/format parity | PASS155 main+20 debug IDs per locale, Spanish default/es equality; resources unchanged |
+| Canonical verifier | **15 PASS**, exact original hashes/structure/rendering, expected corrupt failure preserved |
+| PDF artifact inspection | PASS0 PDFs in both production APKs and both AABs; test APK contains15 exact canonical hashes |
+| Native isolation static artifact check | PASS merged debug/release service exported=false, isolatedProcess=true, process=:pdf; not native execution |
+| Lint | **0 errors,25 warnings**; AppBundleLocaleChanges disappears, no replacement packaging warning or suppression |
+| Android instrumentation / real offline switching | **NOT RUN**; APK compilation/selection is not device execution |
+
+The other25 warning dispositions remain as in I12: UnusedResources8 (including the untouched obsolete
+banner), PluralsCandidate6, UseKtx4, GradleDependency3, NewerVersionAvailable3, RedundantLabel1.
+No warning severity, policy or unrelated resource was changed. There is no new business logic;
+coverage thresholds/reports are not altered or recertified as Android coverage. Existing host,
+startup/navigation, root/registration/favorite, Reader cleanup/checkpoint/restoration and settings/
+locale-policy JVM regressions all execute; their Android/native/Window behavior is still NOT RUN.
+
+For exact Bundletool reproduction, save this external helper as
+`/tmp/offline-language-bundle.init.gradle` (outside the checkout):
+
+```groovy
+gradle.beforeProject { p ->
+ if (p.path == ':app') p.afterEvaluate {
+  p.tasks.register('offlineLanguageBundletool', JavaExec) {
+   classpath = p.rootProject.buildscript.configurations.classpath
+   mainClass = 'com.android.tools.build.bundletool.BundleToolMain'
+   workingDir = p.rootProject.projectDir
+   args = (p.findProperty('languageBundleArgs') ?: 'version').split(' ').toList()
+  }
+ }
+}
+```
+
+After the normal bundle builds, execute these **actual task/argument forms** (use fresh output paths;
+substitute the installed aapt2 path, never disable verification or overwrite owner evidence):
+
+```bash
+bash ./gradlew -I /tmp/offline-language-bundle.init.gradle :app:offlineLanguageBundletool \
+ '-PlanguageBundleArgs=dump config --bundle=app/build/outputs/bundle/release/app-release.aab' \
+ --offline --no-configuration-cache --max-workers=4 --console=plain
+bash ./gradlew -I /tmp/offline-language-bundle.init.gradle :app:offlineLanguageBundletool \
+ '-PlanguageBundleArgs=build-apks --bundle=app/build/outputs/bundle/release/app-release.aab --output=/tmp/offline-language-evidence/after-release.apks --aapt2=/workspace/partituras-tools/android-sdk/build-tools/37.0.0/aapt2' \
+ --offline --no-configuration-cache --max-workers=4 --console=plain
+# /tmp/offline-language-evidence/device-en.json:
+# {"supportedAbis":["x86_64"],"supportedLocales":["en"],"screenDensity":160,"sdkVersion":26}
+bash ./gradlew -I /tmp/offline-language-bundle.init.gradle :app:offlineLanguageBundletool \
+ '-PlanguageBundleArgs=extract-apks --apks=/tmp/offline-language-evidence/after-release.apks --device-spec=/tmp/offline-language-evidence/device-en.json --output-dir=/tmp/offline-language-evidence/release-en' \
+ --offline --no-configuration-cache --max-workers=4 --console=plain
+aapt2 dump resources /tmp/offline-language-evidence/release-en/base-master.apk
+```
+
+The actual run used absolute bundle/output paths for the same files and existing aapt2 path above.
+Repeat config/build for debug and extraction for ca/es/fr with distinct directories; no installs.
+Parsed config comparison requires exactly LANGUAGE negate=true as the only metadata delta.
+The resource assertion groups each aapt2 `string/<name>` by configuration and requires default,
+es,ca,en for every retained main key, equal default/es and representative translated controls.
+It fails on the old base and passes on the new bases. Whole APK-set dimension inventories must
+match the baseline after removing only language APKs; selected base hashes must agree across locales.
+No Kotlin code, repository test/runner or permanent coverage infrastructure is changed for this audit.
+
+Raw local evidence (ephemeral/not committed): `/tmp/offline-language-evidence/` contains baseline
+AABs/size hashes, before-config/APK-set logs, `{release,debug}-config.log`, `{release,debug}-apks.log`,
+8 extraction logs/directories, `artifact-summary.json`, fixture/Python/build logs and `doctor.json`.
+External commands/checker are `/tmp/offline_language_artifacts.py` and
+`/tmp/verify_offline_language_base.py`. Reproduce from the assertions/commands above if `/tmp` is lost;
+no generated APKs, keystore, logs, fixture copies or SDK configuration enter Git.
+
+### Real offline switching and remaining acceptance
+
+Doctor still returns **BLOCKED**: hardware acceleration unavailable (KVM vmx/svm), dedicated AVD
+UNPROVISIONED; `adb devices -l` is empty. No emulator was created/adopted/started and no unknown or
+physical device, grant, data or setting was touched. Consequently API26/27/36 instrumentation,
+real SAF/native presentation/cleanup/process-death and physical Android8.1 remain **NOT RUN**.
+No hosted CI was triggered or inspected for the new local-only correction; final-revision mandatory
+checks remain NOT RUN. No prior CI result is attributed to this changed Gradle configuration.
+
+On a separately verified owner-authorized disposable Android runtime, build/select/install the
+appropriate generated APK set (not a universal APK shortcut), record API/ABI/full correction SHA,
+set initial **English**, then disconnect Internet. Switch system language to **Catalan**, **Spanish**,
+then **English**, reopening/recreating the app as Android requires. Verify Library, actual Reader,
+Settings, app navigation/accessibility labels and preserved owners/reading state after every switch.
+Also select unsupported **French** and require Spanish, including with secondary English present.
+Use known test-owned SAF content; never clear/uninstall/reset user data or adopt an unknown device.
+Record installed split inventory (no language splits), screenshots, connectivity state, model/API,
+APK revision/hashes, expected/observed labels and PASS/FAIL per step. Repeat on authorized26/27/36;
+physical Android8.1 and manual linguistic/accessibility requirements remain separate. No PASS until
+actual execution, no manual selector/global locale mutation, no backup/destructive acceptance here.
+
+**Acceptance impact:** the previously pending owner packaging decision is now approved and
+implemented; its generated AAB/base-delivery checks PASS. Real offline language switching,
+I-T13/I09 runtime acceptance, all other unresolved Android/manual/physical requirements and hosted
+CI remain open. Phase I is not formally accepted or merge-ready. The correction needs separate
+feature-branch publication authorization; nothing is pushed or merged and no next phase starts.

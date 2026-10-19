@@ -1,7 +1,8 @@
 # Phase G: controlled Pdfium process-state experiments
 
-Status: PREPARED, NOT EXECUTED in Codex (no device/KVM). This is test-only tooling,
-not an acceptance waiver, production repair, or instruction to change CI.
+Current status (2026-10-19): owner-authorized mandatory CI separation is described
+below. The earlier preparation/investigation notes are historical. Controlled
+Android execution in Codex remains NOT RUN (no device/KVM).
 
 `ReaderPdfiumProcessStateTest` uses real canonical bytes and direct PdfRenderer or
 production AndroidPdfReadEngine. Every valid attempt reads page count and renders
@@ -56,7 +57,9 @@ A real JUnit failure stays FAIL, including with a nonzero adb exit if full trust
 execution evidence exists. Incomplete evidence is BLOCKED. No test failure is
 accepted as compatibility PASS. A full-suite run does not replace these checks.
 
-The runner is manual-only: neither Android tests nor CI execute this Python file.
+The default mode remains manual/raw-result reporting. The separately authorized
+`--ci` mode is now mandatory in the API 26/27/36 workflow; Android never launches
+the host Python runner.
 Its host safety/evidence regressions can run without adb or an emulator:
 
 ```powershell
@@ -366,3 +369,209 @@ could reuse its existing owned API 26/27 emulator, SDK, runner and APK deploymen
 6. Review findings before authorizing any shared-adapter/process implementation.
 
 This proposal introduces no workflow inputs, filters, skips, or CI policy changes.
+
+
+## Mandatory controlled CI execution — 2026-10-19 correction
+
+Owner authorization: final correction after workflow #75 / run
+https://github.com/alexbonavila/PartiturasPDF/actions/runs/39213174987,
+revision `741c750f65358bd6161b0a5a666d798e8ee70d5b`.
+The owner reports all 24 production-isolation tests passing on API 26/27/36;
+that is hosted owner evidence, not new Codex execution. The reported full-suite
+counts were 347 each: 334 passed / 13 failed on API 26 and 27, and 346 passed /
+1 failed on API 36. The obsolete real-factory engine assertion is corrected.
+
+The approved change is execution orchestration, not a policy/threshold/required-job
+change. `quality-gate`, `scripts/quality_gate.py`, existing JUnit result verification,
+required APIs, production code and coverage denominators remain unchanged. No
+standalone policy PR is needed for this scoped orchestration correction: no testing
+policy/gate is modified. A substantive worker coverage collector remains separate.
+
+### Complete assignment of the original 347 methods
+
+| Category | Assigned methods | Execution |
+|---|---:|---|
+| Standard application acceptance | 333 | One filtered Gradle invocation; exact JUnit inventory required. Includes ALL 24 isolated-engine tests, corrected real factory test, six G native/Compose route tests and unrelated/storage/persistence tests. |
+| Clean native differential acceptance | 1 | `ReaderNativeIntegrationTest#a0_sameCanonicalBytesOpenDirectThroughEngineAndSaf`, individually in a verified fresh process; A/B/C assertions unchanged. |
+| Original low-level negative acceptance | 2 | `AndroidPdfFixturesInstrumentedTest#y_deliberatelyCorruptedFixtureIsRejectedAndDoesNotLeakDescriptor` and `#z_encryptedFixtureRequiresPasswordAndDoesNotLeakDescriptor`, each individually fresh; rejection/cleanup assertions unchanged. |
+| Original platform experiments A–K | 11 unique | Existing 26-invocation plan: a/k clean baselines, eight negative sequences, each followed by direct d and adapter k recovery. |
+
+Total: **347 unique methods**, zero removed/disabled. There are 29 separately
+launched diagnostic/clean invocations (3 + 26); the extra 15 are deliberate repeated
+recovery executions, not additional unique tests. Standard + all controlled
+invocations would yield 362 executed JUnit cases. None is an executed count for
+the new correction until actual Android results are available.
+
+Audit of other direct native uses:
+
+- `AndroidPdfFixturesInstrumentedTest` a/b/c/d/e/f/g/h use valid corpus inputs or
+  caller-invalid page/session/render requests, not invalid PDF bytes. Remain standard.
+  Only y/z parse negative PDFs; these two therefore also need independent processes.
+- `SafPdfIntegrationTest` uses valid canonical PDFs with real resolver/direct engine.
+  Copy limits, broken pipes and cancellation fail before native parsing. Its real
+  application-factory test now requires `IsolatedPdfReadEngine`. No assertion removed.
+- `AppSafLifecycleIntegrationTest` and `AppPersistenceIntegrationTest` use valid
+  native inputs. Access/grant failures occur before parsing. Remain standard.
+- `ReaderNativeIntegrationTest` uses the isolated production adapter except a0's
+  intentional direct/file/SAF comparison. Its protected/corrupt G route test remains
+  standard because native work is isolated. No checkpoint/bitmap assertions change.
+- `ReaderPdfiumProcessStateTest` is entirely direct low-level experimental code;
+  all 11 methods are mandatory controlled diagnostics, never production acceptance.
+
+### Filter and identity proof
+
+`FreshPdfiumProcess` is a runtime METHOD annotation in the test APK, with no ignore
+or SDK-suppression behavior. The existing AndroidJUnitRunner **1.5.2** supports
+`notAnnotation`; its actual cached `TestRequestBuilder$AnnotationExclusionFilter`
+bytecode was inspected: it rejects the annotated method's JUnit Description (and
+also checks class annotations). The annotations compile as runtime-visible metadata.
+This confirms the runner's filter implementation, not device execution in Codex.
+
+Only the 14 explicitly assigned methods carry the annotation. The source assignment
+validator rejects mismatched annotations, unknown/unparsed methods, missing tests
+or omission of any of the 24 production-isolation tests. After execution, the exact
+333 expected classname/method IDs must appear once in fresh, successful standard
+JUnit XML; failures, errors, skips, duplicates, stale XML and extra/missing IDs fail.
+If the filter does not behave as expected on a device, CI fails the inventory check.
+
+`FreshPdfiumIdentity` records API/PID/process start/selected method/run token before
+setup. The existing controlled runner still verifies installed APK digests, merged
+manifest component, explicit emulator identity, prior PID absence after stopping
+only the two project packages, new start time within device uptime bounds, no
+reused identities, and stable image/AVD. Every invocation selects exactly one method.
+The differential test retains independent descriptors and identical verified bytes.
+
+### Strict classification, without converting failing JUnit into PASS
+
+CI mode is explicit:
+
+```bash
+python3 app/src/androidTest/java/com/abdev/partituraspdf/reader/run_pdfium_process_experiments.py \
+  --serial "$ANDROID_SERIAL" --confirm "$ANDROID_SERIAL" --expected-api 26 --ci \
+  --standard-results app/build/outputs/androidTest-results/connected \
+  --standard-started-ms "$STANDARD_STARTED_MS"
+```
+
+The ordinary manual command without `--ci` still exits FAIL for any raw failing
+experiment. CI mode adds all 3 clean/negative low-level invocations and validates
+the whole plan. `DIAGNOSTICS_VALIDATED` means the experiment's evidence requirements
+were satisfied, not that a failing native reopen passed.
+
+`KNOWN_PLATFORM_DEFECT_REPRODUCED` is permitted only on API 26/27 with:
+
+1. Complete selected-test start/completion, exact API/token/PID/start, correct
+   original SHA-256/size/descriptor bytes and cleanup for EVERY native operation.
+2. Successful independent clean baselines for direct PdfRenderer and low-level engine.
+3. Successful initial valid render, actual expected rejection of each negative input,
+   and a complete final valid-open failure in that same process.
+4. Exact native-open exception/typed-error whitelist, no leaked descriptor/cleanup
+   failure, and the original JUnit AssertionError for the final valid reopen.
+5. Successful direct AND adapter recovery in verified different fresh processes.
+
+Crashes, timeouts, error status, unrelated assertions, missing attempts, wrong data,
+wrong API/process, successful negative input, absent recovery or skips fail CI.
+The same native failure on API 36 is an unexpected regression and fails.
+A successful reopen is recorded as `NATIVE_REOPEN_SUCCEEDED` on any required API.
+
+All raw statuses remain PASS/FAIL/BLOCKED. Each complete controlled result retains
+`instrumentation.txt`, derived `junit.xml` (a real failure stays `<failure>` or
+`<error>`), `run.json` with API/revision/process evidence, and `logcat.txt`.
+`summary.json` retains raw counts and separate classifications. XML is derived
+from actual runner status; it is not an originally emitted AGP report. Original
+standard AGP XML/HTML remains untouched. No known failure is fed to the ordinary
+standard acceptance verifier as a fabricated success.
+
+### Workflow and owner reproduction
+
+The existing API 26 job and enabled API 27/36 jobs call
+`bash scripts/run_pdfium_ci.sh <expected-api>` inside their existing owned emulator.
+A single GitHub-owned emulator may be selected noninteractively; local use requires
+explicit `ANDROID_SERIAL`. Serial format, qemu and API checks occur BEFORE Gradle
+can deploy test APKs. No new AVD, unrelated package stop, clear or uninstall occurs.
+
+The wrapper runs standard acceptance with `notAnnotation`, THEN controlled tests,
+even if standard acceptance failed, and propagates either failure. API 26 runs the
+existing persistence coverage verification only after successful executions. The
+normal AGP XML and coverage directory are not overwritten by the ADB diagnostics.
+Both API jobs always upload `build/reader-pdfium-controlled/`, `build/pdfium-ci/`
+and their existing reports. Missing controlled execution or standard inventory
+prevents job success; the existing quality gate still requires all mandatory jobs.
+
+For an already selected, owner-confirmed disposable macOS emulator:
+
+```bash
+# Build/deploy only to the deliberately selected disposable emulator.
+export ANDROID_SERIAL=emulator-5554
+bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+# run_pdfium_ci.sh performs qemu/API validation before its Gradle deployment.
+bash scripts/run_pdfium_ci.sh 26
+# Repeat independently with genuine API 27 and API 36 emulators/expected API.
+```
+
+Do not use a physical/user device. The wrapper does not install dependencies or
+change device settings; the existing Gradle instrumentation task deploys app/test
+APKs. Keep the worktree clean/committed so revision/hash claims remain valid.
+On native Windows use Git Bash with the Android SDK tools on PATH, or run the
+existing Python CLI with explicit confirmation after the filtered Gradle invocation.
+This correction does not claim a new native Windows/macOS execution.
+
+Hosted dispatch, when permitted:
+
+```bash
+gh workflow run ci.yml --repo alexbonavila/PartiturasPDF \
+  --ref fix/pdfium-process-isolation -f compatibility=true
+```
+
+### Coverage infrastructure boundary
+
+No production renderer, Gradle setting or threshold changes. Existing persistence
+coverage consumes the successful standard AGP XML/EC data with the same provenance,
+class identities and thresholds. Controlled raw failure XML lives outside that input.
+
+AndroidJUnitRunner 1.5.2's actual `InstrumentationCoverageReporter` bytecode loads
+`com.vladium.emma.rt.RT` from the current instrumentation process classloader and
+invokes its coverage dump. No worker Binder dump/secondary-process merge is present
+in the production service or these test tools. Therefore the existing main-process
+coverage collection does **not establish isolated-worker probe coverage**. Worker
+processes have distinct runtimes and self-terminate; their probes cannot be assumed
+to appear in the main dump. This is a genuine cross-process coverage collection gap,
+requiring separately reviewed infrastructure, not exclusion of service code.
+
+No current combined adapter/persistence percentages can be certified without the
+new hosted EC/XML artifacts. The source/threshold denominator is untouched. The
+previous JVM-only pure-logic numbers are historical and are not substituted for
+missing Android coverage. Full PDF-adapter/isolated-worker coverage acceptance
+remains blocked pending real collection and reporting.
+
+### Local correction validation
+
+Codex Linux, 2026-10-19; existing JDK 25 / Android SDK 37 toolchain, no dependency
+changes. Executed:
+
+```bash
+bash ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug :app:testDebugUnitTest --max-workers=4 --console=plain
+python -m unittest discover -s scripts/tests -v
+python -m unittest discover -s app/src/androidTest/java/com/abdev/partituraspdf/reader -p test_pdfium_process_runner.py -v
+python scripts/validate_localization.py
+python test-fixtures/scripts/verify_fixtures.py
+bash -n scripts/run_pdfium_ci.sh
+git diff --check
+```
+
+PASS: builds, instrumentation APK compilation, 379 JVM tests (zero failures/errors/
+skips), Lint (zero errors, 21 existing warnings), 276 Python infrastructure tests
+(including 20 new validator/shell tests), 12 existing controlled-runner host tests,
+localization and all 15 canonical host fixture checks. Mocked end-to-end host tests
+cover all 29 invocations, raw failure XML retention, missing standard results,
+transport crashes and shell failure propagation. They are not device evidence.
+
+Inspection confirms all 347 original methods remain, the runtime annotation exists
+on all 11 process-state methods, production APKs contain zero PDFs and the test APK
+contains 15. Compiled Policy B rules remain valid. Production/source schemas,
+Gradle settings, policy files and the exact quality-gate YAML block are unchanged.
+
+NOT RUN for this corrected revision: actual API 26/27/36, native diagnostic outcomes,
+complete adapter/isolated-worker coverage and persistence coverage. `adb devices`
+is empty and acceleration check exits 3 (no vmx/svm KVM). No AVD or software
+emulator was created. GitHub API access returns `Forbidden`; the final publication
+report supplies the exact SHA and dispatch result. No hosted PASS is inferred.

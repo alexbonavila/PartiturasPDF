@@ -19,6 +19,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import com.abdev.partituraspdf.pdf.android.FreshPdfiumProcess
+import com.abdev.partituraspdf.pdf.android.FreshPdfiumIdentity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.abdev.partituraspdf.MainActivity
@@ -56,6 +58,7 @@ import org.junit.runners.MethodSorters
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 @RunWith(AndroidJUnit4::class)
 class ReaderNativeIntegrationTest {
+    @get:Rule val freshPdfiumIdentity = FreshPdfiumIdentity()
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val composition = ReaderTestComposition(compose)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
@@ -334,6 +337,7 @@ class ReaderNativeIntegrationTest {
         } catch (failure: Throwable) { bitmap.recycle(); throw failure }
     }
 
+    @FreshPdfiumProcess
     @Test fun a0_sameCanonicalBytesOpenDirectThroughEngineAndSaf() {
         runBlocking(Dispatchers.IO) {
             val row=fixtures().single{it.getString("id")=="01"}

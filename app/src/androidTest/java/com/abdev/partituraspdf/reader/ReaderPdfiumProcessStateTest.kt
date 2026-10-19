@@ -7,6 +7,8 @@ import android.os.Process
 import android.os.Bundle
 import android.system.Os
 import android.util.Log
+import com.abdev.partituraspdf.pdf.android.FreshPdfiumProcess
+import com.abdev.partituraspdf.pdf.android.FreshPdfiumIdentity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.abdev.partituraspdf.core.result.AppError
@@ -38,6 +40,7 @@ import org.junit.runners.MethodSorters
 @RunWith(AndroidJUnit4::class)
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class ReaderPdfiumProcessStateTest {
+    @get:Rule val freshPdfiumIdentity = FreshPdfiumIdentity()
     @get:Rule val testName = TestName()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private lateinit var directory: File
@@ -83,7 +86,7 @@ class ReaderPdfiumProcessStateTest {
             put("invocation", InstrumentationRegistry.getArguments().getString("readerProcessRun", "unspecified-full-suite"))
             put("class", this@ReaderPdfiumProcessStateTest.javaClass.name); put("test", testName.methodName); put("sequence", sequence); put("fixture", id)
             put("engine", if (adapter) "AndroidPdfReadEngine" else "PdfRenderer")
-            put("size", copy.length()); put("sha256Verified", true); put("descriptorValid", raw.valid())
+            put("sha256", hash(copy.readBytes())); put("size", copy.length()); put("sha256Verified", true); put("descriptorValid", raw.valid())
             put("constructed", false); put("pageCountRead", false); put("rendered", false)
             put("typedOutcome", "not applicable to direct PdfRenderer")
         }
@@ -208,16 +211,27 @@ class ReaderPdfiumProcessStateTest {
         }
         valid(adapter) // Deliberately fails if a negative input poisons subsequent valid opens.
     }
+    @FreshPdfiumProcess
     @Test fun a_cleanDirectRepeatedValidOpens() { runBlocking(Dispatchers.IO) { valid(false); valid(false); valid(false, "02") } }
+    @FreshPdfiumProcess
     @Test fun b_corruptThenValidDirect() { runBlocking(Dispatchers.IO) { sequence(false, "15") } }
+    @FreshPdfiumProcess
     @Test fun c_encryptedThenValidDirect() { runBlocking(Dispatchers.IO) { sequence(false, "14") } }
+    @FreshPdfiumProcess
     @Test fun d_freshProcessRecoveryDirect() { runBlocking(Dispatchers.IO) { valid(false); valid(false, "02") } }
+    @FreshPdfiumProcess
     @Test fun e_corruptThenValidAdapter() { runBlocking(Dispatchers.IO) { sequence(true, "15") } }
+    @FreshPdfiumProcess
     @Test fun f_encryptedThenValidAdapter() { runBlocking(Dispatchers.IO) { sequence(true, "14") } }
+    @FreshPdfiumProcess
     @Test fun g_corruptEncryptedThenValidDirect() { runBlocking(Dispatchers.IO) { sequence(false, "15", "14") } }
+    @FreshPdfiumProcess
     @Test fun h_corruptEncryptedThenValidAdapter() { runBlocking(Dispatchers.IO) { sequence(true, "15", "14") } }
+    @FreshPdfiumProcess
     @Test fun i_encryptedCorruptThenValidDirect() { runBlocking(Dispatchers.IO) { sequence(false, "14", "15") } }
+    @FreshPdfiumProcess
     @Test fun j_encryptedCorruptThenValidAdapter() { runBlocking(Dispatchers.IO) { sequence(true, "14", "15") } }
+    @FreshPdfiumProcess
     @Test fun k_cleanAdapterRepeatedValidOpens() { runBlocking(Dispatchers.IO) { valid(true); valid(true); valid(true, "02") } }
 
 }

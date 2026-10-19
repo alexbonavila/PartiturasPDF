@@ -356,3 +356,34 @@ until accessible hosted evidence exists:
 `instrumented-api26`, `compatibility-api27`, `compatibility-api36`, `quality-gate`.
 Local passes above do not stand in for these hosted jobs. Preserve actual JUnit XML,
 logcat, current revision and process identity in the acceptance report.
+
+
+## Later hosted evidence and CI correction (2026-10-19)
+
+The owner subsequently supplied workflow #75 / run
+https://github.com/alexbonavila/PartiturasPDF/actions/runs/39213174987 for `741c750`:
+all **24 production isolation tests PASS on API 26, 27 and 36**. Full inventory:
+347 per API, with 334/347 passing on API 26 and 27 and 346/347 on API 36.
+These are owner-verified hosted results, not a new Codex emulator execution.
+The remaining failures are the obsolete graph-engine assertion and shared-process
+native diagnostics/differential comparison. The production implementation is
+preserved byte-for-byte by the correction.
+
+The separately authorized execution correction, accounting and strict validator
+are documented in
+[PDFIUM_PROCESS_EXPERIMENTS.md](../../app/src/androidTest/java/com/abdev/partituraspdf/reader/PDFIUM_PROCESS_EXPERIMENTS.md#mandatory-controlled-ci-execution--2026-10-19-correction).
+All original 347 tests remain assigned: 333 standard (including all 24 production
+isolation tests), three independent clean/negative low-level tests and 11 platform
+experiments using 26 controlled invocations. A raw known native failure remains
+failed JUnit; validation requires clean baselines and independent recovery.
+
+No production source, rendering contract, dependencies, Gradle configuration,
+threshold or quality-gate logic is modified. The existing runner's process-local
+coverage dump still does not establish coverage of a self-terminating isolated
+worker. Cross-process probe collection is a separate infrastructure blocker for
+full adapter coverage, not a reason to remove worker classes from the denominator.
+No new coverage percentages, memory/latency or physical-device acceptance are claimed.
+
+For the corrected revision, local validation is recorded in the delivery report;
+API 26/27/36 and hosted job results remain pending until that exact SHA executes.
+GitHub API dispatch/read access in Codex continues to return `Forbidden`.

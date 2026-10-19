@@ -1478,3 +1478,359 @@ gradle.beforeProject { p ->
  } }
 }
 ```
+
+## I11 — Cross-feature recovery inventory (2026-10-20)
+
+Starting revision: `3883f34b5ab34af81eb699f6d0e4b5c9e97fe984` on
+`feat/app-mvp-integration-i`. This matrix was written before I11 production edits and finalized after validation. It records
+existing ownership first. All linked JVM suites pass in the final local run; new corrections are
+identified below. Android/native/real-permission execution remains NOT RUN throughout.
+
+Evidence aliases refer to existing `app/src/test/java/com/abdev/partituraspdf/` classes:
+RP=`app/host/RootPickerCoordinatorTest`; RL=`app/host/ReaderLifecycleIntegrationTest`;
+RH=`app/host/ReaderHostLifetimeTest`; HI=`app/host/ReaderHostIntegrationTest`;
+AR=`app/host/AppRestorationIntegrationTest`; PR=`app/host/AppPresentationIntegrationTest`;
+F=`library/LibraryControllerTest`, `LibraryDocumentLifecycleTest`, `LibraryRegistrationTest`,
+`LibraryFavoritesTest`; G=`reader/ReaderRecoveryTest`, `ReaderLifecycleTest`,
+`ReaderPresentationTest`; H=`settings/SettingsControllerTest` and existing Settings tests.
+New regressions reuse these same fixtures/controllers, avoiding a second
+recovery specification/manager. Android/native/real-grant evidence remains NOT RUN until actual
+execution; JVM contract doubles cannot establish Android authorization or worker behavior.
+
+| ID / trigger and failure type | Authoritative owner | Observable state / permitted recovery | Cleanup and stale protection | Evidence / final local status |
+| --- | --- | --- | --- | --- |
+| R01 Root grant revoked after success | SelectedRootRepository + F | Typed revoked; explicit ChooseRoot/Retry; preserve metadata | Restore rechecks READ; no root/registry erasure | AR.rootFailurePreservesRecoveryAndNeverStartsRegisteredRead; F; existing |
+| R02 Picker canceled | Android result + RP/F | Success(null) means explicit selection cancellation only; keep prior root | No grant/store/select; pending token cleared once | RP.cancellationIgnoresUriFlagsAndPreservesPreviousNavigationWithoutPersistence; existing |
+| R03 Grant/root write followed by navigator failure | RP | Explicit reconciliation overlay; re-read root, never promise rollback | Block old trail commands; no duplicate root save | RP.partialRootUpdateReportsFailureWithoutRollbackAndRequiresAuthoritativeReconciliation; existing |
+| R04 Provider unavailable during listing | Catalog + F | Typed provider failure, contextual retry | Listing generations; preserve registration/favorites | F.listingFailureHasNarrowRetryAndKeepsRoot; already covered, JVM PASS |
+| R05 Provider I/O versus confirmed deletion | SAF + F/G | Distinct localized failure; no destructive recovery | Never record deletion from transient failure | AR.revokedAndUnavailableAccessRemainTypedWithoutRegistryMutations; already covered; HI.crossFeatureOpenErrorMatrixPreservesExactCategoriesAndRegistrationWithoutImplicitRetry adds typed matrix, JVM PASS |
+| R06 Late/duplicate picker result | RP | Ignore obsolete id; finish current request once | Pending/launched/completing identity | RP.oldCallbackCannotAuthorizeANewerRequest/concurrentDuplicateCallbackDuringAcceptanceCannotRepeatPersistence; existing |
+| R07 Revoked access with favorite/checkpoint | Registry/positions + SAF | Keep stored state; explicitly reauthorize/open | No registry/metadata writes in failure path | Existing Android AppSafLifecycleIntegrationTest; NOT RUN; JVM AR existing |
+| R08 Stale subfolder operation | F + FolderNavigation | Stale typed operation; refresh authoritative trail | Navigator version + listing generation | F.externallyChangedNavigatorRejectsCurrentLookingRowBeforeOpening; existing |
+| R09 Registered open loses READ | ReaderRouteOwner + G | Existing typed Reader failure; retry access or Back | Resolve registry before read; release unused input | AR.revokedAndUnavailableAccessRemainTypedWithoutRegistryMutations; existing |
+| R10 Provider fails during open | SAF + ReaderRouteOwner/G | Existing provider failure, not deletion | Descriptor ownership and cancellation handoff | HI.crossFeatureOpenErrorMatrixPreservesExactCategoriesAndRegistrationWithoutImplicitRetry + existing AR; JVM PASS; Android SAF tests NOT RUN |
+| R11 Native open failure | G/route | Existing localized failure and Back | Quiesce/retire/route close before Library | RH.nativeOpenFailureIsVisibleInExistingGStateAfterHostAcknowledgment; existing |
+| R12 Render/resource/unsupported failure | G | Eligible render/open retry or Back, never busy loop | One native operation; no invalid frame publication | G.recoveryMatrixKeepsTypedStagesAndNeverPromisesToRepairUnsupportedInput; JVM PASS; new native-host recovery compiled only |
+| R13 Worker/session loss | Isolated engine + G | Native/stale error, never inferred revoked/deleted | G current-session validation and existing retry | RL.foreignRetainedSessionIsRejectedByGInsteadOfReusedOnResume; existing; real worker NOT RUN |
+| R14 Back during delayed native open | G + ReaderHostLifetime | Leaving immediately; return after cleanup | Await noncooperative work, discard late result | RH.pendingNonCooperativeOpenFinishesBeforeReaderRouteCanClose; existing |
+| R15 Back during frame detach | G frame + host | Unmount first; await explicit detach | No forced recycling/timeout success | RH.renderedIsNotPresentedAndBackWaitsForExplicitGraphicalDetachWithoutRecyclingEarly; existing |
+| R16 Repeated Back | Host/lifetime | Same exit completion | One lazy Deferred; no competing lifetime | Existing HI/RL/RH; retain |
+| R17 Close fails and route still owns a session | Host/lifetime | Explicit blocked Reader admission; Library remains usable | Retire G; inspect current owner, never reset uncertainty blindly | RL.retainedSessionAfterFailedCloseBlocksAllNewReaderAdmissionAfterSafeBack + HI.uncertainRetainedRouteReturnsToLibraryWithoutAllowingAnotherReaderButSettingsStillWorks; corrected, JVM PASS |
+| R18 Background failure | Host/lifetime | Inspectable typed/original diagnostics; no fake save | Close ordering; blocked automatic reuse | RL.closeFailureBlocksAutomaticReuseAndBackRetainsExactFailureEvidence; existing + RL.finalCloseFailureCannotForgetAStillRetainedRouteSession; corrected, JVM PASS |
+| R19 Resume after retirement | Host + G | Ignore obsolete recovery | Terminal/leaving/intent generation | RL.backDuringBackgroundWinsOverQueuedResumeAndDoesNotDoubleClose; existing |
+| R20 Reopen after safe exit | Host + G | New route/controller/intent, preserved Library | Old scope joined before admission | HI.realFRegisteredRequestEntersRetainedReaderAndBackRefreshPermitsFreshReopen; existing |
+| R21 Scheduled checkpoint | Route/checkpoint | Unconfirmed schedule, not durable save | Only actual presented capability can schedule | AR.pendingPresentationIsUnconfirmedAndReconstructionReadsEarlierCommittedPage; existing |
+| R22 Failed flush | Route + host | Visible stage/error; continue safe cleanup | Quiesce, flush, retire, close; no fallback page | HI.typedCheckpointFailureRemainsVisibleOnLibraryAndInTerminalShutdownEvidence; existing |
+| R23 Earlier committed position after failure | Position repository | Restore actual stored result; no rollback promise | Writer epoch/sequence unchanged | AR.failedFlushNeverInventsNewCommittedPageAndNewOwnerReadsActualStorage/newerWriterRejectsLateOldCheckpointAfterReconstruction; existing |
+| R24 Invalid saved navigation | AppRestoration + host | Safe Library; no synthetic Reader | Bounded/versioned ID validation | AppRestorationTest; existing |
+| R25 Revoked root during restore | SelectedRootRepository + host | Library's typed recovery; no auto picker/open | Root/preferences barrier | AR.rootFailurePreservesRecoveryAndNeverStartsRegisteredRead; existing |
+| R26 Transient process reconstruction | Host/codec | Library; explicit fresh access required | No persisted transient URI/page | AR.transientSnapshotDowngradesToLibraryWithoutWritingPositions; existing |
+| R27 Back cancels restoration | Host | Keep newer Library state | One-shot restore + revision/cancel | AR.backDuringRootRestorePreventsLateSavedRoutePublication; existing |
+| R28 Newer route supersedes restore | Host | Current user's route wins | Cancel pending restore before actions | AR.newerUserOpeningReplacesCanceledSavedReaderIdentityAndSnapshot; existing |
+| R29 Failed theme write | H + host presentation | Actual Ready theme remains; explicit H retry | No desired-value substitution | PR.failedThemeWriteCannotBecomeAnObservedSuccess; existing |
+| R30 Uncertain fit write | H + host/lifetime | Reconcile observation; defer confirmed fit during suspension | One writer; pending latest fit behind cleanup | PR.pendingFitWriteWaitsForReadyAndReconciliationDoesNotInventFit; existing |
+| R31 Repeated Ready vs local fit | H + host | Local fit retained until genuinely changed default | Distinct preference observation; confirmed-fit cache | PR.localReaderFitRemainsLocalAndRepeatedReadyDoesNotInvalidateItsFrame; existing |
+| R32 Late fit while retiring | Host/lifetime | No dispatch to old controller; next lifetime reads current default | Leaving/terminal checks | PR.fitUpdateDuringLeavingCannotEnterOldControllerAndNextOpenUsesLatestSnapshot; existing |
+| R33 Recovery observer ownership | H + host | Explicit retry joins old observation, no duplicate DataStore collector | Existing H generation/child ownership | PR.themeUpdatesAndRecreationNeverOpenAnotherPdfOrSettingsObserver; existing |
+| R34 Background versus Back | Host/lifetime | One cleanup, no queued resume after exit | Join lifecycle job before terminal exit | RL.backDuringBackgroundWinsOverQueuedResumeAndDoesNotDoubleClose; existing |
+| R35 Stronger pending trim | Host/lifetime + memory policy | CRITICAL dominates weaker work | One drain; no downgrade/repeated close | RL.lowThenCriticalWhileRenderIsNonCooperativeCannotDowngradeCleanup; existing |
+| R36 Host disposal | Host | Closing then accurate Closed; no publication | Retire Reader, stop F/H, join users, close graph | HI.terminalGraphCloseWaitsForOngoingReaderBackAndFlushAndRejectsNewCommands; existing |
+| R37 Stale Activity callback | Host | Ignore old identity, retain replacement | Activity UUID + Reader sequence | HI.configurationStopAndObsoleteActivityCallbacksDoNotCloseOrReopenReader; existing |
+| R38 Uncertain root store / duplicate persistence | RP + selected-root repository | Reconcile authoritative stored root before acting, never replay write | One accept; private-storage failure can have committed | RP.uncertainPrivateRootWriteRequiresReadReconciliationRatherThanBlindPersistenceReplay; corrected, JVM PASS; duplicates already covered |
+| R39 Provider cancellation during reconciliation | RP + owner | Original cancellation, not typed error/success | Notify owner only if current; close waits provider child | RP.unexpectedReconciliationReadCancellationNotifiesOwnerWithOriginalCause / unexpectedReconciliationSelectCancellationIsNotSuccessfulRecovery / disposedReconciliationCannotSelectFromALateRestoredRoot; corrected, JVM PASS |
+| R40 Programming defect + secondary cleanup | Host/lifetime | Original cause plus all secondary diagnostics | No conversion to provider/deletion success | RH.typedCleanupFailureAndOriginalExceptionBothRemainInspectable; existing + RL.earlierTypedLifecycleFailuresRemainAttachedWhenFinalOwnershipInspectionThrows; corrected, JVM PASS |
+
+Additional cross-cutting regressions now pass: RP.lateFailedNavigatorResultCannotPublishRecoveryAfterPickerClosure;
+RL.finalCloseOwnershipInspectionIsAwaitedOnceBeforeAnyReplacementCanBeAdmitted;
+HI.graphDisposalWaitsForFinalFailedCloseOwnershipInspectionWithoutReopening. The before-edit
+inventory retained I08–I10 Lint27 (including unused boundary ID and AppBundleLocaleChanges).
+Final I11 Lint26 is explained below; those two named warnings and AAB delivery/switching NOT RUN
+remain explicit Prompt9 items. No Gradle packaging change is authorized or made.
+
+
+### I11 final implementation and verified local evidence
+
+Implementation revision: `d3dd07171268ad5d9bd02919cbee4bb247dc5286`. The following documentation-only commit is the delivery
+tip (`git log -1 --format=%H -- docs/integration/I_APP_MVP_HANDOFF.md`). Branch remains
+`feat/app-mvp-integration-i`; no reset/rebase, push, PR, merge, Actions dispatch or Prompt9 work.
+Author/committer: alexbonavila <alexbonavila44@gmail.com>. Matrix R01–R40 above identifies owners,
+failures, recovery, cleanup/staleness, evidence and already-covered versus corrected behavior.
+All referenced JVM suites pass; every Android/native/manual row remains NOT RUN.
+
+**Exact changed files, all modified, no additions/deletions:**
+
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppHost.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/ReaderHostLifetime.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/RootPickerCoordinator.kt`
+- `app/src/main/res/values/app.xml`
+- `app/src/main/res/values-es/app.xml`
+- `app/src/main/res/values-ca/app.xml`
+- `app/src/main/res/values-en/app.xml`
+- `app/src/test/java/com/abdev/partituraspdf/app/host/RootPickerCoordinatorTest.kt`
+- `app/src/test/java/com/abdev/partituraspdf/app/host/ReaderLifecycleIntegrationTest.kt`
+- `app/src/test/java/com/abdev/partituraspdf/app/host/ReaderHostIntegrationTest.kt`
+- `app/src/androidTest/java/com/abdev/partituraspdf/app/integration/ReaderHostNativeIntegrationTest.kt`
+- `app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppLocaleIntegrationTest.kt`
+- `docs/integration/I_APP_MVP_HANDOFF.md`
+
+### Confirmed gaps corrected, without a new recovery framework
+
+1. **Uncertain selected-root persistence:** acceptResult's PRIVATE_STORAGE_UNAVAILABLE can follow
+   a committed root write. The picker now enters its existing explicit recovery state. It does
+   not claim rollback or keep accepting old-trail commands as if persistence were unchanged.
+   User reconciliation re-reads SelectedRootRepository.restore/READ authority and selects the
+   same navigator; it never repeats root persistence. Invalid URI/missing flags/denied access
+   remain distinct non-write failures, and explicit cancellation still preserves the old root.
+2. **Late picker publication/selection:** after suspended navigator selection, closed owners
+   cannot change recovery state or complete F's operation. After suspended reconciliation read,
+   closure is checked before any new navigator select. Already-started noncooperative writes/
+   selections can finish in their old owner; no rollback is invented, and graph teardown joins
+   users. Their results do not publish into a replacement host or authorize another operation.
+3. **Unexpected reconciliation cancellation:** the same original CancellationException now
+   reaches the existing interruption/owner-disposal path used by picker acceptance. No callback
+   is delivered to an already closed owner. It is never recast as permission denial or success;
+   ordinary typed failures remain contextual explicit retries, and programming defects propagate.
+4. **Failed-close uncertainty lost on Back:** final exit previously cleared recoveryBlocked and
+   a later accept reset the close guard. Final exit now retires G and joins its scope, then uses
+   route.current only when a typed close failure requires ownership reconciliation. A still-owned
+   session blocks arm/accept/registered restore; Library and Settings remain usable with a localized
+   explanation. No repeated close, fake success, native reuse or automatic competing open occurs.
+   If current() is empty, a fresh lifetime is allowed while the failed close acknowledgment remains
+   reported. In production ReaderRouteOwner a typed close failure can be a checkpoint failure after
+   its native-finally release; this inspection permits that safe discard without freezing the app.
+   Null current is an absence of a borrowable route owner, not an independent claim of OS worker
+   death. Existing engine identity/death rules remain authoritative. Inspection exceptions/cancellation
+   remain original causes and block reuse. Mandatory inspection is awaited by Back/disposal; no
+   arbitrary timeout, forced recycle, main-thread blocking wait or automatic restart is introduced.
+5. **Secondary typed evidence:** merging a prior lifecycle report with a later exception could
+   leave typed failures only in ReaderHostState, while terminal callers received only the cause.
+   The complete typed report is now attached to the original cause unless that same diagnostic
+   set is already attached. Original/secondary exceptions and typed stages remain inspectable;
+   there is no false flush/durability acknowledgment or error-category conversion.
+
+The previously unused app_reader_unavailable key is repurposed, with complete matching es/ca/en
+text, for the explicit blocked-cleanup state. Its Library message is a polite live region and
+contains no stack traces/locators/private identifiers. No resource IDs/format contracts are added
+or removed;155 main resources remain. Existing generic/feature retry UI is reused elsewhere.
+
+Existing F/G/H behavior supplies listing/registration/favorite retries, native/render recovery,
+checkpoint sequencing, settings observation and uncertain-write reconciliation. I11 does not
+reimplement them. A registered identity never proves current permission. Revocation is detected
+at the next authoritative access boundary; an already acquired descriptor/copied native lease
+may remain valid under Android ownership semantics. No fabricated revocation stream or unsafe
+forced destruction of such a lease is introduced. Future opens/resume revalidation use existing
+contracts. Access/provider failure never triggers registry deletion, favorite mutation or a
+fallback write to legacy Room position metadata.
+
+### Regression evidence and Android boundary
+
+Sixteen new JVM methods: six picker, six lifetime and four F/host/G integration cases. They use
+existing fixtures, real F/H/G state machines and deterministic coroutine gates. The new typed-open
+matrix preserves every Access category and representative validation/unsupported/resource/conflict
+values without implicit retry or registration/favorite writes. New disposal tests hold the failed-
+close ownership read pending and prove graph closure cannot overtake it. Existing I01–I10, F/G/H,
+SAF, checkpoint, writer epoch, restoration and presentation regressions remain enabled.
+
+Before production fixes, the targeted command below executed58 methods with10 failures. Those
+failures demonstrate the host gaps; the final full suite is green. Two new cases already passed
+because the safe-discard/closed-owner behavior they protect was partly present. A first Android
+compile also exposed an incorrect new test resource name, corrected to the existing
+reader_error_permission; no resource or validation was weakened to compile.
+
+```bash
+bash ./gradlew :app:testDebugUnitTest --tests '*RootPickerCoordinatorTest' \
+  --tests '*ReaderLifecycleIntegrationTest' --max-workers=4 --console=plain
+```
+
+Four new Android methods compile as public JUnit4 void methods:
+
+- `ReaderHostNativeIntegrationTest.realWorkerLossUsesExistingReaderRetryWithoutDeletingRegistrationFavoriteOrCommittedPage`:
+  retires only the test engine's worker through its existing Binder protocol after exact PID,
+  start-time and epoch checks, awaits Binder death, asserts STALE_SESSION, uses G retry, verifies
+  a fresh native session and preserved real Room favorite/identity/committed position. It never
+  kills an arbitrary PID or changes worker/AIDL code. This is prepared **real native execution**,
+  but has NOT RUN here.
+- `injectedProviderUnavailableIsContextualAndRetryRevalidatesBeforeRealNativeOpen`: explicit contract
+  injection, existing localized retry, then real isolated engine if executed. Not a real SAF outage.
+- `injectedCheckpointFailurePreservesRealEarlierPositionAndSafeReopenAfterEmptyRouteVerification`:
+  injected write failure over real position storage/Room/native presentation. Real earlier page0
+  remains authoritative; later actually presented page1 is not claimed durable. Back verifies
+  the empty route, a fresh Reader restores page0, and only the two exact asserted expected
+  ReaderExitException diagnostics are removed from the test's unexpected-failure ledger. Existing
+  teardown assertions remain intact. This does not simulate physical disk failure.
+- `AppLocaleIntegrationTest.contextualRecoveryMessagesStayTranslatedAndDistinctWithoutExposingTechnicalPaths`:
+  actual es/ca/en resource contexts distinguish denied/revoked/provider/I/O/deletion/password and
+  blocked-cleanup messages; this is not an executed UI/permission acceptance claim.
+
+All existing Android tests still compile, including test-provider reads, real persisted-grant
+queries, native isolation, graphical detach, background/recreation, settings and synthetic Bundle
+reconstruction. Genuine DocumentsUI authorization, acquired-grant revocation, provider outage,
+worker/surface execution and system process death remain NOT RUN; synthetic results/injected
+contracts and compilation are never described as their PASS evidence.
+
+### Exact local validation, coverage and limitations
+
+After `source /workspace/partituras-tools/activate.sh` for SDK/JDK tools:
+
+```bash
+bash ./gradlew -I /tmp/i11-coverage.init.gradle \
+  :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug \
+  :app:testDebugUnitTest --rerun :app:i11Verify :app:i11ReaderCoverage :app:i11AllCoverage \
+  --no-configuration-cache --max-workers=4 --console=plain
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/validate_localization.py
+python3 test-fixtures/scripts/verify_fixtures.py
+python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest \
+  --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect
+adb devices
+git diff --check
+```
+
+| Evidence | Actual final local result |
+| --- | --- |
+| Debug and Android-test APK build | PASS; new/old instrumentation compiled, not executed |
+| JVM JUnit | **620 executed, 0 failures/errors/skips** (I08–I10 604 +16) |
+| Python / localization negative-control infrastructure | **289 PASS** |
+| Localization | PASS:155 main IDs, Spanish default/es match, complete ca/en/format parity |
+| Immutable canonical corpus | **15 PASS**, hash/structure/render verification unchanged |
+| APK ZIP PDF inventory | Debug0; instrumentation15 canonical fixtures |
+| Android source inventory | 407 standard +14 assigned diagnostics =421; source counts, not executions |
+| Lint | **0 errors,26 warnings**, classification below |
+| Android API26/27/36, native/worker/graphics/real grants/process kill | **NOT RUN**; adb devices empty, no emulator created/adopted/modified |
+| Hosted CI | **NOT RUN**; owner-reported outage, no investigation/repair/dispatch/workflow changes |
+
+Existing JaCoCo0.8.14 reads actual JVM execution and debug classes with nested/coroutine/data
+classes included, no hard recovery path removed. Separate affected scope prevents unrelated
+navigation/presentation coverage masking the new recovery logic:
+
+| Source / scope | LINE | BRANCH |
+| --- | --- | --- |
+| ReaderHostLifetime.kt | **189/189 (100%)** | **190/214 (88.79%)** |
+| RootPickerCoordinator.kt | **85/85 (100%)** | **80/86 (93.02%)** |
+| Both affected recovery sources | **274/274 (100%)** | **270/300 (90%)** |
+| Broader testable host/navigation scope |600/603 (99.50%) |689/786 (87.66%) |
+| Unfiltered host/navigation/locale/MainActivity including Android/Compose |601/862 (69.72%) |689/962 (71.62%) |
+
+Each affected source individually and the affected group exceed90% LINE/80% BRANCH. The broad
+report is supporting regression evidence only. AppHost/resource/Android Context/Window/worker/
+surface behavior is excluded from JVM business certification because it requires Android; the
+unfiltered row exposes those misses rather than hiding them. No combined Android/native coverage
+or final phase acceptance is claimed. Logs `/tmp/i11-before.log`, `/tmp/i11-final-validation.log`,
+`/tmp/i11-python.log`, `/tmp/i11-fixtures.log` and XML/HTML reports are ephemeral and not committed.
+
+I08–I10 reported27 Lint warnings. I11 now uses app_reader_unavailable for real recovery, resolving
+that old unused-ID warning through authorized functionality, not suppression/deletion. The
+**unused obsolete app_integration_boundary** and **AppBundleLocaleChanges** warnings introduced
+in I08–I10 both remain. The universal APK contains complete translations; AAB language splitting,
+installation/delivery and runtime system-language switching are NOT certified. No packaging,
+Play Core/dependency, gate or policy change is authorized or made here. Prompt9 must keep both
+warnings and AAB delivery as explicit acceptance items. Existing deprecation/compiler warnings
+are not suppressed; no unrelated protected test code is changed to clean them up.
+
+### Prompt9 prioritized acceptance checklist — preparation only
+
+This is an explicit handoff, not implementation of Prompt9, a waiver or a merge recommendation.
+
+1. **P0 / integration gaps:** review R01–R40 against actual I01–I11 behavior, especially retained
+   close-owner blocking versus verified empty-owner safe discard and root-write uncertainty.
+   No known uncorrected host defect is demonstrated by local tests; runtime evidence is incomplete.
+2. **P0 / API26:** execute the complete latest-revision standard instrumentation and assigned native
+   diagnostics under existing policy; inspect real JUnit inventory/counts/failures/skips, not APK build.
+3. **P0 / API27:** obtain independent latest-revision compatibility execution and artifacts.
+4. **P0 / API36:** obtain independent latest-revision compatibility execution and artifacts.
+5. **Required physical acceptance:** owner-authorized physical Android8.1 tablet only; no personal
+   data wipe/adoption. Record model/build/revision, screenshots and real outcomes.
+6. **P0 / real SAF:** authentic picker READ grants, cancellation/replacement, nested access,
+   persisted-grant revalidation and actual revocation/provider outages; preserve favorites/identity.
+7. **P0 / native/graphics:** real canonical rendering, actual consumer release, owned worker death/
+   retry and resource/session cleanup. Do not substitute injected AppErrors or mock grants.
+8. **P0 / lifecycle:** background/resume/Back, real and clearly simulated memory trims, repeated
+   Activity recreation during pending work, stale callback rejection and window clearing.
+9. **P0 / process death:** eligible system snapshot -> real kill/relaunch in a disposable authorized
+   environment; distinguish Bundle simulation, force-stop, task removal and unsaved termination.
+10. **P0 / effects/locales:** actual observed theme/fit, uncertain writes, local fit distinction,
+    system night/language changes, unsupported primary fallback, keyboard/TalkBack/large-font/insets.
+11. **Release-format decision:** AAB language splits/delivery and language switching need owner-
+    approved packaging scope if applicable. Current assignment does not alter Gradle packaging.
+12. **Lint disposition:** review both retained I08–I10 warnings explicitly; no blanket suppression.
+13. **Corpus/packaging:** reverify all15 hashes/structures and final production APK/AAB/split assets;
+    fixture PDFs must remain test-only, and inspected language delivery must match artifact type.
+14. **Scoped coverage:** reconcile actual JVM plus authorized Android measurements for affected
+    sources; no project average may hide recovery gaps, no fabricated worker coverage.
+15. **Docs/CI gates:** reconcile historical versus final evidence, execute all mandatory latest-head
+    checks when available and retain actual logs/URLs/counts; do not repair platform outage in I11.
+16. **Owner review / PR:** prepare final inventory, unresolved decisions and requested PR only with
+    owner authorization. No push/PR/merge occurred here. Human owner decides phase acceptance.
+
+Confirmed corrected defects are the five host gaps above and their10 failing-before regressions.
+No protected-source exception was required; F/G/H, public contracts, persistence/schema, SAF/PDF/
+worker/AIDL, Gradle/dependencies, CI/test policy and immutable fixtures remain unchanged. Remaining
+limitations are environmental/unexecuted Android or manual/release-format evidence, not fabricated
+PASS or independently demonstrated new production failures. Proposed protected changes: none in
+I11; any later AAB configuration or worker/storage correction needs separate approval and evidence.
+No backup/reinstall/restore, D2D, profiling or performance benchmark was executed. Stop after I11.
+
+### Reproducing I11 scoped coverage
+
+Save this tested external script as `/tmp/i11-coverage.init.gradle`. i11ReaderCoverage selects
+both affected recovery sources (`reader.xml`); report.xml is broader logic and all.xml includes
+Android/Compose misses. Run the final command above. No repository build or CI file is changed.
+
+```groovy
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+gradle.beforeProject { p ->
+ if (p.path == ':app') p.plugins.withId('com.android.application') { p.afterEvaluate {
+  def classes=p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+   include 'com/abdev/partituraspdf/app/host/AppHostViewModel*'
+   include 'com/abdev/partituraspdf/app/host/AppHostState*'
+   include 'com/abdev/partituraspdf/app/host/AppPresentationState*'
+   include 'com/abdev/partituraspdf/app/host/AppHostFeatures*'
+   include 'com/abdev/partituraspdf/app/host/AppHostSession*'
+   include 'com/abdev/partituraspdf/app/host/RootPickerCoordinator*'
+   include 'com/abdev/partituraspdf/app/host/Reader*'
+   include 'com/abdev/partituraspdf/app/host/AndroidReaderLifecycle*'
+   include 'com/abdev/partituraspdf/app/navigation/**'
+  }
+  def data=p.layout.buildDirectory.file('jacoco/testDebugUnitTest.exec')
+  def report=p.tasks.register('i11Coverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports { xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i11-coverage/report.xml'))
+    html.outputLocation.set(new File('/tmp/i11-coverage/html')) }
+   doFirst { if(classes.files.empty || !data.get().asFile.isFile()) throw new GradleException('Missing real host classes/JVM execution') }
+  }
+  p.tasks.register('i11ReaderCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/Reader*'
+    include 'com/abdev/partituraspdf/app/host/RootPickerCoordinator*'
+
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i11-coverage/reader.xml'))
+    html.outputLocation.set(new File('/tmp/i11-coverage/reader-html'))}
+  }
+  p.tasks.register('i11AllCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/**', 'com/abdev/partituraspdf/app/navigation/**', 'com/abdev/partituraspdf/app/localization/**', 'com/abdev/partituraspdf/MainActivity*'
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i11-coverage/all.xml'))
+    html.outputLocation.set(new File('/tmp/i11-coverage/all-html'))}
+  }
+  p.tasks.register('i11Verify',JacocoCoverageVerification) {
+   dependsOn report
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   violationRules { rule { limit {counter='LINE';minimum=0.90};limit {counter='BRANCH';minimum=0.80} } }
+  }
+ } }
+}
+```

@@ -254,7 +254,10 @@ class DiagnosticEvidenceTests(unittest.TestCase):
                 cls,method=test.split('#'); ET.SubElement(xml,'testcase',classname=cls,name=method)
             if mode!='missing-standard': ET.ElementTree(xml).write(standard/'results.xml')
             try:
-                with patch.object(runner.Runner,'call',side_effect=call), \
+                with patch.object(
+                    runner, 'manifest_identity',
+                    return_value=(runner.APP + '.test', runner.APP, component)
+                ), patch.object(runner.Runner,'call',side_effect=call), \
                      patch.object(runner.Runner,'stop_and_verify',return_value={'afterStop':{runner.APP:[],runner.APP+'.test':[]}}) as stop, \
                      patch.object(runner.Runner,'installed_hash',return_value=hashlib.sha256(b'APK').hexdigest()), \
                      patch.object(Path,'read_bytes',return_value=b'APK'), \

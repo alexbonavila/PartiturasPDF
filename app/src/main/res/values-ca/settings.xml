@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Configuració</string>
+    <string name="settings_theme_title">Tema de l’aplicació</string>
+    <string name="settings_theme_system">Segueix el sistema</string>
+    <string name="settings_theme_light">Clar</string>
+    <string name="settings_theme_dark">Fosc</string>
+    <string name="settings_fit_title">Ajust de pàgina</string>
+    <string name="settings_fit_page">Pàgina completa</string>
+    <string name="settings_fit_width">Ajusta a l’amplada</string>
+    <string name="settings_fit_page_description">Mostra tota la pàgina a l’espai disponible.</string>
+    <string name="settings_fit_width_description">Ajusta la pàgina a l’amplada disponible.</string>
+    <string name="settings_loading">Carregant la configuració…</string>
+    <string name="settings_pending">Actualització pendent: %1$s. La selecció marcada correspon al valor observat.</string>
+    <string name="settings_reconciling">Comprovant: %1$s. Esperant una lectura actualitzada.</string>
+    <string name="settings_reconciling_uncertain">Comprovant: %1$s. És possible que l’operació s’hagi desat.</string>
+    <string name="settings_requested">Canvi sol·licitat: %1$s.</string>
+    <string name="settings_read_error">No s’ha pogut llegir la configuració.</string>
+    <string name="settings_theme_write_error">No s’ha pogut canviar el tema.</string>
+    <string name="settings_fit_write_error">No s’ha pogut canviar l’ajust de pàgina.</string>
+    <string name="settings_error_storage">No s’ha pogut accedir a l’emmagatzematge privat. Torna-ho a provar.</string>
+    <string name="settings_error_other">No s’ha pogut completar l’operació. Torna-ho a provar.</string>
+    <string name="settings_retry_read">Torna a llegir la configuració</string>
+    <string name="settings_retry_theme">Torna a provar el canvi de tema</string>
+    <string name="settings_retry_fit">Torna a provar l’ajust de pàgina</string>
+    <string name="settings_verify_again">Torna-ho a comprovar</string>
+</resources>

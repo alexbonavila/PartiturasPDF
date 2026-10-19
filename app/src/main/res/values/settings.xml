@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Approved Spanish-first feature copy only. Complete English/Catalan translation remains
-     mandatory deferred work. Remove this narrow annotation when those bundles are delivered;
-     required Spanish parity and formatting continue to be verified by the localization validator. -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+<resources>
     <string name="settings_title">Ajustes</string>
     <string name="settings_theme_title">Tema de la aplicación</string>
     <string name="settings_theme_system">Seguir el sistema</string>

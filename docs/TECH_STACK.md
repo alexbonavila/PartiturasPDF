@@ -61,41 +61,30 @@ retained. Layouts use available space, without fixed phone widths or speculative
 tablet navigation. Future adaptive components need their own approved scope.
 
 Instrumentation tests launch the starter, render all three greetings plus an
-unsupported-locale English fallback in both modes, and check brand identity,
+unsupported-locale Spanish fallback (updated by the pre-I migration) in both modes, and check brand identity,
 normal-text contrast >= 4.5:1 and outline-to-base-surface contrast >= 3:1.
 Individual future components must verify contrast on their actual backgrounds,
 including elevation and disabled/interaction states. Automated semantics and
 color checks do not replace human TalkBack, font-scale and layout review.
 `GreetingPreview` offers six language/theme previews for Android Studio review.
 
-## Localization and future manual selection
+## Complete localization delivery — 2026-10-19
 
-English lives in `values/strings.xml`; Catalan and Spanish in `values-ca` and
-`values-es`. All three contain `app_name`, `starter_recipient` and the positional
-`starter_greeting` (`%1$s`). The starter follows the system locale, with English
-fallback. Android and Partituras PDF remain product names in all translations.
-Compose `Text` exposes the greeting through localized text semantics; there are
-no image/button descriptions in this starter. Add future accessibility labels
-to all three resource sets; avoid duplicate descriptions for visible text.
+The centralized pre-I migration supplies all 147 named resources (3 starter, 72 Library,
+48 Reader, 24 Settings) in `values`, `values-es`, `values-ca` and `values-en`.
+Default resources match Spanish; unsupported resource locales therefore fall back to Spanish.
+English starter copy is preserved explicitly in `values-en`. Feature staging and its narrow
+MissingTranslation annotations are removed after parity/format validation. The CLI validator
+requires all four bundles, checks Spanish-default equality and rejects residual staging;
+historical staged-policy unit fixtures remain covered separately.
 
-The unchanged `scripts/validate_localization.py` rejects missing translations,
-extra/mismatched resource names/types and inconsistent format arguments. Run it
-alongside Lint and the validator's existing tests; do not waive checks for brand
-names or copy strings into Kotlin. Use numbered placeholders and resource
-plurals for future content.
-
-Manual selection is **planned, not implemented**. For Android 8.0+, evaluate
-AppCompat's per-app locales (`AppCompatDelegate.setApplicationLocales`) and its
-required activity integration with Compose; the current `ComponentActivity`
-does not provide that integration automatically. Verify recreation, resource
-contexts and pre-33 locale persistence without blocking startup. On API 33+
-coordinate with platform per-app language settings. A newer platform-only API
-is insufficient for API 26/27. DataStore already stores a `language_selection`
-preference (`system`, `en`, `ca`, `es`), but no user-facing language selector or
-application-locale integration exists. UI integration, return-to-system behavior,
-resource-context updates, recreation and process restart still need approved
-validation before adding AppCompat or a selector. No `locale-config` manifest
-entry, language-selection screen or AppCompat dependency is installed.
+Resource-context tests select es/ca/en/fr without changing the device-global locale.
+Compilation is not Android resource-resolution execution; see the closeout register for results.
+The existing DeviceLocalePolicy is unchanged: I must explicitly enable DeliveredLanguages for
+completed English/Catalan, apply the primary device locale on API26+, and use Spanish fallback.
+No manual language selector is planned under the frozen contracts. Legacy persisted language
+values remain compatible but inactive. No Activity locale wiring, new dependency, manifest
+locale configuration or production navigation is installed here.
 
 ## Architecture and installed/prospective dependencies
 
@@ -107,7 +96,7 @@ UI. Create packages/abstractions when used, rather than empty placeholders.
 | Technology | Implemented status or adoption conditions |
 | --- | --- |
 | Platform SAF | **Implemented** provider/URI grant and read adapters; test revoked access, provider errors, non-seekable streams and any future replacement behavior. |
-| Platform `PdfRenderer` | **Implemented** native PDF read/render adapter on API 26; bounded bitmap memory, renderer/page closure and background execution; no user-facing reader UI. |
+| Platform `PdfRenderer` | **Implemented** native PDF read/render adapter on API 26; bounded bitmap memory, renderer/page closure and background execution; independent Compose reader implemented; isolated native service, host integration pending. |
 | PDFBox-Android 2.0.27.0 | Candidate editing engine only; audit maintenance, vulnerabilities, dependencies, APK/memory impact and API 26 behavior before adoption. |
 | Room | **Installed**: metadata and registry persistence, schema v1; never authoritative PDF bytes; migration/reconciliation constraints remain. |
 | DataStore | **Installed**: application preferences, tested persistence/restart; never store authorization secrets in plain preferences. |

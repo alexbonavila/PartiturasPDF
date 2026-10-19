@@ -49,12 +49,12 @@ class FoundationInstrumentedTest {
     }
 
     @Test
-    fun localizedGreetingIsAccessibleInBothThemesWithEnglishFallback() {
+    fun localizedGreetingIsAccessibleInBothThemesWithSpanishFallback() {
         val greetings = mapOf(
             "en" to "Hello Android!",
             "ca" to "Hola, Android!",
             "es" to "¡Hola, Android!",
-            "fr" to "Hello Android!",
+            "fr" to "¡Hola, Android!",
         )
         for ((language, expected) in greetings) {
             for (dark in listOf(false, true)) {

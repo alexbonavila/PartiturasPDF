@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="saf_accept_title">SAF access check (debug)</string>
-    <string name="saf_accept_instructions">Choose a folder containing a small PDF. Check after force-stopping and reopening the app. Release the grant and repeat the restart check.</string>
-    <string name="saf_accept_select">Choose folder</string>
-    <string name="saf_accept_check">Check saved access</string>
-    <string name="saf_accept_release">Release saved read access</string>
-    <string name="saf_accept_ready">Ready. No changes to documents will be made.</string>
-    <string name="saf_accept_cancelled">Folder selection cancelled.</string>
-    <string name="saf_accept_grant_error">Read grant failed (%1$s).</string>
-    <string name="saf_accept_grant_saved">Read access persisted.</string>
-    <string name="saf_accept_preference_error">Unable to store the selected folder reference.</string>
-    <string name="saf_accept_no_folder">No folder has been selected.</string>
-    <string name="saf_accept_yes">yes</string>
+    <string name="saf_accept_title">Comprobación de acceso SAF (depuración)</string>
+    <string name="saf_accept_instructions">Selecciona una carpeta que contenga un PDF pequeño. Comprueba el acceso después de forzar el cierre y volver a abrir la aplicación. Libera el permiso y repite la comprobación tras reiniciar.</string>
+    <string name="saf_accept_select">Seleccionar carpeta</string>
+    <string name="saf_accept_check">Comprobar acceso guardado</string>
+    <string name="saf_accept_release">Liberar permiso de lectura</string>
+    <string name="saf_accept_ready">Preparado. No se modificará ningún documento.</string>
+    <string name="saf_accept_cancelled">Selección de carpeta cancelada.</string>
+    <string name="saf_accept_grant_error">Error de permiso de lectura (%1$s).</string>
+    <string name="saf_accept_grant_saved">Permiso de lectura conservado.</string>
+    <string name="saf_accept_preference_error">No se pudo guardar la referencia de la carpeta.</string>
+    <string name="saf_accept_no_folder">No se ha seleccionado ninguna carpeta.</string>
+    <string name="saf_accept_yes">sí</string>
     <string name="saf_accept_no">no</string>
-    <string name="saf_accept_grant_status">Persisted read grant: %1$s</string>
-    <string name="saf_accept_list_error">Folder access failed (%1$s). This does not prove deletion.</string>
-    <string name="saf_accept_no_pdf">Listed %1$d entries; no PDF found.</string>
-    <string name="saf_accept_read_error">Listed %1$d entries; PDF open failed (%2$s).</string>
-    <string name="saf_accept_read_ok">Listed %1$d entries; PDF opened in read-only mode (seekable: %2$s).</string>
-    <string name="saf_accept_released">Saved read grant released. Force-stop and reopen before checking again.</string>
-    <string name="saf_accept_release_error">Unable to release read grant (%1$s).</string>
+    <string name="saf_accept_grant_status">Permiso de lectura persistente: %1$s</string>
+    <string name="saf_accept_list_error">No se pudo acceder a la carpeta (%1$s). Esto no demuestra que haya sido eliminada.</string>
+    <string name="saf_accept_no_pdf">Se han listado %1$d elementos; no se encontró ningún PDF.</string>
+    <string name="saf_accept_read_error">Se han listado %1$d elementos; error al abrir el PDF (%2$s).</string>
+    <string name="saf_accept_read_ok">Se han listado %1$d elementos; PDF abierto en modo solo lectura (acceso aleatorio: %2$s).</string>
+    <string name="saf_accept_released">Permiso de lectura liberado. Fuerza el cierre y vuelve a abrir antes de comprobar.</string>
+    <string name="saf_accept_release_error">No se pudo liberar el permiso de lectura (%1$s).</string>
 </resources>

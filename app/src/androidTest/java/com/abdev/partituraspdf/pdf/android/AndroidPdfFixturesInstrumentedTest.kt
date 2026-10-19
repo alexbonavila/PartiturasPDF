@@ -1,6 +1,8 @@
 package com.abdev.partituraspdf.pdf.android
 
 import android.os.ParcelFileDescriptor
+import com.abdev.partituraspdf.pdf.android.FreshPdfiumProcess
+import com.abdev.partituraspdf.pdf.android.FreshPdfiumIdentity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.abdev.partituraspdf.core.document.PageIndex
@@ -24,6 +26,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.FixMethodOrder
 import org.junit.runners.MethodSorters
@@ -35,6 +38,7 @@ import org.junit.runner.RunWith
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 @RunWith(AndroidJUnit4::class)
 class AndroidPdfFixturesInstrumentedTest {
+    @get:Rule val freshPdfiumIdentity = FreshPdfiumIdentity()
     private val testContext get() = InstrumentationRegistry.getInstrumentation().context
     private val appContext get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val limits = RenderLimits(maxDimension = 512, maxPixels = 512L * 512L)
@@ -172,6 +176,7 @@ class AndroidPdfFixturesInstrumentedTest {
         }
     }
 
+    @FreshPdfiumProcess
     @Test
     fun z_encryptedFixtureRequiresPasswordAndDoesNotLeakDescriptor() = runBlocking {
         val fixture = fixtures().single { it.id == "14" }
@@ -394,6 +399,7 @@ class AndroidPdfFixturesInstrumentedTest {
         }
     }
 
+    @FreshPdfiumProcess
     @Test
     fun y_deliberatelyCorruptedFixtureIsRejectedAndDoesNotLeakDescriptor() = runBlocking {
         val fixture = fixtures().single { it.id == "15" }

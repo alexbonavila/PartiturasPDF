@@ -22,11 +22,13 @@ import com.abdev.partituraspdf.core.document.StorageDocumentRef
 import com.abdev.partituraspdf.core.result.AppError
 import com.abdev.partituraspdf.core.result.Outcome
 import com.abdev.partituraspdf.pdf.android.AndroidPdfReadEngine
+import com.abdev.partituraspdf.pdf.android.isolated.IsolatedPdfReadEngine
 import com.abdev.partituraspdf.pdf.api.AnnotationRendering
 import com.abdev.partituraspdf.pdf.api.PdfReadEngine
 import com.abdev.partituraspdf.pdf.api.PdfReadSession
 import com.abdev.partituraspdf.pdf.api.PdfReadSource
 import com.abdev.partituraspdf.pdf.api.ReadPageRef
+import com.abdev.partituraspdf.pdf.api.RenderLimits
 import com.abdev.partituraspdf.pdf.api.RenderRequest
 import com.abdev.partituraspdf.pdf.api.RenderRequestId
 import com.abdev.partituraspdf.storage.api.DocumentReadAccess
@@ -162,7 +164,8 @@ class SafPdfIntegrationTest {
     }
 
     private suspend fun withSession(request: Request, access: DocumentReadAccess = reader,
-        pdf: PdfReadEngine = engine, action: suspend (PdfReadSession) -> Unit) {
+        pdf: PdfReadEngine = engine, expectedRenderLimits: RenderLimits = limits.render,
+        action: suspend (PdfReadSession) -> Unit) {
         val reference = document(request.uri)
         val handle = access.openSeekable(reference, limits.read).success()
         val descriptor = handle.descriptor
@@ -192,7 +195,7 @@ class SafPdfIntegrationTest {
                 // Never close a transferred wrapper, including from a finally/use block.
                 assertEquals(request.fixture.pages, it.info.pageCount)
                 assertNull(it.info.revision)
-                assertEquals(limits.render, it.renderLimits)
+                assertEquals(expectedRenderLimits, it.renderLimits)
                 if (copy != null) assertTrue("Session still owns its copy", copy.exists())
                 action(it)
             }
@@ -385,8 +388,13 @@ class SafPdfIntegrationTest {
                 assertSame(graph, factory.get())
                 assertSame(limits, graph.runtimeLimits)
                 assertTrue(graph.readAccess is SafDocumentReadAccess)
-                assertTrue(graph.pdfEngine is AndroidPdfReadEngine)
-                withSession(request("01", "file"), graph.readAccess, graph.pdfEngine) { session ->
+                assertTrue(graph.pdfEngine is IsolatedPdfReadEngine)
+                withSession(
+                    request("01", "file"),
+                    graph.readAccess,
+                    graph.pdfEngine,
+                    expectedRenderLimits = limits.render.copy(maxPixels = limits.render.maxPixels / 2)
+                ) { session ->
                     val lease = session.render(renderRequest(page(session))).success()
                     val bitmap = lease.bitmap
                     try {

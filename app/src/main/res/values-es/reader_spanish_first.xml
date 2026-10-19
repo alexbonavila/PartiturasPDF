@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Approved staged Spanish feature copy. Complete English/Catalan delivery remains deferred. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="reader_back">Volver</string>
+    <string name="reader_previous">Anterior</string>
+    <string name="reader_next">Siguiente</string>
+    <string name="reader_options">Opciones de lectura</string>
+    <string name="reader_fit_page">Ajustar página</string>
+    <string name="reader_fit_width">Ajustar ancho</string>
+    <string name="reader_zoom_in">Ampliar</string>
+    <string name="reader_zoom_out">Reducir</string>
+    <string name="reader_zoom_reset">Restablecer zoom</string>
+    <string name="reader_zoom_state">Zoom visual: %1$d%%</string>
+    <string name="reader_page_counter">Página %1$d de %2$d</string>
+    <string name="reader_page_unpresented">Sin página presentada todavía</string>
+    <string name="reader_page_description">Partitura, página %1$d de %2$d. Imagen sin interpretación del contenido musical.</string>
+    <string name="reader_no_visible_page">Área de lectura sin página visible</string>
+    <string name="reader_idle">No hay un documento abierto.</string>
+    <string name="reader_opening">Abriendo documento…</string>
+    <string name="reader_waiting_viewport">Preparando el área de lectura…</string>
+    <string name="reader_rendering">Preparando página…</string>
+    <string name="reader_awaiting_draw">Esperando la presentación de la página…</string>
+    <string name="reader_canceled">Operación cancelada.</string>
+    <string name="reader_paused">Lectura en pausa.</string>
+    <string name="reader_retired">La lectura ha finalizado.</string>
+    <string name="reader_retry">Reintentar</string>
+    <string name="reader_error_permission">No hay permiso de lectura.</string>
+    <string name="reader_error_revoked">Se ha revocado el permiso de lectura.</string>
+    <string name="reader_error_provider">El proveedor no está disponible.</string>
+    <string name="reader_error_io">Ha fallado la lectura del proveedor.</string>
+    <string name="reader_error_storage">No se ha podido completar la operación en el almacenamiento privado.</string>
+    <string name="reader_error_registration">No se encuentra el registro del documento.</string>
+    <string name="reader_error_deleted">La operación informa de un documento eliminado. Sus metadatos no se han borrado.</string>
+    <string name="reader_error_invalid">El documento o su solicitud no es válido.</string>
+    <string name="reader_error_stale">La sesión o el documento ha cambiado. Es necesario volver a comprobarlo.</string>
+    <string name="reader_error_resource">No hay recursos suficientes para completar la operación dentro de los límites permitidos.</string>
+    <string name="reader_error_unsupported">El formato no es compatible o está protegido. No se ha modificado el PDF.</string>
+    <string name="reader_error_page">La página solicitada no existe. Elige otra página o vuelve atrás.</string>
+    <string name="reader_error_render_request">No se puede preparar la página con la solicitud actual. Cambia el ajuste o vuelve atrás.</string>
+    <string name="reader_error_closed">La sesión de lectura está cerrada.</string>
+    <string name="reader_error_input_limit">El documento supera los límites de lectura permitidos.</string>
+    <string name="reader_error_password">El PDF está protegido con contraseña. Este lector no puede desbloquearlo.</string>
+    <string name="reader_recovery_open">Comprueba el acceso al documento y reintenta para volver a abrirlo.</string>
+    <string name="reader_recovery_render">Libera recursos o cambia el ajuste y vuelve a preparar la página.</string>
+    <string name="reader_recovery_checkpoint">La página sigue visible. Reintenta para solicitar de nuevo el guardado de su posición.</string>
+    <string name="reader_recovery_back">Vuelve atrás para revisar el documento o su acceso.</string>
+    <string name="reader_checkpoint_transient">Documento temporal: no se guarda una posición permanente.</string>
+    <string name="reader_checkpoint_scheduling">Solicitando el guardado de la posición…</string>
+    <string name="reader_checkpoint_canceled">La solicitud de guardado se canceló; el guardado no está confirmado.</string>
+    <string name="reader_checkpoint_failure">No se ha podido solicitar el guardado de la posición.</string>
+    <string name="reader_checkpoint_unconfirmed">Última solicitud de posición aceptada; guardado permanente sin confirmar.</string>
+</resources>

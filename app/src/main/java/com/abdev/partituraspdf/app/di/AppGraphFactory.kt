@@ -6,7 +6,7 @@ import com.abdev.partituraspdf.data.metadata.RoomDocumentMetadataRepository
 import com.abdev.partituraspdf.data.metadata.RoomDocumentRegistry
 import com.abdev.partituraspdf.data.preferences.DataStorePreferencesRepository
 import com.abdev.partituraspdf.data.preferences.applicationPreferencesStore
-import com.abdev.partituraspdf.pdf.android.AndroidPdfReadEngine
+import com.abdev.partituraspdf.pdf.android.isolated.IsolatedPdfReadEngine
 import com.abdev.partituraspdf.storage.saf.SafDocumentCatalog
 import com.abdev.partituraspdf.storage.saf.SafDocumentReadAccess
 import com.abdev.partituraspdf.storage.saf.SafTreeGrantAccess
@@ -36,7 +36,7 @@ internal class AppGraphFactory internal constructor(
             val registry = RoomDocumentRegistry(database)
             val metadata = RoomDocumentMetadataRepository(database)
             val preferences = DataStorePreferencesRepository(applicationPreferencesStore(application))
-            val pdfEngine = AndroidPdfReadEngine(limits.render)
+            val pdfEngine = IsolatedPdfReadEngine(application, limits.render)
             val treeGrants = SafTreeGrantAccess(resolver)
             AppGraph(
                 runtimeLimits = limits, catalog = catalog, readAccess = readAccess,

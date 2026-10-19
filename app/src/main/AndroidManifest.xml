@@ -11,6 +11,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.PartiturasPDF">
+        <service
+            android:name=".pdf.android.isolated.PdfWorkerService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":pdf" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,6 +19,25 @@ import run_pdfium_process_experiments as runner
 ROOT = next(p for p in Path(__file__).resolve().parents if (p / 'gradlew').is_file())
 FIXTURES = {r['id']: r for r in json.loads((ROOT / 'test-fixtures/manifest.json').read_text())['files']}
 ASSERTION = 'java.lang.AssertionError: Valid fixture 01 did not open/render; inspect ReaderPdfiumProcess PID/sequence: Attempt(rendered=false)'
+
+# These H smoke tests are mandatory standard acceptance, independently of future suite growth.
+SETTINGS_TESTS = {
+    ev.APP + '.settings.SettingsScreenTest#' + method for method in (
+        'loadingHasAccessibleProgressAndNoEnabledOrSelectedDefaults',
+        'readyShowsActualSelectionsAndSingleSelectionRadioSemantics',
+        'themeSelectionDispatchesTypedActionWithoutOptimisticSelection',
+        'fitSelectionDispatchesTypedActionWithoutChangingThemeOrSelection',
+        'clickingAlreadySelectedValuesDoesNotDispatchRedundantActions',
+        'storageReadFailureOffersRetryWithoutInventingSelections',
+        'otherReadFailureUsesSafeGenericMessageAndExplicitRetry',
+        'themeWriteFailurePreservesSelectionAndDispatchesOnlyThemeRetry',
+        'fitWriteFailurePreservesSelectionAndDispatchesOnlyFitRetry',
+        'pendingThemeDisablesItsGroupButFitCanQueueAnIndependentIntent',
+        'reconciliationAllowsExplicitReadRecoveryEvenWhileSnapshotIsLoading',
+        'independentOperationStatesRemainVisibleAndWriteRetryRequiresReady',
+        'newObservedStateAndCallbackAreUsedAfterRecompositionWithoutNavigation',
+    )
+}
 
 
 def attempts(method, pid, start, token, api, contaminated):
@@ -88,10 +108,49 @@ class DiagnosticEvidenceTests(unittest.TestCase):
 
     def test_every_original_test_is_assigned_once_and_all_isolated_tests_remain_standard(self):
         inv = ev.test_inventory(ROOT, runner.SCENARIOS)
-        self.assertEqual(347, inv['total']); self.assertEqual(333, len(inv['standard'])); self.assertEqual(14, len(inv['assigned']))
+        source_count = sum(
+            len(re.findall(r'^\s*@Test\b', path.read_text(encoding='utf-8'), re.M))
+            for path in (ROOT / 'app/src/androidTest/java').rglob('*.kt')
+        )
+        self.assertEqual(source_count, inv['total'])
+        self.assertEqual(source_count - len(inv['assigned']), len(inv['standard']))
+        self.assertEqual(14, len(inv['assigned']))
+        expected_diagnostics = set(ev.CLEAN) | {
+            ev.PROCESS_CLASS + '#' + method for method in runner.SCENARIOS
+        }
+        self.assertEqual(expected_diagnostics, set(inv['assigned']))
+        self.assertEqual(len(inv['standard']), len(set(inv['standard'])))
+        self.assertEqual(len(inv['assigned']), len(set(inv['assigned'])))
+        self.assertTrue(SETTINGS_TESTS <= set(inv['standard']))
+        self.assertFalse(SETTINGS_TESTS & set(inv['assigned']))
         self.assertFalse(set(inv['standard']) & set(inv['assigned']))
         self.assertEqual(29, len(ev.invocation_plan(runner.SCENARIOS)))
         self.assertEqual(24, sum('.pdf.android.isolated.' in name for name in inv['standard']))
+
+    def test_settings_cases_are_required_in_complete_standard_junit(self):
+        inventory = ev.test_inventory(ROOT, runner.SCENARIOS)
+        settings_case = sorted(SETTINGS_TESTS)[0]
+        for mutation in ['valid', 'missing', 'unexpected', 'duplicate', 'failed', 'errored', 'skipped']:
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
+                root = ET.Element('testsuite')
+                for selected in inventory['standard']:
+                    if selected == settings_case and mutation == 'missing':
+                        continue
+                    cls, method = selected.split('#')
+                    case = ET.SubElement(root, 'testcase', classname=cls, name=method)
+                    if selected == settings_case and mutation in {'failed', 'errored', 'skipped'}:
+                        ET.SubElement(case, {'failed': 'failure', 'errored': 'error', 'skipped': 'skipped'}[mutation])
+                if mutation in {'unexpected', 'duplicate'}:
+                    cls, method = settings_case.split('#')
+                    ET.SubElement(root, 'testcase', classname=cls,
+                                  name='unexpectedSettingsTest' if mutation == 'unexpected' else method)
+                ET.ElementTree(root).write(Path(tmp)/'junit.xml')
+                if mutation == 'valid':
+                    self.assertEqual(len(inventory['standard']),
+                                     ev.verify_standard(tmp, inventory)['executed'])
+                else:
+                    with self.assertRaises(ValueError):
+                        ev.verify_standard(tmp, inventory)
 
     def test_known_defect_requires_both_clean_baselines_and_independent_recoveries(self):
         rows = suite(); result = self.classify(rows)
@@ -334,7 +393,12 @@ class DiagnosticEvidenceTests(unittest.TestCase):
                     self.assertEqual(29,len(list(report.rglob('run.json'))))
                     if mode=='valid':
                         self.assertEqual(0,result); self.assertEqual('DIAGNOSTICS_VALIDATED',summary['status'])
-                        self.assertEqual(333,summary['standardAcceptance']['executed'])
+                        expected_count = len(inv['standard'])
+                        self.assertEqual(
+                            dict(executed=expected_count, passed=expected_count,
+                                 failed=0, errored=0, skipped=0),
+                            summary['standardAcceptance'],
+                        )
                     else:
                         self.assertEqual(2,result); self.assertEqual('BLOCKED',summary['status'])
             finally:

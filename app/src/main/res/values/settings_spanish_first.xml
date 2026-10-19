@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Approved Spanish-first feature copy only. Complete English/Catalan translation remains
+     mandatory deferred work. Remove this narrow annotation when those bundles are delivered;
+     required Spanish parity and formatting continue to be verified by the localization validator. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <string name="settings_title">Ajustes</string>
+    <string name="settings_theme_title">Tema de la aplicación</string>
+    <string name="settings_theme_system">Seguir el sistema</string>
+    <string name="settings_theme_light">Claro</string>
+    <string name="settings_theme_dark">Oscuro</string>
+    <string name="settings_fit_title">Ajuste de página</string>
+    <string name="settings_fit_page">Página completa</string>
+    <string name="settings_fit_width">Ajustar al ancho</string>
+    <string name="settings_fit_page_description">Muestra toda la página en el espacio disponible.</string>
+    <string name="settings_fit_width_description">Ajusta la página al ancho disponible.</string>
+    <string name="settings_loading">Cargando los ajustes…</string>
+    <string name="settings_pending">Actualización pendiente: %1$s. La selección marcada corresponde al valor observado.</string>
+    <string name="settings_reconciling">Verificando: %1$s. Esperando una lectura actualizada.</string>
+    <string name="settings_reconciling_uncertain">Verificando: %1$s. La operación pudo haberse guardado.</string>
+    <string name="settings_requested">Cambio solicitado: %1$s.</string>
+    <string name="settings_read_error">No se pudieron leer los ajustes.</string>
+    <string name="settings_theme_write_error">No se pudo cambiar el tema.</string>
+    <string name="settings_fit_write_error">No se pudo cambiar el ajuste de página.</string>
+    <string name="settings_error_storage">No se ha podido acceder al almacenamiento privado. Vuelve a intentarlo.</string>
+    <string name="settings_error_other">No se pudo completar la operación. Vuelve a intentarlo.</string>
+    <string name="settings_retry_read">Volver a leer los ajustes</string>
+    <string name="settings_retry_theme">Reintentar el cambio de tema</string>
+    <string name="settings_retry_fit">Reintentar el ajuste de página</string>
+    <string name="settings_verify_again">Volver a comprobar</string>
+</resources>

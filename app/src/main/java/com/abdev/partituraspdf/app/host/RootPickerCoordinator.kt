@@ -66,10 +66,16 @@ internal class RootPickerCoordinator(
             if (next.acknowledgment.await() is Outcome.Failure || closed) return@launch
             try {
                 val result = if (!accepted) Outcome.Success(null) else when (val stored = accept(uri, flags)) {
-                    is Outcome.Failure -> stored
+                    is Outcome.Failure -> {
+                        // A failed root-write acknowledgment does not prove that persistence rolled back.
+                        if (!closed && stored.error == AppError.Access.PRIVATE_STORAGE_UNAVAILABLE) mutableRecovery.value = stored.error
+                        stored
+                    }
                     is Outcome.Success -> {
                         if (closed) return@launch
-                        when (val selected = folders.select(stored.value)) {
+                        val selected = folders.select(stored.value)
+                        if (closed) return@launch
+                        when (selected) {
                             is Outcome.Success -> { mutableRecovery.value = null; Outcome.Success(stored.value) }
                             is Outcome.Failure -> {
                                 // Persistence changed. Never invent rollback or operate on an old trail.
@@ -97,7 +103,9 @@ internal class RootPickerCoordinator(
         reconciling = true
         scope.launch {
             try {
-                val outcome = when (val root = restore()) {
+                val root = restore()
+                if (closed) return@launch
+                val outcome = when (root) {
                     is Outcome.Failure -> root
                     is Outcome.Success -> if (root.value == null) {
                         if (folders.state() == null) Outcome.Success(Unit)
@@ -108,6 +116,9 @@ internal class RootPickerCoordinator(
                     is Outcome.Failure -> mutableRecovery.value = outcome.error
                     is Outcome.Success -> { mutableRecovery.value = null; refreshed() }
                 }
+            } catch (canceled: CancellationException) {
+                if (!closed) interrupted(canceled)
+                throw canceled
             } finally { reconciling = false }
         }
     }

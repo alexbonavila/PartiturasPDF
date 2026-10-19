@@ -9,6 +9,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.ComponentName
+import android.os.IBinder
+import com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerIdentity
+import com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerService
+import com.abdev.partituraspdf.pdf.android.isolated.IPdfWorker
 import android.content.pm.ServiceInfo
 import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*
@@ -83,6 +90,11 @@ class ReaderHostNativeIntegrationTest {
         val preferencesName: String = reuse?.preferencesName ?: "i05-positions-${UUID.randomUUID()}"
         val preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
         val positions = SharedPreferencesReaderPositions(preferences)
+        var checkpointError: AppError? = null
+        private val routePositions = object : ReaderPositionRepository by positions {
+            override suspend fun saveVisible(writer: PositionWriter, sequence: Long, page: PageIndex): Outcome<Unit> =
+                checkpointError?.let { Outcome.Failure(it) } ?: positions.saveVisible(writer,sequence,page)
+        }
         val db = if (persistent) Room.databaseBuilder(context, MetadataDatabase::class.java, File(directory, "metadata.db").absolutePath).build()
             else Room.inMemoryDatabaseBuilder(context, MetadataDatabase::class.java).build()
         val registry = RoomDocumentRegistry(db)
@@ -160,7 +172,7 @@ class ReaderHostNativeIntegrationTest {
             val settings = SettingsController(scope, preferencesRepository, RepositorySettingsCommands(preferencesRepository))
             val reading = ReaderHostLifetime(scope, routeFactory = { readerScope ->
                 constructions++
-                ReaderRouteOwner(readerScope, registry, access, observedEngine, positions, ReadAccessLimits(64L * 1024 * 1024)).also { routes += it }
+                ReaderRouteOwner(readerScope, registry, access, observedEngine, routePositions, ReadAccessLimits(64L * 1024 * 1024)).also { routes += it }
             }, renderCeiling = ceiling, heap = {
                 val runtime = Runtime.getRuntime(); val maximum = runtime.maxMemory()
                 HeapAvailability(maximum, (runtime.totalMemory() - runtime.freeMemory()).coerceIn(0, maximum))
@@ -537,6 +549,93 @@ class ReaderHostNativeIntegrationTest {
         visible(); compose.waitUntil(10_000) { observedSurface.get() == surface && keepScreenOn() }
         assertNotSame(old.controller, entry().controller); assertEquals(PageFit.WIDTH, entry().controller.state.value.fit)
         assertEquals(ThemeSelection.DARK, (host!!.preferences.value as Observation.Ready).value.theme); back()
+    }
+
+    /** Existing worker retirement protocol, guarded by this test engine's exact identity.
+     * No kill command, application process termination, or foreign worker adoption. */
+    private suspend fun retireOwnedWorker(expected: PdfWorkerIdentity) {
+        val remote=CompletableDeferred<IPdfWorker>(); val died=CompletableDeferred<Unit>()
+        val callback=object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                binder.linkToDeath({died.complete(Unit)},0)
+                remote.complete(IPdfWorker.Stub.asInterface(binder))
+            }
+            override fun onServiceDisconnected(name: ComponentName) = Unit
+        }
+        assertTrue(context.bindService(Intent(context,PdfWorkerService::class.java),callback,Context.BIND_AUTO_CREATE))
+        try {
+            val worker=withTimeout(10_000) {remote.await()}
+            withContext(Dispatchers.IO) {
+                val identity=worker.identity()
+                assertEquals(expected.pid,identity.getInt("pid")); assertEquals(expected.started,identity.getLong("started"))
+                assertEquals(expected.epoch,identity.getString("epoch"))
+                worker.retire()
+            }
+            withTimeout(10_000) {died.await()}
+        } finally {context.unbindService(callback)}
+    }
+    @Test fun realWorkerLossUsesExistingReaderRetryWithoutDeletingRegistrationFavoriteOrCommittedPage() {
+        mount("02"); register()
+        val document=(pdf().association as LibraryAssociation.Registered).value.document
+        assertEquals(Outcome.Success(Unit),runBlocking {session!!.metadata.setFavorite(document,true)})
+        open(); visible()
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.waitUntil(20_000) {routeClosed()}
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED); visible()
+        val previous=entry().controller.state.value.session!!.id; val worker=session!!.engine.lastWorker!!
+        val appPid=android.os.Process.myPid()
+        runBlocking {retireOwnedWorker(worker)}
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
+        compose.waitUntil(20_000) {entry().controller.state.value.failure!=null}
+        val error=entry().controller.state.value.failure!!.error
+        assertEquals(AppError.Conflict.STALE_SESSION,error)
+        assertNotEquals(AppError.Access.DOCUMENT_DELETED,error); assertNotEquals(AppError.Access.PERMISSION_REVOKED,error)
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).assertHasClickAction().performClick()
+        visible(); assertNotEquals(previous,entry().controller.state.value.session!!.id)
+        assertTrue(worker.pid!=session!!.engine.lastWorker!!.pid || worker.started!=session!!.engine.lastWorker!!.started)
+        assertEquals(appPid,android.os.Process.myPid())
+        assertTrue(runBlocking {session!!.registry.resolve(document)} is Outcome.Success)
+        val metadata=runBlocking {session!!.metadata.observe(document).first {it is Observation.Ready}}
+        assertTrue((metadata as Observation.Ready).value.favorite)
+        assertEquals(Outcome.Success(PageIndex(0)),runBlocking {session!!.positions.restore(document,2)})
+        back()
+    }
+    @Test fun injectedProviderUnavailableIsContextualAndRetryRevalidatesBeforeRealNativeOpen() {
+        mount("02"); register(); session!!.accessError=AppError.Access.PROVIDER_UNAVAILABLE
+        open(); compose.waitUntil(15_000) {entry().controller.state.value.failure!=null}
+        assertEquals(AppError.Access.PROVIDER_UNAVAILABLE,entry().controller.state.value.failure!!.error)
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_error_provider)).assertExists()
+        assertEquals(0,session!!.nativeOpens)
+        session!!.accessError=null
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).assertHasClickAction().performClick()
+        visible(); assertEquals(1,session!!.nativeOpens); back()
+        // Injected contract access failure; this does not claim a real SAF provider outage.
+    }
+    @Test fun injectedCheckpointFailurePreservesRealEarlierPositionAndSafeReopenAfterEmptyRouteVerification() {
+        mount("02"); register()
+        val document=(pdf().association as LibraryAssociation.Registered).value.document
+        runBlocking {assertEquals(Outcome.Success(Unit),session!!.positions.saveVisible(session!!.positions.writer(document),0,PageIndex(0)))}
+        open(); visible(); session!!.checkpointError=AppError.Access.PRIVATE_STORAGE_UNAVAILABLE
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
+        compose.waitUntil(20_000) {entry().controller.state.value.presentedPage==PageIndex(1)}
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.waitUntil(20_000) {session!!.features.reader!!.state.value.report.failures.isNotEmpty() && routeClosed()}
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        // Close failed acknowledgment blocks automatic reuse until Back verifies current() is empty.
+        compose.runOnUiThread {host!!.back(host!!.navigation.value.revision)}
+        compose.waitUntil(20_000) {host!!.navigation.value.destination==AppDestination.LIBRARY}
+        compose.waitUntil(15_000) {session!!.features.library.state.value.content is LibraryContent.Ready && pdf().association is LibraryAssociation.Registered}
+        assertFalse(session!!.features.reader!!.state.value.recoveryBlocked)
+        assertEquals(Outcome.Success(PageIndex(0)),runBlocking {session!!.positions.restore(document,2)})
+        session!!.checkpointError=null; open(); visible(); assertEquals(PageIndex(0),entry().controller.state.value.presentedPage); back()
+        assertEquals(2,failures.size)
+        val expected=failures.toList()
+        expected.forEach { failure ->
+            assertTrue(failure is ReaderExitException)
+            assertTrue((failure as ReaderExitException).report.failures.all {it.error==AppError.Access.PRIVATE_STORAGE_UNAVAILABLE})
+        }
+        failures.removeAll(expected.toSet()) // Only the two explicitly asserted expected diagnostics.
+        // Real Room/native/position storage with an injected write failure, not a failing physical disk.
     }
 
     @Test fun malformedCanonicalPdfFailsInIsolatedReaderAndStillReturnsSafely() {

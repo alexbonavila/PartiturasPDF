@@ -21,6 +21,10 @@ class ReaderHostIntegrationTest {
         val events = mutableListOf<String>()
         var flush: suspend () -> Outcome<Unit> = { Outcome.Success(Unit) }
         var retiringFailure: Throwable? = null
+        var closeError: AppError? = null
+        var openError: AppError? = null
+        var retainsSessionAfterClose = false
+        var beforeInspect: suspend () -> Unit = {}
         val routes = mutableListOf<com.abdev.partituraspdf.pdf.api.ReaderRoute>()
         val requests = mutableListOf<DocumentOpenRequest>()
         override fun load(scope: CoroutineScope): AppHostFeatures {
@@ -29,14 +33,18 @@ class ReaderHostIntegrationTest {
             val reading = ReaderHostLifetime(scope, routeFactory = {
                 object : com.abdev.partituraspdf.pdf.api.ReaderRoute {
                     val session = TestSession()
-                    override suspend fun current(): com.abdev.partituraspdf.pdf.api.ReaderReady? = null
+                    override suspend fun current(): com.abdev.partituraspdf.pdf.api.ReaderReady? {
+                        beforeInspect()
+                        return if (retainsSessionAfterClose) com.abdev.partituraspdf.pdf.api.ReaderReady(requests.last(),session,PageIndex(0)) else null
+                    }
                     override suspend fun open(request: DocumentOpenRequest): Outcome<com.abdev.partituraspdf.pdf.api.ReaderReady> {
                         events += "open"; requests += request
+                        openError?.let { return Outcome.Failure(it) }
                         return Outcome.Success(com.abdev.partituraspdf.pdf.api.ReaderReady(request, session, PageIndex(0)))
                     }
                     override suspend fun displayed(session: com.abdev.partituraspdf.pdf.api.ReadSessionId, page: PageIndex): Outcome<Unit> = error("No JVM graphics")
                     override suspend fun background(): Outcome<Unit> { events += "flush"; return flush() }
-                    override suspend fun close(): Outcome<Unit> { events += "route-close"; return Outcome.Success(Unit) }
+                    override suspend fun close(): Outcome<Unit> { events += "route-close"; return closeError?.let { Outcome.Failure(it) } ?: Outcome.Success(Unit) }
                 }.also { routes += it }
             }, renderCeiling = ceiling, heap = { ampleHeap }, fit = { confirmedReaderFit(h.state.preferences) })
             f.event = { event -> if (event is LibraryEvent.Open) reading.accept(event.request) else Outcome.Success(Unit) }
@@ -232,4 +240,53 @@ class ReaderHostIntegrationTest {
         s.retiringFailure = failure
         assertSame(failure, h.dispose().await()); assertEquals(listOf("stop-features", "graph-close"), s.events)
     }
+    @Test fun uncertainRetainedRouteReturnsToLibraryWithoutAllowingAnotherReaderButSettingsStillWorks() = runTest {
+        val s=Session(); val errors=mutableListOf<Throwable>(); val h=host(s,errors); runCurrent()
+        h.library(LibraryAction.Register(s.f.pdf.key),0); runCurrent(); val registered=s.f.registered.value
+        open(h,s); s.closeError=AppError.Access.PROVIDER_IO_FAILURE; s.retainsSessionAfterClose=true
+        h.back(1); runCurrent()
+        assertEquals(AppDestination.LIBRARY,h.navigation.value.destination)
+        assertTrue(s.features.reader!!.state.value.recoveryBlocked)
+        assertEquals(registered,s.f.registered.value); assertTrue(s.f.documents.writes.isEmpty())
+        open(h,s); assertEquals(1,s.requests.size)
+        h.showSettings(h.navigation.value.revision); runCurrent(); assertEquals(AppDestination.SETTINGS,h.navigation.value.destination)
+        assertTrue(errors.single() is ReaderExitException); h.dispose().await()
+    }
+    @Test fun failedCloseAcknowledgmentWithVerifiedEmptyOwnerPermitsSafeNewFOpening() = runTest {
+        val s=Session(); val errors=mutableListOf<Throwable>(); val h=host(s,errors); runCurrent(); open(h,s)
+        val old=s.features.reader!!.state.value.entry!!
+        s.closeError=AppError.Access.PRIVATE_STORAGE_UNAVAILABLE; h.back(1); runCurrent()
+        assertEquals(AppDestination.LIBRARY,h.navigation.value.destination); assertFalse(s.features.reader!!.state.value.recoveryBlocked)
+        assertTrue(errors.single() is ReaderExitException)
+        s.closeError=null; open(h,s); assertEquals(2,s.requests.size)
+        assertNotSame(old.controller,s.features.reader!!.state.value.entry!!.controller); h.dispose().await()
+    }
+
+    @Test fun crossFeatureOpenErrorMatrixPreservesExactCategoriesAndRegistrationWithoutImplicitRetry() = runTest {
+        val failures: List<AppError> = AppError.Access.entries + listOf(AppError.Validation.INVALID_DOCUMENT,
+            AppError.Unsupported.PASSWORD_PROTECTED,AppError.Unsupported.DOCUMENT_FORMAT,AppError.Resource.RENDER_LIMIT,
+            AppError.Conflict.STALE_SESSION)
+        for (error in failures) {
+            val s=Session(); val h=host(s); runCurrent()
+            h.library(LibraryAction.Register(s.f.pdf.key),0); runCurrent(); val registration=s.f.registered.value
+            s.openError=error; open(h,s)
+            assertEquals(error,s.features.reader!!.state.value.entry!!.controller.state.value.failure!!.error)
+            h.start(); runCurrent(); assertEquals(1,s.requests.size)
+            assertEquals(registration,s.f.registered.value); assertTrue(s.f.documents.writes.isEmpty())
+            h.back(1); runCurrent(); s.openError=null; open(h,s)
+            assertEquals(2,s.requests.size); assertEquals(AppDestination.READER,h.navigation.value.destination)
+            h.dispose().await()
+        }
+    }
+
+    @Test fun graphDisposalWaitsForFinalFailedCloseOwnershipInspectionWithoutReopening() = runTest {
+        val s=Session(); val h=host(s); runCurrent(); open(h,s)
+        val gate=CompletableDeferred<Unit>(); s.beforeInspect={gate.await()}; s.closeError=AppError.Access.PRIVATE_STORAGE_UNAVAILABLE
+        h.back(1); runCurrent(); val done=h.dispose(); runCurrent()
+        assertFalse(done.isCompleted); assertFalse("graph-close" in s.events)
+        gate.complete(Unit); runCurrent(); assertTrue(done.await() is ReaderExitException)
+        assertTrue(h.state.value is AppHostState.Closed); assertEquals(1,s.requests.size)
+        assertTrue("graph-close" in s.events)
+    }
+
 }

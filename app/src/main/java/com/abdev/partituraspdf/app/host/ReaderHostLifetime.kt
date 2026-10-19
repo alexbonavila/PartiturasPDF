@@ -63,18 +63,18 @@ internal class ReaderHostLifetime(
         this.allowed = allowed; this.entered = entered; this.returned = returned; this.lifecycleFailure = lifecycleFailure
     }
     fun arm(key: LibraryRowKey, revision: Long) {
-        if (!terminal && state.value.entry == null) permit = ReaderOpenPermit(key, revision)
+        if (!terminal && !closeUncertain && state.value.entry == null) permit = ReaderOpenPermit(key, revision)
     }
     /** Separate registered entry permit; the host validates its one-shot restoration generation. */
     fun restore(document: DocumentRef, revision: Long): Outcome<Unit> {
-        if (terminal || state.value.entry != null) return Outcome.Failure(AppError.Conflict.STALE_SESSION)
+        if (terminal || closeUncertain || state.value.entry != null) return Outcome.Failure(AppError.Conflict.STALE_SESSION)
         permit = ReaderOpenPermit(null, revision, document)
         return accept(DocumentOpenRequest.Registered(document))
     }
     fun accept(request: DocumentOpenRequest): Outcome<Unit> {
         val ticket = permit ?: return Outcome.Failure(AppError.Conflict.STALE_SESSION)
         permit = null
-        if (terminal || !foreground || state.value.entry != null || !allowed(ticket, request))
+        if (terminal || closeUncertain || !foreground || state.value.entry != null || !allowed(ticket, request))
             return Outcome.Failure(AppError.Conflict.STALE_SESSION)
         val initialFit = when (val preference = fit()) {
             is Outcome.Failure -> return preference
@@ -190,7 +190,11 @@ internal class ReaderHostLifetime(
     private fun merge(old: ReaderExitReport, next: ReaderExitReport): ReaderExitReport {
         val cause = old.cause ?: next.cause
         if (old.cause != null && next.cause != null && old.cause !== next.cause) old.cause.addSuppressed(next.cause)
-        return ReaderExitReport(old.failures + next.failures, cause)
+        val failures = old.failures + next.failures
+        if (cause != null && failures.isNotEmpty() && cause.suppressed.none {
+            it is ReaderExitException && it.report.failures == failures
+        }) cause.addSuppressed(ReaderExitException(ReaderExitReport(failures)))
+        return ReaderExitReport(failures, cause)
     }
 
     fun stopAccepting() { terminal = true; permit = null }
@@ -204,13 +208,29 @@ internal class ReaderHostLifetime(
         return scope.async(start = CoroutineStart.LAZY) {
             lifecycle?.join() // Never cancel a mandatory in-flight trim/flush/close.
             pendingTrim = null
-            val report = merge(state.value.report, cleanup(entry))
-            mutableState.value = ReaderHostState(report = report)
+            val report = verifyClosed(entry, merge(state.value.report, cleanup(entry)))
+            mutableState.value = ReaderHostState(report = report, recoveryBlocked = closeUncertain)
             if (!terminal) returned(report)
             report
         }.also { exit = it; it.start() }
     }
     suspend fun terminate(): ReaderExitReport { stopAccepting(); return leave().await() }
+
+    /** A typed close failure may be a flushed-checkpoint error after native closure. Verify the
+     * authoritative route after retiring G; never reuse its old session or blindly replay close. */
+    private suspend fun verifyClosed(entry: ReaderHostEntry, report: ReaderExitReport): ReaderExitReport = withContext(NonCancellable) {
+        if (report.cause != null) { closeUncertain = true; return@withContext report }
+        if (report.failures.none { it.stage == ReaderCleanupStage.CLOSE }) {
+            closeUncertain = false; return@withContext report
+        }
+        try {
+            closeUncertain = entry.route.current() != null
+            report // A null owner permits a new lifetime, never changes the failed close acknowledgment.
+        } catch (failure: Throwable) {
+            closeUncertain = true
+            merge(report, ReaderExitReport(cause = failure))
+        }
+    }
 
     private suspend fun cleanup(entry: ReaderHostEntry): ReaderExitReport = withContext(NonCancellable) {
         val failures = mutableListOf<ReaderCleanupFailure>()

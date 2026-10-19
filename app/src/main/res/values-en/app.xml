@@ -7,5 +7,5 @@
     <string name="app_settings">Settings</string>
     <string name="app_back">Back to library</string>
     <string name="app_integration_boundary">Global settings effects will be integrated later.</string>
-    <string name="app_reader_unavailable">The reader is not available yet.</string>
+    <string name="app_reader_unavailable">The reader could not be closed safely. You can continue browsing the library.</string>
 </resources>

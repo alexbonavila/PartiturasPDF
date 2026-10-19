@@ -55,7 +55,8 @@ internal fun AppHost(owner: AppHostViewModel) {
                     when (navigation.destination) {
                         AppDestination.LIBRARY -> {
                             val library by current.features.library.state.collectAsStateWithLifecycle()
-                            val exitReport = current.features.reader?.state?.collectAsState()?.value?.report
+                            val readerState = current.features.reader?.state?.collectAsState()?.value
+                            val exitReport = readerState?.report
                             val picker = current.features.picker
                             val recovery = picker?.recovery?.collectAsStateWithLifecycle()?.value
                             if (recovery != null) Column(Modifier.padding(24.dp).testTag("app_root_recovery")) {
@@ -79,6 +80,8 @@ internal fun AppHost(owner: AppHostViewModel) {
                                     Text(stringResource(R.string.library_select_folder))
                                 }
                             } else Column {
+                                if (readerState?.recoveryBlocked == true) Text(stringResource(R.string.app_reader_unavailable),
+                                    Modifier.padding(8.dp).testTag("app_reader_cleanup_blocked").semantics { liveRegion = LiveRegionMode.Polite })
                                 exitReport?.failures?.forEach { failure ->
                                     Text(stringResource(if (failure.stage == ReaderCleanupStage.CHECKPOINT)
                                         R.string.reader_checkpoint_failure else R.string.library_action_error),

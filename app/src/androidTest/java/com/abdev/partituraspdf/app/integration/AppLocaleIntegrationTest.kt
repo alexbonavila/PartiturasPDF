@@ -76,4 +76,15 @@ class AppLocaleIntegrationTest {
         compose.onNodeWithTag("settings_content").assertExists()
         compose.onNodeWithText(compose.activity.getString(R.string.app_back)).assertHasClickAction()
     }
+    @Test fun contextualRecoveryMessagesStayTranslatedAndDistinctWithoutExposingTechnicalPaths() {
+        val keys=listOf(R.string.reader_error_revoked,R.string.reader_error_permission,R.string.reader_error_provider,
+            R.string.reader_error_io,R.string.reader_error_deleted,R.string.reader_error_password,R.string.app_reader_unavailable)
+        for (language in listOf("es","ca","en")) {
+            val local=localizedActivityContext(context,appLanguage(listOf(language)))
+            val messages=keys.map {local.getString(it)}
+            assertEquals(keys.size,messages.toSet().size)
+            messages.forEach {assertFalse(it.isBlank());assertFalse(it.contains("content://"));assertFalse(it.contains("java.lang"))}
+        }
+    }
+
 }

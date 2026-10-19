@@ -7,5 +7,5 @@
     <string name="app_settings">Configuració</string>
     <string name="app_back">Torna a la biblioteca</string>
     <string name="app_integration_boundary">Els efectes globals de la configuració s’integraran més endavant.</string>
-    <string name="app_reader_unavailable">El lector encara no està disponible.</string>
+    <string name="app_reader_unavailable">No s’ha pogut tancar el lector amb seguretat. Pots continuar navegant per la biblioteca.</string>
 </resources>

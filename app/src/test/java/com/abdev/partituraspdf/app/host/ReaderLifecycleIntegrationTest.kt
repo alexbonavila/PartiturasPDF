@@ -230,4 +230,59 @@ class ReaderLifecycleIntegrationTest {
         assertEquals(ReaderTrim.CRITICAL, readerTrimForAndroid(ComponentCallbacks2.TRIM_MEMORY_COMPLETE, true))
         assertNull(readerTrimForAndroid(ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE)); assertNull(readerTrimForAndroid(-1))
     }
+    @Test fun retainedSessionAfterFailedCloseBlocksAllNewReaderAdmissionAfterSafeBack() = runTest {
+        val f=Fixture(this); f.open(); val old=f.entry
+        f.closing={Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)}
+        f.trim(ReaderTrim.BACKGROUND); f.finish()
+        assertNull(f.lifetime.state.value.entry); assertTrue(f.lifetime.state.value.recoveryBlocked)
+        assertEquals(ReaderPhase.RETIRED,old.controller.state.value.phase); assertFalse(old.owner.isActive)
+        f.lifetime.arm(LibraryRowKey(StorageDocumentRef("test","row"),1,1),0)
+        assertTrue(f.lifetime.accept(transientRequest) is Outcome.Failure)
+        assertTrue(f.lifetime.restore(registeredRequest.document,0) is Outcome.Failure)
+        assertEquals(1,f.opens); f.resume(); assertEquals(1,f.opens)
+    }
+    @Test fun finalCloseFailureCannotForgetAStillRetainedRouteSession() = runTest {
+        val f=Fixture(this); f.open(); f.closing={Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE)}
+        val done=f.lifetime.leave(); runCurrent(); val report=done.await()
+        assertEquals(ReaderCleanupStage.CLOSE,report.failures.single().stage)
+        assertTrue(f.lifetime.state.value.recoveryBlocked); assertEquals(listOf("open","flush","close","current"),f.events)
+    }
+    @Test fun typedCheckpointCloseFailureWithNoRemainingOwnerAllowsFreshLifetimeWithoutPretendingSuccess() = runTest {
+        val f=Fixture(this); f.open(); val old=f.entry
+        f.closing={f.current=null;Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE)}
+        val done=f.lifetime.leave(); runCurrent(); val report=done.await()
+        assertEquals(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE,report.failures.single().error)
+        assertFalse(f.lifetime.state.value.recoveryBlocked)
+        f.open(); assertNotSame(old.controller,f.entry.controller); assertEquals(2,f.opens); f.finish()
+    }
+    @Test fun finalCloseOwnershipInspectionIsAwaitedOnceBeforeAnyReplacementCanBeAdmitted() = runTest {
+        val f=Fixture(this); f.open(); val gate=CompletableDeferred<Unit>()
+        f.closing={f.current=null;Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE)}
+        f.inspect={gate.await();null}
+        val done=f.lifetime.leave(); runCurrent(); assertFalse(done.isCompleted)
+        assertSame(done,f.lifetime.leave()); assertTrue(f.lifetime.state.value.leaving)
+        assertTrue(f.lifetime.restore(registeredRequest.document,0) is Outcome.Failure)
+        gate.complete(Unit); runCurrent(); done.await(); assertEquals(1,f.checks); assertEquals(1,f.closes)
+        f.open(); assertEquals(2,f.opens); f.inspect={null}; f.finish()
+    }
+    @Test fun earlierTypedLifecycleFailuresRemainAttachedWhenFinalOwnershipInspectionThrows() = runTest {
+        val f=Fixture(this); f.open(); val original=IllegalStateException("cannot inspect failed close")
+        f.flush={Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE)}
+        f.closing={Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)}
+        f.trim(ReaderTrim.BACKGROUND); f.inspect={throw original}
+        val done=f.lifetime.leave(); runCurrent(); val report=done.await()
+        assertSame(original,report.failure())
+        val diagnostics=original.suppressed.filterIsInstance<ReaderExitException>()
+        assertTrue(diagnostics.any { it.report.failures==report.failures })
+        assertEquals(listOf(ReaderCleanupStage.CHECKPOINT,ReaderCleanupStage.CLOSE),report.failures.map { it.stage })
+        assertTrue(f.lifetime.state.value.recoveryBlocked)
+    }
+    @Test fun cancellationDuringCloseVerificationRemainsCancellationWithTypedCloseEvidence() = runTest {
+        val f=Fixture(this); f.open(); val canceled=CancellationException("close verification")
+        f.closing={Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)}; f.inspect={throw canceled}
+        val done=f.lifetime.leave(); runCurrent(); val report=done.await()
+        assertSame(canceled,report.failure()); assertTrue(canceled.suppressed.any { it is ReaderExitException })
+        assertTrue(f.lifetime.state.value.recoveryBlocked)
+    }
+
 }

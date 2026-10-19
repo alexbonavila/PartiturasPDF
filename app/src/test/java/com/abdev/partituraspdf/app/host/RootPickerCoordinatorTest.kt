@@ -28,11 +28,13 @@ class RootPickerCoordinatorTest {
         val completions = mutableListOf<Outcome<FolderRef?>>()
         var duringAccept: suspend () -> Unit = {}
         var duringRestore: suspend () -> Unit = {}
+        var duringSelect: suspend () -> Unit = {}
         var sequence = 0
         val folders = object : FolderNavigation {
             override suspend fun state() = navigation
             override suspend fun select(root: FolderRef): Outcome<FolderNavigationState> {
                 selections += root
+                duringSelect()
                 selectError?.let { return it }
                 return Outcome.Success(FolderNavigationState(root, listOf(root), (navigation?.version ?: 0) + 1).also { navigation = it })
             }
@@ -271,4 +273,46 @@ class RootPickerCoordinatorTest {
         f.picker.incomplete(); f.picker.reconcile(); runCurrent()
         f.picker.close(); gate.complete(Unit); runCurrent(); assertEquals(0, f.refreshed)
     }
+    @Test fun uncertainPrivateRootWriteRequiresReadReconciliationRatherThanBlindPersistenceReplay() = runTest {
+        val f=Fixture(this,old)
+        f.accepted=Outcome.Failure(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE)
+        f.duringAccept={f.stored=Outcome.Success(fresh)} // Simulate a committed write with failed acknowledgment.
+        f.finish(f.launch())
+        assertEquals(AppError.Access.PRIVATE_STORAGE_UNAVAILABLE,f.picker.recovery.value)
+        assertEquals(old,f.navigation!!.root); assertEquals(1,f.accepts)
+        f.picker.reconcile(); runCurrent()
+        assertEquals(fresh,f.navigation!!.root); assertEquals(1,f.restoreCalls); assertEquals(1,f.accepts)
+        assertNull(f.picker.recovery.value)
+    }
+    @Test fun lateFailedNavigatorResultCannotPublishRecoveryAfterPickerClosure() = runTest {
+        val f=Fixture(this,old); val gate=CompletableDeferred<Unit>()
+        f.duringSelect={gate.await()}; f.selectError=revoked
+        f.finish(f.launch()); f.picker.close(); gate.complete(Unit); runCurrent()
+        assertNull(f.picker.recovery.value); assertTrue(f.completions.isEmpty())
+    }
+    @Test fun disposedReconciliationCannotSelectFromALateRestoredRoot() = runTest {
+        val f=Fixture(this,old); val gate=CompletableDeferred<Unit>(); f.duringRestore={gate.await()}
+        f.picker.incomplete(); f.picker.reconcile(); runCurrent()
+        f.picker.close(); gate.complete(Unit); runCurrent()
+        assertTrue(f.selections.isEmpty()); assertEquals(0,f.refreshed)
+    }
+    @Test fun unexpectedReconciliationReadCancellationNotifiesOwnerWithOriginalCause() = runTest {
+        val f=Fixture(this,old); val canceled=CancellationException("root reread canceled")
+        f.duringRestore={throw canceled}; f.picker.incomplete(); f.picker.reconcile(); runCurrent()
+        assertSame(canceled,f.interruptions.single()); assertEquals(0,f.refreshed)
+        assertEquals(AppError.Conflict.STALE_SESSION,f.picker.recovery.value); f.picker.close()
+    }
+    @Test fun unexpectedReconciliationSelectCancellationIsNotSuccessfulRecovery() = runTest {
+        val f=Fixture(this,old); val canceled=CancellationException("reconcile navigation canceled")
+        f.duringSelect={throw canceled}; f.picker.incomplete(); f.picker.reconcile(); runCurrent()
+        assertSame(canceled,f.interruptions.single()); assertEquals(0,f.refreshed)
+        assertEquals(AppError.Conflict.STALE_SESSION,f.picker.recovery.value); f.picker.close()
+    }
+    @Test fun closedReconciliationDoesNotNotifyOwnerAboutLateCancellation() = runTest {
+        val f=Fixture(this,old); val gate=CompletableDeferred<Unit>()
+        f.duringRestore={gate.await();throw CancellationException("closed root read")}
+        f.picker.incomplete(); f.picker.reconcile(); runCurrent(); f.picker.close(); gate.complete(Unit); runCurrent()
+        assertTrue(f.interruptions.isEmpty()); assertEquals(0,f.refreshed)
+    }
+
 }

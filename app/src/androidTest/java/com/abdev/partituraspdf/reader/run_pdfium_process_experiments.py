@@ -155,8 +155,12 @@ def main(argv=None):
     if args.expected_api is not None and int(api) != args.expected_api:
         raise Blocked("Selected emulator API differs from the mandatory CI API")
     installed = runner.call("shell", "pm", "list", "instrumentation").splitlines()
-    if f"instrumentation:{component} (target={target})" not in installed:
-        raise Blocked("Installed instrumentation does not match merged manifest")
+    expected = f"instrumentation:{component} (target={target})"
+    if expected not in installed:
+        raise Blocked(
+            f"Installed instrumentation does not match merged manifest. "
+            f"Expected: {expected!r}; Installed: {installed!r}"
+        )
     apk_hashes = {}
     for package, relative in [(target, "app/build/outputs/apk/debug/app-debug.apk"),
                               (test, "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk")]:

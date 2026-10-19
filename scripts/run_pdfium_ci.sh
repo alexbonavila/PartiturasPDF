@@ -19,6 +19,10 @@ bash ./gradlew :app:connectedDebugAndroidTest --stacktrace \
   -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.abdev.partituraspdf.pdf.android.FreshPdfiumProcess \
   > build/pdfium-ci/standard-gradle.txt 2>&1 || standard=$?
 cat build/pdfium-ci/standard-gradle.txt
+# Gradle may uninstall instrumentation after connectedDebugAndroidTest.
+adb -s "$ANDROID_SERIAL" install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s "$ANDROID_SERIAL" install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s "$ANDROID_SERIAL" shell pm list instrumentation
 diagnostics=0
 python3 app/src/androidTest/java/com/abdev/partituraspdf/reader/run_pdfium_process_experiments.py \
   --serial "$ANDROID_SERIAL" --confirm "$ANDROID_SERIAL" --expected-api "$api" --ci \

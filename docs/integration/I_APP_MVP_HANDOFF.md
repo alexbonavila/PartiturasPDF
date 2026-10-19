@@ -861,3 +861,301 @@ gradle.beforeProject { p ->
  } }
 }
 ```
+
+
+## I07 — Saved navigation and registered-position restoration (2026-10-19)
+
+Starting revision: `a33c937ca2d3d9faa62f5de7ffc0b18d46a6cb13`.
+Implementation: `66be7ed3dd89a980fac2df15a98e3a9deff3b522` on
+`feat/app-mvp-integration-i`. The following documentation-only commit is the final delivery
+(resolve with `git log -1 --format=%H -- docs/integration/I_APP_MVP_HANDOFF.md`). Both are
+local only: no push/PR/merge or hosted CI dispatch. Historical I01–I06 evidence above remains
+intact. This section supersedes I06's statement that process-restoration logic is unimplemented;
+authentic Android system-process-death acceptance is still **NOT RUN**.
+
+### Exact changed files
+
+Paths relative to the repository; three new files, seven modified, none deleted:
+
+- `app/src/main/java/com/abdev/partituraspdf/MainActivity.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppHostFactory.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/AppHostViewModel.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/host/ReaderHostLifetime.kt`
+- `app/src/main/java/com/abdev/partituraspdf/app/navigation/AppRestoration.kt` (new)
+- `app/src/test/java/com/abdev/partituraspdf/app/host/AppRestorationIntegrationTest.kt` (new)
+- `app/src/test/java/com/abdev/partituraspdf/app/navigation/AppRestorationTest.kt` (new)
+- `app/src/androidTest/java/com/abdev/partituraspdf/app/integration/AppHostActivityTest.kt`
+- `app/src/androidTest/java/com/abdev/partituraspdf/app/integration/ReaderHostNativeIntegrationTest.kt`
+- `docs/integration/I_APP_MVP_HANDOFF.md`
+
+### Three startup modes and representation
+
+| Mode | Actual behavior |
+| --- | --- |
+| Configuration recreation | ViewModelProvider returns the same host; factory does not create another session or consume its saved argument. Same F/H, navigator, G route/controller/intent/native session remain eligible under I06. Old consumer detaches, new composition attaches; obsolete Activity UUID callbacks are ignored. |
+| New host with eligible Android saved instance state | Fresh graph/controllers through the existing factory; decode small logical navigation, wait for authoritative startup, then restore Settings or attempt a registered Reader through G. Never reuse a frame, surface, descriptor, coroutine, worker/session or transient capability. |
+| Ordinary fresh launch / absent or invalid saved state | Library. Restore selected root and preferences through existing repositories; do not reopen a previous Reader implicitly. |
+
+The existing ComponentActivity saved-instance `Bundle` is the suitable already-installed
+Android mechanism: `onSaveInstanceState` writes one string at `app.navigation`; onCreate
+passes it to the existing ViewModel factory. No SavedStateHandle dependency or second durable
+store is needed. The AndroidX retained owner wins during configuration recreation. The
+existing host lifetime/pending-picker UUID markers remain unchanged.
+
+`AppRestoration` uses explicit versioned wire strings `1:library`, `1:settings`, or
+`1:reader:<DocumentId>`. No enum ordinal, URI, root/breadcrumb, page number, ReaderUiState,
+bitmap, PDF bytes or native resource is encoded. Reader ID is bounded to 256 UTF-16 code
+units, nonblank and free of ISO control characters; total Reader payload is at most 265 code
+units. Opaque case, spaces and punctuation are preserved, not normalized into another ID.
+Oversized/nonrestorable identities save as Library; absent/unknown version/destination,
+blank/control/oversized identity and former transient representations decode as Library.
+The bound is a restoration eligibility limit, not a change to the public DocumentId contract.
+
+A snapshot while Reader is leaving, host is closing or registration is known missing is
+Library. A transient Reader also snapshots as Library. Back invalidates pending restore
+immediately, including before startup completes. A newer accepted user route's own identity
+replaces the former snapshot. Android does not promise this Bundle after force-stop, crash,
+task removal, or every process termination: without it startup is fresh Library. No durable
+last-route history or live resource serialization has been introduced.
+
+### Startup, root authorization and one-shot admission
+
+Actual order is: independently decode bounded optional state -> construct one session/graph
+on IO -> construct shared navigator/F/H/Reader lifetime -> connect existing admission/cleanup
+callbacks -> pass foreground state -> start F and H once -> publish Ready -> wait for F root
+initialization and H preference observation to leave Loading -> consider saved navigation.
+Decoding occurs early for validation; it does not allocate a Reader or authorize access.
+
+F already calls `FoundationHost.selectedRoot()`, which invokes
+`SelectedRootRepository.restore()` and initializes the **same** FolderNavigation via select.
+`PrivateSelectedRootRepository` rechecks the actual persisted READ grant. No second root save,
+new grant, picker launch, registration mutation or metadata deletion occurs. NoRoot, revoked
+permission, unavailable provider and other typed failures remain F's existing recovery states.
+A replacement process returns to the authorized root, not a serialized nested trail. Existing
+in-process nested navigation remains retained during configuration recreation.
+
+Settings reconstruction uses the newly initialized H controller and observed preferences.
+For Reader, this implementation conservatively requires an Available authorized root and Ready
+preferences before admission. NoRoot/root failure/preference failure discards automatic Reader
+restoration and leaves existing Library/Settings recovery available. After restoring access the
+user must explicitly open a document; there is no hidden retry loop. This deliberately favors
+safe root restoration over guessing a former nested location or bypassing a failed startup.
+
+The host admits exactly one registered logical request using a restoration-bound permit and
+current navigation revision. It does not fabricate a Library row or transient request. The same
+I05 Reader lifetime then supplies one fresh ReaderOpenIntent to G; only G calls the existing
+ReaderRouteOwner, which resolves `DocumentRegistry.resolve(document)` before the SAF adapter
+opens current bytes and the existing isolated engine creates its new session. Navigation
+acceptance alone does not certify registration, permission, native open or graphical success.
+Missing registration / revoked permission / unavailable provider / malformed or protected PDF /
+checkpoint read failure use existing typed Reader error and Back behavior. Registration and
+favorites are never erased or inferred deleted because reopening failed. A missing registration
+also makes subsequent navigation snapshots Library.
+
+A root/preferences initialization barrier prevents early onStart from bypassing startup.
+If backgrounded before admission, restoration waits for a later real onStart, without allocating
+native work; repeated starts/startup calls cannot consume it twice. LOW/CRITICAL pressure
+before Reader admission cancels automatic Reader restoration and stays in Library. Once
+admitted, all stop/trim/resume/Back/terminal work uses the unchanged I06 queue and barriers.
+Back/new user navigation/library commands cancel pending restore; stale revisions do not.
+Terminal disposal cancels pending observation and joins graph users. A noncooperative registry
+may finish an already started native open despite cancellation: the existing route/controller
+closes/discards the late result before graph teardown, never publishes it into a newer route.
+Original programming defects remain in the cause chain (coroutine stack-trace recovery can wrap
+them), rather than becoming fake provider failures. No second lifecycle state machine exists.
+
+### Position authority and durability
+
+`SharedPreferencesReaderPositions` / `ReaderPositionRepository` remains the only production
+page authority. Existing `ReaderRouteOwner` loads it after opening a new real session, then
+`restoredPage` clamps to that session's actual count. Zero, nonzero, missing and formerly
+longer-document positions retain existing semantics. Invalid stored types/negative values
+are ignored by the existing repository without deletion/repair. No checkpoint is written just
+because a stored page was read. Room legacy reading-position data is never consulted.
+
+Actual eligible presentation can schedule a checkpoint; requested/rendered page or a successful
+schedule is not durable confirmation. I06 quiesces, then inspects background/close flush results.
+Reconstruction reads the repository, not a page in the saved Bundle. Interrupted/failed writes
+may leave an earlier committed position; uncertain commits are not promised to roll back.
+Android SharedPreferences can update its in-memory cache even when commit fails. Therefore the
+same-process test doubles' deliberately retained earlier page are one failure scenario, not a
+promise that every real failed write must restore that page. True new-process/disk behavior
+needs device execution. Writer epochs/sequences remain unchanged; an obsolete writer cannot
+legitimately overwrite a newer route. No second page store, migration or fallback is added.
+Transient requests neither use registered position storage nor become eligible merely by having
+been viewed: configuration retention is RAM-only; after process death the user must open again
+using current access, or have explicitly registered the document through existing contracts.
+
+### Tests, commands and actual results
+
+35 new JVM methods: 31 fresh-host/real G + ReaderRouteOwner integration methods and 4 codec
+methods. Storage/native are declared contract doubles, not fake Android rendering. Cases cover
+all three startup modes, nested retention, fresh controllers/sessions, registered identity,
+zero/nonzero/missing/clamped pages, no write on open, requested/rendered versus actual presented,
+unconfirmed/failed/flush results, newer-writer rejection, transient fallback, malformed state,
+root/prefs failure, permission/provider errors, forged/terminal restore permits, newer user
+open, delayed registry, Back/disposal barriers, stale publication and original defect chains.
+Controlled coroutine scheduling and explicit gates/StateFlow conditions replace sleeps.
+
+Six new Android methods compile as JUnit4 void methods: Library Activity recreation plus five
+synthetic Bundle/new-host tests for disk-Room registered reopening, actual presented-page flush,
+out-of-range clamp, Settings reconstruction, transient nonrestoration and typed access loss.
+They retain prior I05/I06 native assertions. Test fixture reuse is explicit: a unique owned cache
+directory, uniquely named preferences, optional disk Room in that directory, canonical fixture
+copy with SHA verification, old host fully disposed before reopening Room, final deletion only
+of those test-owned paths. Normal fixture mode still uses in-memory Room. Existing real isolated
+engine is used; no in-process PdfRenderer fallback. The contract access-loss injection is clearly
+labeled **not real Android grant revocation**. Synthetic Bundle reconstruction does not recreate
+a process or certify system-supplied saved state after kill; graceful old-host cleanup is not
+crash emulation. Existing selected-root/persistence/SAF and FoundationPersistence invalid-value /
+writer-epoch regressions remain enabled and compiled, but Android execution is NOT RUN.
+
+Executed after `source /workspace/partituras-tools/activate.sh` where SDK/JDK are needed:
+
+```bash
+bash ./gradlew -I /tmp/i07-coverage.init.gradle \
+  :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug \
+  :app:testDebugUnitTest --rerun :app:i07Verify :app:i07ReaderCoverage :app:i07AllCoverage \
+  --no-configuration-cache --max-workers=4 --console=plain
+python3 -m unittest discover -s scripts/tests -v
+python3 scripts/validate_localization.py
+python3 test-fixtures/scripts/verify_fixtures.py
+python3 scripts/verify_test_results.py app/build/test-results/testDebugUnitTest \
+  --required-test com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect
+adb devices
+git diff --check
+```
+
+| Evidence | Actual result |
+| --- | --- |
+| Debug + instrumentation APK builds | PASS, test methods compiled; no Android execution implied |
+| JVM JUnit | **575 executed, 0 failures/errors/skips** (I06 540 +35); I01–I06 and existing ReaderRouteOwner/F/G/H/persistence regressions retained |
+| Python infrastructure | **289 PASS** |
+| Lint | **0 errors, 25 warnings**, unchanged I06 count; legacy trim deprecation compiler warnings remain visible |
+| Localization | PASS, unchanged complete Spanish-default/es/ca/en resources (155 main IDs); no new strings |
+| Canonical fixtures | **15 PASS**, immutable bytes/structure/render checks |
+| APK PDF inventory | Debug 0; Android test APK 15 canonical fixtures |
+| Android source inventory | 392 standard +14 assigned diagnostics =406; **source counts, not executed counts** |
+| Android API26/27/36, native/worker/surface/process-kill/grant-revocation | **NOT RUN**; `adb devices` empty; no emulator created/adopted/modified |
+| Hosted CI | **NOT RUN**, owner-reported outage; no platform investigation or workflow edits/dispatch |
+
+Initial local iterations found and corrected test-fixture issues (wrong fake page-count
+expectation, navigation callback replaced by the open bridge, missing await of asynchronous
+IO cleanup and an overly strict assumption that a noncooperative canceled registry cannot
+finish any native open). An Android fixture's recursive Kotlin inferred types required explicit
+File/String types. Those iterations were FAIL, not acceptance evidence; the final command above
+is PASS. Raw local logs `/tmp/i07-final-validation.log`, `/tmp/i07-final-python.log`,
+`/tmp/i07-fixtures.log` and reports are ephemeral and excluded from Git.
+
+### Authentic scoped JVM coverage
+
+Existing JaCoCo 0.8.14 reads the actual JVM execution file and debug class files. Generated
+nested/coroutine/data classes within included sources are retained; no difficult business path
+was excluded. Source-group totals below sum the corresponding sourcefile counters in the real
+report, not a different execution source.
+
+| Source / scope | LINE | BRANCH |
+| --- | --- | --- |
+| New `AppRestoration.kt` codec | **16/16 (100%)** | **28/28 (100%)** |
+| `AppHostViewModel.kt` including existing and new host behavior | **243/245 (99.18%)** | **318/376 (84.57%)** |
+| `ReaderHostLifetime.kt` including registered restoration entry | **165/165 (100%)** | **157/178 (88.20%)** |
+| Affected three-source group | **424/426 (99.53%)** | **503/582 (86.43%)** |
+| Existing scoped host/navigation aggregate plus restoration | **531/533 (99.62%)** | **598/681 (87.81%)** |
+| Unfiltered host/navigation including Android factory/binding/Compose | 531/694 (76.51%) | 598/799 (74.84%) |
+
+New codec, affected source group and aggregate each exceed 90% LINE /80% BRANCH; individual
+host/lifetime files also exceed both. MainActivity/Android factory, resource/UI behavior,
+real SAF, native workers and surfaces are not certified by JVM coverage. The unfiltered row
+exposes those Android-only misses rather than calling APK compilation coverage. No protected
+feature/worker coverage, CI threshold or project Gradle configuration is changed.
+
+### Prompt 7 handoff and remaining acceptance
+
+- H's retained `SettingsController.state.preferences` exposes authoritative observed theme and
+  PAGE/WIDTH; production graph preferences already supply it. Current initial Reader fit uses
+  a confirmed Ready snapshot. Prompt 7 may apply observed theme at the outer theme composition
+  and confirmed fit through existing ReaderAction.Fit with I06 sequencing; do not persist an
+  in-reader local choice implicitly or reopen native sessions unnecessarily.
+- `DeviceLocalePolicy` with delivered English/Catalan and Spanish default resources is available.
+  Prompt 7 owns API26-compatible context/Activity locale application before resource reads and
+  recreation on actual device-language change. Legacy LanguageSelection must not override it.
+  I07 retained versus reconstructed-owner boundaries must remain distinct during that recreation.
+- MainActivity and current destination/foreground/suspension state are the existing host/window
+  integration points for Reader keep-screen-on; no window flags or runtime effects added here.
+- Actual saved-state capture -> system-kill -> relaunch on an authorized disposable emulator,
+  fresh-process disk positions, real grants/revocation, native/surface lifecycle, mandatory
+  latest-head CI/API26 and compatibility API27/36 remain NOT RUN. Physical Android8.1 tablet,
+  TalkBack, external providers and deferred C06 backup/D2D acceptance remain pending; no waiver.
+- No confirmed protected-source defect requiring scope expansion was found. Missing device
+  evidence and framework-dependent saved-state availability are limitations, not fabricated
+  defects. Do not promise restore after force-stop/task removal/crash without an eligible Bundle.
+
+No F/G/H, core/storage/data/persistence, worker/AIDL, schema, contracts, dependencies, Gradle/CI,
+quality policy, canonical fixture or backup changes. No performance benchmark, global settings,
+locale/window implementation, broad recovery redesign or Prompt 7 work. Stop after I07 for
+owner review; no publication authorized by this assignment.
+
+### Reproducing I07 coverage without repository build changes
+
+Save this tested external script as `/tmp/i07-coverage.init.gradle` and run the command above.
+The external task named `i07ReaderCoverage` now selects the new restoration codec only and
+writes `/tmp/i07-coverage/reader.xml`; inspect `report.xml` for host/lifetime source counters
+and `all.xml` for the unfiltered Android-inclusive denominator. Paths and tasks here are local
+measurement tooling, not installed CI. Reconstruct the file from this text if `/tmp` is lost.
+
+```groovy
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+gradle.beforeProject { p ->
+ if (p.path == ':app') p.plugins.withId('com.android.application') { p.afterEvaluate {
+  def classes=p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+   include 'com/abdev/partituraspdf/app/host/AppHostViewModel*'
+   include 'com/abdev/partituraspdf/app/host/AppHostState*'
+   include 'com/abdev/partituraspdf/app/host/AppHostFeatures*'
+   include 'com/abdev/partituraspdf/app/host/AppHostSession*'
+   include 'com/abdev/partituraspdf/app/host/RootPickerCoordinator*'
+   include 'com/abdev/partituraspdf/app/host/Reader*'
+   include 'com/abdev/partituraspdf/app/host/AndroidReaderLifecycle*'
+   include 'com/abdev/partituraspdf/app/navigation/**'
+  }
+  def data=p.layout.buildDirectory.file('jacoco/testDebugUnitTest.exec')
+  def report=p.tasks.register('i07Coverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports { xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i07-coverage/report.xml'))
+    html.outputLocation.set(new File('/tmp/i07-coverage/html')) }
+   doFirst { if(classes.files.empty || !data.get().asFile.isFile()) throw new GradleException('Missing real host classes/JVM execution') }
+  }
+  p.tasks.register('i07ReaderCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/navigation/AppRestoration*'
+
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i07-coverage/reader.xml'))
+    html.outputLocation.set(new File('/tmp/i07-coverage/reader-html'))}
+  }
+  p.tasks.register('i07AllCoverage',JacocoReport) {
+   dependsOn 'testDebugUnitTest'
+   classDirectories.setFrom(p.fileTree(p.layout.buildDirectory.dir('intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')) {
+    include 'com/abdev/partituraspdf/app/host/**', 'com/abdev/partituraspdf/app/navigation/**'
+   })
+   sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   outputs.upToDateWhen {false}
+   reports {xml.required.set(true);html.required.set(true)
+    xml.outputLocation.set(new File('/tmp/i07-coverage/all.xml'))
+    html.outputLocation.set(new File('/tmp/i07-coverage/all-html'))}
+  }
+  p.tasks.register('i07Verify',JacocoCoverageVerification) {
+   dependsOn report
+   classDirectories.setFrom(classes);sourceDirectories.setFrom(p.file('src/main/java'));executionData.setFrom(data)
+   violationRules { rule { limit {counter='LINE';minimum=0.90};limit {counter='BRANCH';minimum=0.80} } }
+  }
+ } }
+}
+```

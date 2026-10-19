@@ -1,5 +1,11 @@
 # Phase I application integration — I03/I04 review handoff
 
+> **Current I12 audit — 2026-10-20:** I01–I11 are implemented locally. The dated sections below
+> retain their original incremental boundaries. Use [Phase I acceptance](../acceptance/I_APP_MVP_ACCEPTANCE.md)
+> for the final I-T01–I-T17 register, fresh local execution, source-specific coverage, Lint/AAB
+> findings, manual procedure and outstanding owner decisions. Implementation is not acceptance.
+
+
 Recorded 2026-10-19. This is an incremental implementation report, **not Phase I acceptance**.
 Prompt 3 starts at `17a6c4eee5d03cccbe29815021b6d250bcbbe9de`, on
 `feat/app-mvp-integration-i`, with a clean checkout. That revision and both Prompt 2
@@ -1834,3 +1840,86 @@ gradle.beforeProject { p ->
  } }
 }
 ```
+
+
+## I12 — Final audit and delivery preparation (2026-10-20)
+
+Starting/tested source revision: `f51cc42df996390cf7e6aacf6cff85e004c9ca17`, clean branch
+`feat/app-mvp-integration-i`. Fetch succeeded; latest origin/main and original merge base both
+`cd86db5c4f70201cfbe6970de20cdb3308a970d0`. No drift/synchronization, rebase, merge, push,
+PR creation or Actions dispatch. All14 Phase I commits and38 changed paths reviewed.
+Final audit delivery SHA: `git log -1 --format=%H -- docs/acceptance/I_APP_MVP_ACCEPTANCE.md`.
+I12 changes documentation only; source/test/build trees stay identical to the tested revision.
+
+### Final source and lifecycle ownership
+
+I01–I02 AppHostFactory/ProductionHostSession and retained AppHostViewModel own one graph, F/H
+controllers, shared F/Foundation navigator and attempt scope. I03–I04 RootPickerBinding forwards
+actual Android result values to RootPickerCoordinator, single SafRootSelection persistence and
+same-navigator synchronization. F retains bounded browse, explicit registration/favorites and
+registered/transient intent classification. I05 ReaderHostLifetime grants one current row/restore
+permit to G; no host duplicate route.open. I06 serializes background/low/critical/resume with G's
+native/frame barriers; terminal Back joins cleanup before Library refresh/graph teardown. I07
+restores bounded registered logical navigation only when eligible saved state and authoritative
+root/preferences permit; SharedPreferences committed checkpoints remain sole page authority.
+I08–I10 observe H's StateFlow, apply confirmed theme/fit, primary-device locale before resource
+reads and Activity-owned Reader-only Window flags. I11 R01–R40 recovery and original diagnostics
+remain; failed close is reconciled after G retires, never treated as success by resetting guards.
+
+Only Activity/composition holds Window, registry and graphical consumer references. Configuration
+recreation preserves ViewModel/graph/controllers and replaces the consumer; process death creates
+new owners/access/native state. Worker remains nonexported, isolated and separate from graph
+startup. No new dependency/module/manifest/Gradle/CI/shared-contract/persistence/worker/fixture
+change is introduced. The original Phase I shared test assertion147→155 remains owner-authorized.
+
+### Fresh final evidence and open requirements
+
+[Acceptance register](../acceptance/I_APP_MVP_ACCEPTANCE.md) is the single final numerical and
+requirement register, preserving all earlier dated results above. It records:
+
+- PASS debug/release APKs (R8) and Android-test APK compilation;620 JVM0 failures/errors/skips;
+  289 Python; complete155 main/20 debug resource IDs per locale;15 immutable fixture checks.
+- Established `python3 scripts/local_e2e.py run --suite host` PASS, original fresh JVM XML/JSON/JUnit/
+  HTML retained in run `20261019T224739Z-3ff2dc38f0f546a991ea7a3466d22081`. It executed no Android tests.
+- JaCoCo0.8.14 source counters independently meet90% lines/80% branches for every included host/
+  navigation logic source. AppHostViewModel259/262 lines,327/386 branches; ReaderHostLifetime189/189,
+  190/214; RootPickerCoordinator85/85,80/86; presentation policy20/20,41/49; Android mapping7/7,7/7;
+  navigation13/13,16/16; restoration16/16,28/28; host state11/11,0 branches.
+- Aggregate600/603 lines99.50%,689/786 branches87.66%. Unfiltered Android-inclusive report601/862,
+  689/950 is not combined/runtime coverage. Fresh Compose generated branch counts differ from I11
+  by12 uncovered branches with unchanged sources/gated counters; no improvement is claimed from it.
+- Source/test APK inventory421=407 standard+14 assigned diagnostics;24 standard isolation tests,
+  29 controlled diagnostic invocations unchanged. All46 Phase I Android additions compile; NOT RUN.
+- Actual debug/release production APKs and inspected debug AAB contain0 PDFs; test APK contains15
+  exact canonical hashes. Compiled Policy B debug/release rules verified, including optimized paths.
+- Lint0 errors/26 warnings:24 historical +unused obsolete banner +AppBundleLocaleChanges. Complete
+  per-category dispositions retained in the register; no suppression/removal/dependency upgrade.
+- Actual cached bundletool1.18.3 built AAB/APK-set and extracted en/ca/es API26 synthetic device
+  selections. Initial en set contains base-en and Spanish-default master, no base-ca; inverse
+  selections differ. All languages are in the bundle, not necessarily in an initial install set.
+  Real delivery/system-language switching NOT RUN. Proposed minimal disable-language-splits
+  correction needs separate owner Gradle approval; no packaging or delivery-client change made.
+- API26/27/36, real SAF/native/Surface/process death, physical Android8.1, TalkBack/manual/linguistic
+  acceptance NOT RUN. Doctor BLOCKED: no KVM, dedicated AVD UNPROVISIONED, no attached device.
+  No emulator created/started/adopted or device data/grants changed. Hosted API access proxy403;
+  all seven final-revision checks NOT RUN, no historical CI substitution or outage investigation.
+
+I-T16 is PASS for production fixture exclusion. I-T01–I-T15/I-T17 retain NOT RUN final combined
+acceptance because their mandatory Android/manual evidence is missing, despite passing logic.
+The register provides the exact original criteria, production/test mapping, API reproduction,
+20-action physical-tablet evidence table, real SAF/process-kill distinctions and current CI needs.
+No newly demonstrated critical integration defect required a correction. Missing device evidence
+is a blocker, not an invented code failure. AAB split delivery remains a concrete owner decision.
+
+### Local review material and stopping point
+
+New [prepared PR description](I_APP_MVP_PR_DESCRIPTION.md) contains title, complete branch scope,
+commit/file inventory, validation, APIs and acceptance blockers. Other changed files: README,
+PROJECT_STATUS, ROADMAP, this handoff and the new acceptance register (six documentation paths
+in total; no files deleted). Historical snapshots remain labeled and retained. AGENTS/governance
+status correction requires a separately approved task and was not made here.
+
+**Ready for owner publication/review, acceptance pending** means review preparation only. No
+merge-readiness, physical/device/backup/performance or full security certification follows.
+Owner must approve packaging scope and publication separately, obtain latest-revision mandatory
+CI/API26/API27/API36/manual evidence and decide formal acceptance. No next phase is started.

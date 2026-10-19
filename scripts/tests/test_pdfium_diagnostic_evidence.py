@@ -100,6 +100,65 @@ class DiagnosticEvidenceTests(unittest.TestCase):
         self.assertEqual(21, result['rawPassed']); self.assertEqual('FAIL', rows[5]['status'])
         self.assertEqual('KNOWN_PLATFORM_DEFECT_REPRODUCED', rows[5]['classification'])
 
+    def poisoned_j_suite(self, api=26):
+        rows = suite(api, contaminated=api != 36)
+        entry = next(r for r in rows if r['selected'].endswith('#j_encryptedCorruptThenValidAdapter'))
+        for row in entry['attempts'][1:3] if api == 36 else entry['attempts'][1:]:
+            row['typedOutcome'] = 'Failure(error=DOCUMENT_FORMAT)'
+        return rows, entry
+
+    def test_android8_exact_encrypted_corrupt_sequence_preserves_failure_and_recovers(self):
+        for api in [26, 27]:
+            with self.subTest(api=api):
+                rows, entry = self.poisoned_j_suite(api)
+                result = self.classify(rows, api)
+                self.assertEqual('DIAGNOSTICS_VALIDATED', result['status'])
+                self.assertEqual(29, result['invocations'])
+                self.assertEqual(8, result['rawFailed'])
+                self.assertEqual(8, result['knownPlatformDefects'])
+                self.assertEqual('FAIL', entry['status'])
+                self.assertEqual(-2, entry['completionCode'])
+                self.assertEqual(['01', '14', '15', '01'], [r['fixture'] for r in entry['attempts']])
+                index = rows.index(entry)
+                recovery = rows[index + 1:index + 3]
+                self.assertEqual(
+                    ['d_freshProcessRecoveryDirect', 'k_cleanAdapterRepeatedValidOpens'],
+                    [r['selected'].split('#')[1] for r in recovery]
+                )
+                self.assertTrue(all(r['status'] == 'PASS' for r in recovery))
+                self.assertTrue(all(r['classification'] == 'CLEAN_NATIVE_ACCEPTANCE_PASSED' for r in recovery))
+                self.assertEqual(3, len({tuple(r['processIdentity']) for r in [entry] + recovery}))
+                with tempfile.TemporaryDirectory() as tmp:
+                    for i, run in enumerate(rows):
+                        ev.write_junit(Path(tmp)/f'{i}.xml', run['selected'], run, 'synthetic raw evidence')
+                    self.assertEqual(8, sum(ET.parse(p).getroot().get('failures') == '1'
+                                            for p in Path(tmp).glob('*.xml')))
+
+    def test_poisoned_format_is_rejected_outside_exact_android8_sequence(self):
+        for mutation in ['corrupt-first', 'e-scenario', 'api36', 'permission',
+                         'missing-final', 'missing-recovery', 'no-encrypted-format',
+                         'unexpected-final']:
+            api = 36 if mutation == 'api36' else 26
+            rows, entry = self.poisoned_j_suite(api)
+            if mutation == 'corrupt-first':
+                entry = next(r for r in rows if r['selected'].endswith('#h_corruptEncryptedThenValidAdapter'))
+                entry['attempts'][1]['typedOutcome'] = 'Failure(error=DOCUMENT_FORMAT)'
+            elif mutation == 'e-scenario':
+                entry = next(r for r in rows if r['selected'].endswith('#e_corruptThenValidAdapter'))
+                entry['attempts'][1]['typedOutcome'] = 'Failure(error=DOCUMENT_FORMAT)'
+            elif mutation == 'permission':
+                entry['attempts'][2]['typedOutcome'] = 'Failure(error=PERMISSION_REVOKED)'
+            elif mutation == 'missing-final':
+                entry['attempts'].pop()
+            elif mutation == 'missing-recovery':
+                rows.pop(rows.index(entry) + 1)
+            elif mutation == 'no-encrypted-format':
+                entry['attempts'][1]['typedOutcome'] = 'Failure(error=INVALID_DOCUMENT)'
+            elif mutation == 'unexpected-final':
+                entry['attempts'][-1]['typedOutcome'] = 'Failure(error=PERMISSION_REVOKED)'
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                self.classify(rows, api)
+
     def test_unaffected_platform_records_real_success_without_expected_failure(self):
         for api in [26,27,36]:
             result = self.classify(suite(api,False), api)

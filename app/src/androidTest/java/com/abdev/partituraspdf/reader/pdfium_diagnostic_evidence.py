@@ -120,7 +120,7 @@ def rendered(row, fixture):
         require(row.get("typedOutcome") == "Success(open and render)", "Fake native success")
 
 
-def rejected(row, negative):
+def rejected(row, negative, allow_poisoned_format=False):
     require(row.get("rendered") is False and row.get("constructed") is False and row.get("pageCountRead") is False,
             "Failure did not occur in native opening")
     require(row.get("operation") in {"engine.open", "PdfRenderer constructor"}, "Unexpected failure operation")
@@ -130,7 +130,7 @@ def rejected(row, negative):
         require(row.get("typedOutcome") == "not applicable to direct PdfRenderer", "Unexpected direct result")
     else:
         allowed = {"Failure(error=INVALID_DOCUMENT)"}
-        if negative == "14":
+        if negative == "14" or allow_poisoned_format:
             allowed.add("Failure(error=DOCUMENT_FORMAT)")
         require(row.get("exception") is None and row.get("typedOutcome") in allowed, "Unexpected native adapter failure")
 
@@ -161,9 +161,19 @@ def classify(runs, api, scenarios, fixtures):
                     "Wrong native operation identity")
             check_attempt(row, fixtures[row["fixture"]], engine)
         negative = any(row["fixture"] in {"14", "15"} for row in rows)
+        affected_j = (
+            api in {26, 27}
+            and method == "j_encryptedCorruptThenValidAdapter"
+            and [r["fixture"] for r in rows] == ["01", "14", "15", "01"]
+            and rows[1]["typedOutcome"] == "Failure(error=DOCUMENT_FORMAT)"
+        )
         for index, row in enumerate(rows):
             if row["fixture"] in {"14", "15"}:
-                rejected(row, row["fixture"])
+                rejected(
+                    row,
+                    row["fixture"],
+                    allow_poisoned_format=affected_j and index == 2
+                )
             elif index != len(rows) - 1 or not negative or entry["status"] == "PASS":
                 rendered(row, fixtures[row["fixture"]])
         if entry["status"] == "PASS":
@@ -173,7 +183,11 @@ def classify(runs, api, scenarios, fixtures):
             require(negative and api in {26, 27} and entry["completionCode"] == -2, "Unexpected platform/test failure")
             require(entry["stack"].startswith("java.lang.AssertionError: Valid fixture 01 did not open/render; inspect ReaderPdfiumProcess PID/sequence:"),
                     "Unrelated assertion is not a known Pdfium defect")
-            rejected(rows[-1], rows[-2]["fixture"])
+            rejected(
+                rows[-1],
+                rows[-2]["fixture"],
+                allow_poisoned_format=affected_j
+            )
             entry["classification"] = "KNOWN_PLATFORM_DEFECT_REPRODUCED"
     # Negative invocations must be followed by independently successful DIRECT and ADAPTER recovery.
     for index, entry in enumerate(runs):

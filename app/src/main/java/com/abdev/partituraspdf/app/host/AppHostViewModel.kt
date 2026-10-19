@@ -8,6 +8,10 @@ import com.abdev.partituraspdf.core.result.Observation
 import com.abdev.partituraspdf.core.result.Outcome
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import com.abdev.partituraspdf.core.preferences.AppPreferences
+import com.abdev.partituraspdf.core.preferences.PageFit
 import com.abdev.partituraspdf.library.LibraryAction
 import com.abdev.partituraspdf.library.LibraryAssociation
 import com.abdev.partituraspdf.library.LibraryContent
@@ -45,6 +49,8 @@ internal class AppHostViewModel(
     private val scope = CoroutineScope(owner + dispatcher + handler)
     private val mutableState = MutableStateFlow<AppHostState>(AppHostState.Loading)
     val state = mutableState.asStateFlow()
+    private val mutablePreferences = MutableStateFlow<Observation<AppPreferences>>(Observation.Loading)
+    val preferences = mutablePreferences.asStateFlow()
     private val mutableNavigation = MutableStateFlow(AppNavigation())
     val navigation = mutableNavigation.asStateFlow()
     private var startup: Job? = null
@@ -125,6 +131,7 @@ internal class AppHostViewModel(
                 features.library.start()
                 if (closing) throw CancellationException("Host disposal")
                 features.settings.start()
+                observePresentation(features, children)
                 if (closing) throw CancellationException("Host disposal")
                 live = Attempt(session, children)
                 transferred = true
@@ -165,6 +172,25 @@ internal class AppHostViewModel(
         val closed = withContext(io) { runCatching { attempt.session?.close() } }
         closed.exceptionOrNull()?.let { cleanup -> clean = false; failure = combine(failure, cleanup) }
         Release(failure, clean)
+    }
+
+    /** Observe H's StateFlow, not DataStore again. Commands/acknowledgments are not confirmation. */
+    private fun observePresentation(features: AppHostFeatures, children: Job) {
+        scope.launch(children) {
+            var confirmedFit: PageFit? = null
+            features.settings.state.map { it.preferences }.distinctUntilChanged().collect { observed ->
+                synchronized(lock) {
+                    if (!closing) {
+                        mutablePreferences.value = observed
+                        if (observed is Observation.Ready) {
+                            val fit = observed.value.reader.pageFit
+                            if (confirmedFit != null && confirmedFit != fit) features.reader?.defaultFit(fit)
+                            confirmedFit = fit
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** Library owns root restore/READ revalidation; H owns authoritative preference observation. */

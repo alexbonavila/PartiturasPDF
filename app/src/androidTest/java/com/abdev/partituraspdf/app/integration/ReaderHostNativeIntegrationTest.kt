@@ -12,6 +12,17 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.*
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.toArgb
+import android.view.WindowManager
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.abdev.partituraspdf.data.preferences.DataStorePreferencesRepository
+import java.util.concurrent.atomic.AtomicInteger
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.Lifecycle
@@ -39,12 +50,10 @@ import com.abdev.partituraspdf.pdf.api.*
 import com.abdev.partituraspdf.reader.*
 import com.abdev.partituraspdf.settings.SettingsController
 import com.abdev.partituraspdf.storage.api.*
-import com.abdev.partituraspdf.ui.theme.PartiturasPDFTheme
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import org.junit.After
@@ -64,6 +73,8 @@ class ReaderHostNativeIntegrationTest {
     private var host: AppHostViewModel? = null
     private var session: Session? = null
     private var callbackIdentity = ""
+    private val observedSurface = AtomicInteger()
+    private val injectedNightMode = mutableStateOf<Boolean?>(null)
     private lateinit var factory: ViewModelProvider.Factory
 
     private inner class Session(val fixture: JSONObject, persistent: Boolean = false, reuse: Session? = null) : AppHostSession {
@@ -82,8 +93,12 @@ class ReaderHostNativeIntegrationTest {
         val engine = IsolatedPdfReadEngine(context, ceiling)
         var afterRender: (suspend (RenderedPage) -> Unit)? = null
         var accessError: AppError? = null
+        var nativeOpens = 0
+        lateinit var preferencesRepository: PreferencesRepository
         val observedEngine = object : PdfReadEngine {
-            override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> = when (val result = engine.open(source)) {
+            override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> {
+                nativeOpens++
+                return when (val result = engine.open(source)) {
                 is Outcome.Failure -> result
                 is Outcome.Success -> Outcome.Success(object : PdfReadSession by result.value {
                     override suspend fun render(request: RenderRequest): Outcome<RenderedPage> {
@@ -92,6 +107,7 @@ class ReaderHostNativeIntegrationTest {
                         return rendered
                     }
                 })
+                }
             }
         }
         var constructions = 0
@@ -138,10 +154,9 @@ class ReaderHostNativeIntegrationTest {
                 }
                 override suspend fun openSeekable(document: StorageDocumentRef, limits: ReadAccessLimits) = openRead(document)
             }
-            val preferencesRepository = object : PreferencesRepository {
-                override fun observe() = flowOf(Observation.Loading, Observation.Ready(AppPreferences()))
-                override suspend fun update(change: PreferenceChange): Outcome<Unit> = error("This test never changes persisted settings")
-            }
+            val store = PreferenceDataStoreFactory.create(scope = CoroutineScope(scope.coroutineContext + Dispatchers.IO),
+                produceFile = { File(directory, "settings.preferences_pb") })
+            preferencesRepository = DataStorePreferencesRepository(store)
             val settings = SettingsController(scope, preferencesRepository, RepositorySettingsCommands(preferencesRepository))
             val reading = ReaderHostLifetime(scope, routeFactory = { readerScope ->
                 constructions++
@@ -178,9 +193,42 @@ class ReaderHostNativeIntegrationTest {
             host = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java]
             installLifecycleBridge()
         }
-        composition.mount { PartiturasPDFTheme { AppHost(host!!) } }
+        mountPresentation()
         compose.waitUntil(15_000) { (host!!.state.value as? AppHostState.Ready)?.features?.library?.state?.value?.content is LibraryContent.Ready }
         compose.waitUntil(15_000) { pdf().association !is LibraryAssociation.LookingUp }
+        compose.waitUntil(15_000) { session.features.settings.state.value.preferences is Observation.Ready }
+    }
+    private fun mountPresentation() {
+        composition.mount {
+            val configuration = Configuration(LocalConfiguration.current)
+            injectedNightMode.value?.let { dark ->
+                configuration.uiMode = (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                AppPresentation(host!!, compose.activity) {
+                    val surface = MaterialTheme.colorScheme.surface.toArgb()
+                    SideEffect { observedSurface.set(surface) }
+                    AppHost(host!!)
+                }
+            }
+        }
+    }
+    private fun keepScreenOn(): Boolean {
+        var enabled = false
+        compose.runOnUiThread { enabled = compose.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0 }
+        return enabled
+    }
+    private fun preference(change: PreferenceChange) {
+        assertEquals(Outcome.Success(Unit), runBlocking { session!!.preferencesRepository.update(change) })
+        compose.waitUntil(15_000) {
+            val current = (session!!.features.settings.state.value.preferences as? Observation.Ready)?.value
+            host!!.preferences.value == session!!.features.settings.state.value.preferences && when (change) {
+                is PreferenceChange.Theme -> current?.theme == change.value
+                is PreferenceChange.Fit -> current?.reader?.pageFit == change.value
+                is PreferenceChange.Language -> current?.language == change.value
+            }
+        }
     }
     /** Test-owned host receives genuine Activity lifecycle callbacks; no production factory override. */
     private fun installLifecycleBridge() {
@@ -269,7 +317,7 @@ class ReaderHostNativeIntegrationTest {
         }
         // The old Activity destroyed its composition. Track the replacement composition for teardown too.
         composition = ReaderTestComposition(compose)
-        composition.mount { PartiturasPDFTheme { AppHost(host!!) } }
+        mountPresentation()
         compose.waitUntil(20_000) { first.controller.state.value.checkpointConsumer != null && first.controller.state.value.checkpointConsumer !== consumer }
         assertSame(first, entry()); assertEquals(nativeSession, entry().controller.state.value.session!!.id); assertEquals(1, session!!.constructions)
         compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
@@ -339,13 +387,14 @@ class ReaderHostNativeIntegrationTest {
         composition.unmount()
         val old = session!!
         runBlocking { withContext(Dispatchers.Main.immediate) { host!!.dispose() }.await() }
+        composition = ReaderTestComposition(compose)
         val next = Session(old.fixture, persistent = true, reuse = old).also { it.accessError = accessError; session = it }
         compose.runOnUiThread {
             host = AppHostViewModel({ next }, Dispatchers.Main.immediate, Dispatchers.IO, { false }, failures::add,
                 saved.getString("app.navigation"))
             installLifecycleBridge()
         }
-        composition.mount { PartiturasPDFTheme { AppHost(host!!) } }
+        mountPresentation()
         compose.waitUntil(20_000) { (host!!.state.value as? AppHostState.Ready)?.features?.library?.state?.value?.content is LibraryContent.Ready }
     }
     private fun snapshot() = android.os.Bundle().apply {
@@ -413,6 +462,81 @@ class ReaderHostNativeIntegrationTest {
         assertNull(entry().controller.state.value.frame)
         assertTrue(runBlocking { session!!.registry.resolve(document) } is Outcome.Success)
         back()
+    }
+
+    @Test fun confirmedDataStoreThemesApplyWithoutReopeningVisiblePdf() {
+        mount("02"); open(); visible(); val native = entry().controller.state.value.session!!.id
+        preference(PreferenceChange.Theme(ThemeSelection.LIGHT)); compose.waitForIdle(); val light = observedSurface.get()
+        preference(PreferenceChange.Theme(ThemeSelection.DARK)); compose.waitUntil(10_000) { observedSurface.get() != light }
+        assertEquals(native, entry().controller.state.value.session!!.id)
+        assertEquals(1, session!!.nativeOpens); compose.onNodeWithTag("reader_page").assertIsDisplayed()
+        preference(PreferenceChange.Theme(ThemeSelection.SYSTEM)); compose.waitForIdle(); back()
+    }
+    @Test fun systemThemeFollowsInjectedNightConfigurationWithoutReopeningReader() {
+        mount("02"); open(); visible(); val native = entry().controller.state.value.session!!.id
+        preference(PreferenceChange.Theme(ThemeSelection.SYSTEM))
+        compose.runOnUiThread { injectedNightMode.value = false }; compose.waitForIdle(); val light = observedSurface.get()
+        compose.runOnUiThread { injectedNightMode.value = true }
+        compose.waitUntil(10_000) { observedSurface.get() != light }
+        assertEquals(native, entry().controller.state.value.session!!.id); assertEquals(1, session!!.nativeOpens); back()
+        // Configuration injection exercises Compose, not a real device night-mode change.
+    }
+    @Test fun darkReaderRecreationRetainsConfirmedThemeAndNativeOwnerAndClearsOldWindow() {
+        mount("02"); preference(PreferenceChange.Theme(ThemeSelection.DARK)); open(); visible()
+        compose.waitUntil(15_000) { keepScreenOn() }
+        val old = entry(); val native = old.controller.state.value.session!!.id
+        val window = compose.activity.window; val color = observedSurface.get()
+        compose.activityRule.scenario.recreate()
+        compose.runOnUiThread {
+            val retained = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java]
+            assertSame(host, retained); installLifecycleBridge()
+            assertEquals(0, window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        composition = ReaderTestComposition(compose); mountPresentation(); visible()
+        compose.waitUntil(15_000) { keepScreenOn() && observedSurface.get() == color }
+        assertSame(old, entry()); assertEquals(native, entry().controller.state.value.session!!.id)
+        assertEquals(1, session!!.nativeOpens); back()
+    }
+    @Test fun persistedDefaultFitAndLocalMenuRemainDistinctWhileConfirmedChangesStayInSameNativeSession() {
+        mount("02"); preference(PreferenceChange.Fit(PageFit.WIDTH)); open(); visible()
+        val native = entry().controller.state.value.session!!.id
+        assertEquals(PageFit.WIDTH, entry().controller.state.value.fit)
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
+        compose.waitUntil(20_000) { entry().controller.state.value.presentedPage == PageIndex(1) }
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_options)).performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_fit_page)).performClick()
+        compose.waitUntil(20_000) { entry().controller.state.value.fit == PageFit.PAGE }
+        preference(PreferenceChange.Theme(ThemeSelection.DARK)); compose.waitForIdle()
+        assertEquals(PageFit.PAGE, entry().controller.state.value.fit)
+        preference(PreferenceChange.Fit(PageFit.PAGE)); preference(PreferenceChange.Fit(PageFit.WIDTH))
+        compose.waitUntil(20_000) { entry().controller.state.value.fit == PageFit.WIDTH && entry().controller.state.value.phase == ReaderPhase.VISIBLE }
+        assertEquals(PageIndex(1), entry().controller.state.value.presentedPage)
+        assertEquals(native, entry().controller.state.value.session!!.id); assertEquals(1, session!!.nativeOpens); back()
+    }
+    @Test fun actualWindowFlagTracksVisibleBackgroundResumedReaderBackAndSettings() {
+        mount("02"); assertFalse(keepScreenOn()); open(); visible()
+        compose.waitUntil(15_000) { keepScreenOn() }
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED); assertFalse(keepScreenOn())
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED); visible()
+        compose.waitUntil(15_000) { keepScreenOn() }; back(); compose.waitUntil(10_000) { !keepScreenOn() }
+        compose.runOnUiThread { host!!.showSettings(host!!.navigation.value.revision) }
+        compose.waitForIdle(); assertFalse(keepScreenOn())
+    }
+    @Test fun presentationDisposalClearsItsWindowBeforeTerminalReaderCleanup() {
+        mount("02"); open(); visible(); compose.waitUntil(15_000) { keepScreenOn() }
+        composition.unmount(); assertFalse(keepScreenOn())
+        runBlocking { withContext(Dispatchers.Main.immediate) { host!!.dispose() }.await() }
+        assertFalse(keepScreenOn())
+    }
+    @Test fun syntheticNewHostReloadsActualDataStoreThemeAndDefaultFitWithFreshReader() {
+        mount("02", persistent = true); register()
+        preference(PreferenceChange.Theme(ThemeSelection.DARK)); preference(PreferenceChange.Fit(PageFit.WIDTH))
+        open(); visible(); val old = entry(); val surface = observedSurface.get(); val saved = snapshot()
+        reconstruct(saved)
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.READER }
+        visible(); compose.waitUntil(10_000) { observedSurface.get() == surface && keepScreenOn() }
+        assertNotSame(old.controller, entry().controller); assertEquals(PageFit.WIDTH, entry().controller.state.value.fit)
+        assertEquals(ThemeSelection.DARK, (host!!.preferences.value as Observation.Ready).value.theme); back()
     }
 
     @Test fun malformedCanonicalPdfFailsInIsolatedReaderAndStillReturnsSafely() {

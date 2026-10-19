@@ -51,9 +51,6 @@ internal fun AppHost(owner: AppHostViewModel) {
                         }
                     }
                 }
-                // This temporary boundary is explicit; unsupported callbacks return typed failures.
-                Text(stringResource(R.string.app_integration_boundary), Modifier.padding(horizontal = 16.dp),
-                    style = MaterialTheme.typography.bodySmall)
                 Box(Modifier.weight(1f)) {
                     when (navigation.destination) {
                         AppDestination.LIBRARY -> {
@@ -128,7 +125,7 @@ internal fun AppHost(owner: AppHostViewModel) {
 
 @Composable
 internal fun AppStartupLoading() {
-    Column(Modifier.fillMaxSize().padding(24.dp).testTag("app_loading").semantics(mergeDescendants = true) {
+    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp).testTag("app_loading").semantics(mergeDescendants = true) {
         progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
         liveRegion = LiveRegionMode.Polite
     }) {
@@ -139,7 +136,7 @@ internal fun AppStartupLoading() {
 
 @Composable
 internal fun AppStartupFailure(retryable: Boolean, onRetry: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp).testTag("app_startup_failure")) {
+    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp).testTag("app_startup_failure")) {
         Text(stringResource(R.string.app_startup_failure), Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         if (retryable) OutlinedButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(stringResource(R.string.app_retry))

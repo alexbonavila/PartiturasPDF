@@ -50,6 +50,7 @@ internal class ReaderHostLifetime(
     private var sessionClosed = false
     private var closeUncertain = false
     private var lastVisible: PageIndex? = null
+    private var pendingFit: PageFit? = null
     private var exit: Deferred<ReaderExitReport>? = null
     private var allowed: (ReaderOpenPermit, DocumentOpenRequest) -> Boolean = { _, _ -> false }
     private var entered: (ReaderOpenPermit) -> Unit = {}
@@ -96,6 +97,7 @@ internal class ReaderHostLifetime(
         } catch (failure: Throwable) { owner.cancel(); throw failure }
         val controller = ReaderController(readerScope, route, renderCeiling, heap, initialFit)
         val intent = ReaderOpenIntent(++sequence, request)
+        pendingFit = null
         exit = null; sessionClosed = false; closeUncertain = false; lastVisible = null; suspendedTrim = null
         mutableState.value = ReaderHostState(ReaderHostEntry(intent, controller, route, owner))
         entered(ticket)
@@ -107,6 +109,13 @@ internal class ReaderHostLifetime(
         val current = state.value
         if (!terminal && !current.leaving && (!current.suspended || action is ReaderAction.Viewport) && current.entry?.intent?.sequence == sequence)
             current.entry.controller.dispatch(action)
+    }
+    /** A genuine confirmed default change replaces local fit; repeated observations do not. */
+    fun defaultFit(fit: PageFit) {
+        val current = state.value
+        if (terminal || current.leaving || current.entry == null) return
+        if (current.suspended) pendingFit = fit
+        else current.entry.controller.dispatch(ReaderAction.Fit(fit))
     }
     /** Events are generation-bound; no old Activity/lifetime callback may trim a replacement. */
     fun trim(sequence: Long, trim: ReaderTrim) {
@@ -149,6 +158,8 @@ internal class ReaderHostLifetime(
                     continue
                 }
                 if (foreground && resumeRequested && !state.value.recoveryBlocked) {
+                    pendingFit?.let { entry.controller.dispatch(ReaderAction.Fit(it)) }
+                    pendingFit = null
                     entry.controller.resume() // G checks current()/reopens, never a competing host open.
                     sessionClosed = false; suspendedTrim = null; resumeRequested = false
                     mutableState.value = state.value.copy(suspended = false, suspendedPage = null)

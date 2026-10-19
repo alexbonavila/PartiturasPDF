@@ -1,6 +1,10 @@
 package com.abdev.partituraspdf
 
 import android.os.Bundle
+import android.content.Context
+import com.abdev.partituraspdf.app.localization.localizedActivityContext
+import com.abdev.partituraspdf.app.localization.systemAppLanguage
+import com.abdev.partituraspdf.app.host.AppPresentation
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -30,6 +34,11 @@ class MainActivity : ComponentActivity() {
     private val activityIdentity = java.util.UUID.randomUUID().toString()
     private lateinit var host: AppHostViewModel
     private var restoredPicker: String? = null
+    private var localeRecreationRequested = false
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(localizedActivityContext(newBase))
+    }
 
     override fun onSaveInstanceState(outState: Bundle) {
         val pending = (host.state.value as? AppHostState.Ready)?.features?.picker?.request?.value
@@ -40,6 +49,11 @@ class MainActivity : ComponentActivity() {
     }
     override fun onStart() {
         super.onStart()
+        // Android normally recreates for locale changes. Recheck after a background return too.
+        if (resources.configuration.locales[0].language != systemAppLanguage()) {
+            if (!localeRecreationRequested) { localeRecreationRequested = true; recreate() }
+            return
+        }
         host.activityStarted(activityIdentity)
     }
     override fun onStop() {
@@ -73,7 +87,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        setContent { PartiturasPDFTheme { AppHost(host) } }
+        setContent { AppPresentation(host, this) { AppHost(host) } }
     }
 }
 

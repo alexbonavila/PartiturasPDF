@@ -64,8 +64,6 @@ Gradle daemon JDK and source/target compatibility are not Android platform requi
 
 ## 5. Localization requirements
 
-- Owner-approved Spanish-first transition: current `values/strings.xml` is English and remains unchanged by the policy PR. Existing en/ca/es resources must retain parity and format correctness.
-- New Spanish-first resources use explicitly named `*_spanish_first.xml` files in `values` with identical Spanish copy in `values-es`. These exact resources may temporarily lack Catalan translations; they are recorded translation debt, not translated PASS. Existing resources cannot be moved into staged files to evade translation checks.
 - **Localization baseline:** The project follows a Spanish-default localization policy. The pre-I F/G/H closeout delivers complete Spanish, Catalan, and English resources for all currently implemented features, including the debug SAF acceptance UI. Verify that this closeout is merged before treating its resource migration as part of `main`.
 - **Resource organization:** Following the completed migration, `res/values/` contains the Spanish default/fallback, while `values-es`, `values-ca`, and `values-en` contain complete corresponding translations. Resource names, types, formatting arguments, plurals, and accessibility semantics must remain consistent across supported languages.
 - **Historical staging:** The `*_spanish_first.xml` mechanism was used during F/G/H development as temporary translation debt. The completed localization validator rejects remaining staged resources. The existing `TESTING_POLICY.md` documents the earlier staging policy; any future change to localization requirements or validation policy requires separate approval.

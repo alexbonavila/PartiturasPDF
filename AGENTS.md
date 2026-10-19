@@ -2,7 +2,7 @@
 
 **Repository:** `alexbonavila/PartiturasPDF`  
 **Application:** Partituras PDF (`com.abdev.partituraspdf`)  
-**Implementation status (not an authorization):** Phase 0 is complete. Later approved work added shared contracts, SAF and PDF-reading adapters, Room/DataStore persistence, and app composition; user-facing library, reader, editor, annotation and Drive flows are still not implemented. Before starting a task, verify the current `main` and its dated task-specific evidence. Only the human project owner can approve additional work.
+**Implementation status (not an authorization):** Phase 0, shared architecture, SAF/PDF adapters, Room/DataStore persistence, and application composition are implemented. Phase F (Library), Phase G (Reader with isolated PDF worker), and Phase H (Settings) are implemented and merged through PRs #18, #19, and #20. These components have independent tests but are not connected to the production application flow. `MainActivity` still displays the starter greeting. Phase I will implement the production host, SAF picker, navigation, lifecycle coordination, and runtime preference/locale application. PDF editing, annotations, and Google Drive integration remain unimplemented. The separate pre-I closeout branch addresses complete localization, coverage, and documentation; verify its merge status before treating its changes as part of `main`. Only the human project owner can authorize further work and formal phase acceptance.
 
 This file applies to **all agent work** in this repository, including Codex. Read it before analyzing, editing, proposing, testing, or committing changes.
 
@@ -64,11 +64,11 @@ Gradle daemon JDK and source/target compatibility are not Android platform requi
 
 ## 5. Localization requirements
 
-- Owner-approved Spanish-first transition: current `values/strings.xml` is English and remains unchanged by the policy PR. Existing en/ca/es resources must retain parity and format correctness.
-- New Spanish-first resources use explicitly named `*_spanish_first.xml` files in `values` with identical Spanish copy in `values-es`. These exact resources may temporarily lack Catalan translations; they are recorded translation debt, not translated PASS. Existing resources cannot be moved into staged files to evade translation checks.
-- I/localization owns the separately approved shared migration: translate remaining English default copy into Spanish, preserve English in `values-en`, and complete Catalan/English translations in a later translation branch. Feature agents do not independently migrate shared defaults.
-- Automatic device language only: Spanish now; later approved complete Catalan/English bundles enable those languages; unsupported languages fall back to Spanish. No manual language selector. Legacy LanguageSelection data remains compatible but does not control the future host.
-- See TESTING_POLICY.md for staged validation and mandatory deferred translation acceptance. Keep resource-backed UI, formatting, plural, accessibility and API26 obligations.
+- **Localization baseline:** The project follows a Spanish-default localization policy. The pre-I F/G/H closeout delivers complete Spanish, Catalan, and English resources for all currently implemented features, including the debug SAF acceptance UI. Verify that this closeout is merged before treating its resource migration as part of `main`.
+- **Resource organization:** Following the completed migration, `res/values/` contains the Spanish default/fallback, while `values-es`, `values-ca`, and `values-en` contain complete corresponding translations. Resource names, types, formatting arguments, plurals, and accessibility semantics must remain consistent across supported languages.
+- **Historical staging:** The `*_spanish_first.xml` mechanism was used during F/G/H development as temporary translation debt. The completed localization validator rejects remaining staged resources. The existing `TESTING_POLICY.md` documents the earlier staging policy; any future change to localization requirements or validation policy requires separate approval.
+- **Automatic language selection:** The application must use the device language when Spanish, Catalan, or English is supported, and fall back to Spanish for unsupported languages. No manual language selector is permitted. Legacy `LanguageSelection` persistence remains compatible but must not control the active language. Phase I owns actual runtime locale application, configuration changes, and Activity recreation.
+- **Validation and acceptance:** Maintain complete resource parity, format validation, localized accessibility text, and Android API 26 compatibility. Automated resource checks do not replace Android runtime tests, human linguistic review, visual inspection, or TalkBack acceptance. Record missing evidence explicitly.
 
 ## 6. Workflow for every approved change
 

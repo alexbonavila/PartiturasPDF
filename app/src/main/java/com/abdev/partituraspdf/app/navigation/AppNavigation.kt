@@ -14,5 +14,12 @@ internal data class AppNavigation(
     fun back(expected: Long): AppNavigation =
         if (expected == revision && destination == AppDestination.SETTINGS)
             AppNavigation(AppDestination.LIBRARY, revision + 1) else this
-    // READER is reserved; no transition can enter it until I05 is implemented.
+    fun reader(expected: Long): AppNavigation =
+        if (expected == revision && destination == AppDestination.LIBRARY)
+            AppNavigation(AppDestination.READER, revision + 1) else this
+
+    /** Only the completed retirement barrier may use this transition. Ordinary Back cannot. */
+    fun readerFinished(expected: Long): AppNavigation =
+        if (expected == revision && destination == AppDestination.READER)
+            AppNavigation(AppDestination.LIBRARY, revision + 1) else this
 }

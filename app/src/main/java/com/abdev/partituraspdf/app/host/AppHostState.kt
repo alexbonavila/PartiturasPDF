@@ -10,11 +10,13 @@ internal data class AppHostFeatures(
     val library: LibraryController,
     val settings: SettingsController,
     val picker: RootPickerCoordinator? = null,
+    val reader: ReaderHostLifetime? = null,
 )
 
 /** An attempt exists before blocking initialization, retaining ownership even on cancellation. */
 internal interface AppHostSession : AutoCloseable {
     fun load(scope: CoroutineScope): AppHostFeatures
+    suspend fun retireReader(): ReaderExitReport? = null
     fun stop()
     override fun close()
 }

@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import com.abdev.partituraspdf.reader.ReaderScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -24,7 +26,7 @@ internal fun AppHost(owner: AppHostViewModel) {
     val state by owner.state.collectAsStateWithLifecycle()
     val navigation by owner.navigation.collectAsStateWithLifecycle()
     val revision = navigation.revision // Freeze the rendered route for late UI callbacks.
-    BackHandler(enabled = state is AppHostState.Ready && navigation.destination == AppDestination.SETTINGS) {
+    BackHandler(enabled = state is AppHostState.Ready && navigation.destination != AppDestination.LIBRARY) {
         owner.back(revision)
     }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -55,6 +57,7 @@ internal fun AppHost(owner: AppHostViewModel) {
                     when (navigation.destination) {
                         AppDestination.LIBRARY -> {
                             val library by current.features.library.state.collectAsStateWithLifecycle()
+                            val exitReport = current.features.reader?.state?.collectAsState()?.value?.report
                             val picker = current.features.picker
                             val recovery = picker?.recovery?.collectAsStateWithLifecycle()?.value
                             if (recovery != null) Column(Modifier.padding(24.dp).testTag("app_root_recovery")) {
@@ -77,13 +80,32 @@ internal fun AppHost(owner: AppHostViewModel) {
                                     modifier = Modifier.heightIn(min = 48.dp), enabled = !pending) {
                                     Text(stringResource(R.string.library_select_folder))
                                 }
-                            } else LibraryScreen(library, { owner.library(it, revision) })
+                            } else Column {
+                                exitReport?.failures?.forEach { failure ->
+                                    Text(stringResource(if (failure.stage == ReaderCleanupStage.CHECKPOINT)
+                                        R.string.reader_checkpoint_failure else R.string.library_action_error),
+                                        Modifier.padding(8.dp).semantics { liveRegion = LiveRegionMode.Polite })
+                                }
+                                LibraryScreen(library, { owner.library(it, revision) })
+                            }
                         }
                         AppDestination.SETTINGS -> {
                             val settings by current.features.settings.state.collectAsStateWithLifecycle()
                             SettingsScreen(settings, { owner.settings(it, revision) })
                         }
-                        AppDestination.READER -> Text(stringResource(R.string.app_reader_unavailable))
+                        AppDestination.READER -> {
+                            val lifetime = current.features.reader
+                            if (lifetime != null) {
+                                // Retirement state stays delivered even while lifecycle-aware PDF-state collection pauses.
+                                val reading by lifetime.state.collectAsState()
+                                val entry = reading.entry
+                                if (reading.leaving || entry == null) AppStartupLoading()
+                                else {
+                                    val pdf by entry.controller.state.collectAsStateWithLifecycle()
+                                    ReaderScreen(pdf, { owner.reader(it, entry.intent.sequence, revision) }, { owner.back(revision) })
+                                }
+                            }
+                        }
                     }
                 }
             }

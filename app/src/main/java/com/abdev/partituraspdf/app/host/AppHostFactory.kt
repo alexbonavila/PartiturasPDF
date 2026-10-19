@@ -10,8 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.abdev.partituraspdf.app.di.AppGraphFactory
 import com.abdev.partituraspdf.app.di.AppRuntimeLimits
-import com.abdev.partituraspdf.core.result.AppError
-import com.abdev.partituraspdf.core.result.Outcome
+import com.abdev.partituraspdf.core.foundation.HeapAvailability
 import com.abdev.partituraspdf.library.LibraryAction
 import com.abdev.partituraspdf.library.LibraryController
 import com.abdev.partituraspdf.settings.SettingsController
@@ -37,6 +36,7 @@ internal class AppHostFactory(private val application: Application) : ViewModelP
 
 private class ProductionHostSession(application: Application) : AppHostSession {
     private val factory = AppGraphFactory(application, AppRuntimeLimits.provisional())
+    private var reader: ReaderHostLifetime? = null
     private var picker: RootPickerCoordinator? = null
     private var library: LibraryController? = null
     private var settings: SettingsController? = null
@@ -52,15 +52,23 @@ private class ProductionHostSession(application: Application) : AppHostSession {
             interrupted = { failure -> checkNotNull(scope.coroutineContext[CoroutineExceptionHandler])
                 .handleException(scope.coroutineContext, failure) },
         ).also { picker = it }
-        // Reader remains an explicit unsupported boundary until I05.
+        val h = SettingsController(scope, graph.preferences, foundation.settings).also { settings = it }
+        val reading = ReaderHostLifetime(scope, foundation::reader, graph.runtimeLimits.render,
+            heap = {
+                val runtime = Runtime.getRuntime()
+                val maximum = runtime.maxMemory()
+                HeapAvailability(maximum, (runtime.totalMemory() - runtime.freeMemory()).coerceIn(0, maximum))
+            },
+            fit = { confirmedReaderFit(h.state.value.preferences) },
+        ).also { reader = it }
         val host = foundation.host(folders,
             chooseRoot = { selection.choose() },
-            open = { Outcome.Failure(AppError.Unsupported.OPERATION) })
+            open = { reading.accept(it) })
         val f = LibraryController(scope, graph.catalog, folders, host, graph.registry, graph.metadata,
             foundation.registration).also { library = it }
-        val h = SettingsController(scope, graph.preferences, foundation.settings).also { settings = it }
-        return AppHostFeatures(folders, f, h, selection)
+        return AppHostFeatures(folders, f, h, selection, reading)
     }
+    override suspend fun retireReader(): ReaderExitReport? = reader?.terminate()
     override fun stop() {
         picker?.close()
         try { library?.close() } finally { settings?.close() }

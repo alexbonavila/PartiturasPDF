@@ -3,6 +3,12 @@ package com.abdev.partituraspdf.app.host
 import androidx.lifecycle.ViewModel
 import com.abdev.partituraspdf.app.navigation.AppNavigation
 import com.abdev.partituraspdf.library.LibraryAction
+import com.abdev.partituraspdf.library.LibraryAssociation
+import com.abdev.partituraspdf.library.LibraryContent
+import com.abdev.partituraspdf.library.LibraryRow
+import com.abdev.partituraspdf.core.foundation.DocumentOpenRequest
+import com.abdev.partituraspdf.reader.ReaderAction
+import com.abdev.partituraspdf.app.navigation.AppDestination
 import com.abdev.partituraspdf.settings.SettingsAction
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +73,32 @@ internal class AppHostViewModel(
             val features = loaded.getOrThrow()
             synchronized(lock) {
                 if (closing) throw CancellationException("Host disposal")
+                features.reader?.connect(
+                    allowed = { permit, request -> synchronized(lock) {
+                        if (closing || state.value !is AppHostState.Ready || navigation.value.destination != AppDestination.LIBRARY ||
+                            navigation.value.revision != permit.revision) false
+                        else {
+                            val row = (features.library.state.value.content as? LibraryContent.Ready)?.rows
+                                ?.singleOrNull { it.key == permit.key } as? LibraryRow.Pdf
+                            when (val association = row?.association) {
+                                is LibraryAssociation.Registered -> request == DocumentOpenRequest.Registered(association.value.document)
+                                LibraryAssociation.Unregistered -> request == DocumentOpenRequest.Transient(row.entry.storage)
+                                else -> false
+                            }
+                        }
+                    } },
+                    entered = { permit -> synchronized(lock) { mutableNavigation.value = navigation.value.reader(permit.revision) } },
+                    returned = { report -> synchronized(lock) {
+                        if (!closing) {
+                            if (report.cause != null) dispose(report.failure())
+                            else {
+                                report.failure()?.let(reportFailure)
+                                mutableNavigation.value = navigation.value.readerFinished(navigation.value.revision)
+                                features.library.dispatch(LibraryAction.Refresh)
+                            }
+                        }
+                    } },
+                )
                 features.library.start()
                 if (closing) throw CancellationException("Host disposal")
                 features.settings.start()
@@ -101,6 +133,9 @@ internal class AppHostViewModel(
     private suspend fun release(attempt: Attempt, original: Throwable?): Release = withContext(NonCancellable) {
         var failure = original
         var clean = true
+        try {
+            attempt.session?.retireReader()?.failure()?.let { cleanup -> clean = false; failure = combine(failure, cleanup) }
+        } catch (cleanup: Throwable) { clean = false; failure = combine(failure, cleanup) }
         try { attempt.session?.stop() } catch (cleanup: Throwable) { clean = false; failure = combine(failure, cleanup) }
         attempt.children.cancelAndJoin()
         val closed = withContext(io) { runCatching { attempt.session?.close() } }
@@ -114,16 +149,31 @@ internal class AppHostViewModel(
     }
 
     fun back(expectedRevision: Long) = synchronized(lock) {
-        if (!closing && state.value is AppHostState.Ready)
-            mutableNavigation.value = navigation.value.back(expectedRevision)
+        if (!closing && state.value is AppHostState.Ready && navigation.value.revision == expectedRevision) {
+            if (navigation.value.destination == AppDestination.READER)
+                (state.value as AppHostState.Ready).features.reader?.leave()
+            else mutableNavigation.value = navigation.value.back(expectedRevision)
+        }
     }
 
     fun library(action: LibraryAction, expectedRevision: Long) = synchronized(lock) {
         if (!closing && navigation.value.revision == expectedRevision &&
             navigation.value.destination == com.abdev.partituraspdf.app.navigation.AppDestination.LIBRARY)
             (state.value as? AppHostState.Ready)?.features?.let { features ->
-                if (features.picker?.recovery?.value == null || action == LibraryAction.ChooseRoot) features.library.dispatch(action)
+                if (features.picker?.recovery?.value == null || action == LibraryAction.ChooseRoot) {
+                    when (action) {
+                        is LibraryAction.Open -> features.reader?.arm(action.key, expectedRevision)
+                        is LibraryAction.RetryOpen -> features.reader?.arm(action.key, expectedRevision)
+                        else -> Unit
+                    }
+                    features.library.dispatch(action)
+                }
             }
+    }
+
+    fun reader(action: ReaderAction, sequence: Long, expectedRevision: Long) = synchronized(lock) {
+        if (!closing && navigation.value.destination == AppDestination.READER && navigation.value.revision == expectedRevision)
+            (state.value as? AppHostState.Ready)?.features?.reader?.dispatch(sequence, action)
     }
 
     fun settings(action: SettingsAction, expectedRevision: Long) = synchronized(lock) {
@@ -139,7 +189,7 @@ internal class AppHostViewModel(
             return@synchronized disposed
         }
         closing = true
-        (state.value as? AppHostState.Ready)?.features?.picker?.close()
+        (state.value as? AppHostState.Ready)?.features?.let { it.picker?.close(); it.reader?.stopAccepting() }
         terminalFailure = combine(terminalFailure, cause)
         mutableState.value = AppHostState.Closing
         val boot = startup

@@ -9,6 +9,7 @@ internal data class AppHostFeatures(
     val folders: FolderNavigation,
     val library: LibraryController,
     val settings: SettingsController,
+    val picker: RootPickerCoordinator? = null,
 )
 
 /** An attempt exists before blocking initialization, retaining ownership even on cancellation. */

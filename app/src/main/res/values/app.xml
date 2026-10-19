@@ -6,6 +6,6 @@
     <string name="app_retry">Reintentar el inicio</string>
     <string name="app_settings">Ajustes</string>
     <string name="app_back">Volver a la biblioteca</string>
-    <string name="app_integration_boundary">La selección de carpetas y la apertura de PDF aún no están disponibles. Los efectos globales de los ajustes se integrarán más adelante.</string>
+    <string name="app_integration_boundary">La apertura de PDF aún no está disponible. Los efectos globales de los ajustes se integrarán más adelante.</string>
     <string name="app_reader_unavailable">El lector aún no está disponible.</string>
 </resources>

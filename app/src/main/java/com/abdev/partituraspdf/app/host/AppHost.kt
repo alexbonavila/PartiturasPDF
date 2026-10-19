@@ -13,6 +13,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.abdev.partituraspdf.R
 import com.abdev.partituraspdf.app.navigation.AppDestination
+import com.abdev.partituraspdf.core.result.AppError
+import com.abdev.partituraspdf.library.LibraryAction
+import com.abdev.partituraspdf.library.LibraryOperation
 import com.abdev.partituraspdf.library.LibraryScreen
 import com.abdev.partituraspdf.settings.SettingsScreen
 
@@ -52,7 +55,29 @@ internal fun AppHost(owner: AppHostViewModel) {
                     when (navigation.destination) {
                         AppDestination.LIBRARY -> {
                             val library by current.features.library.state.collectAsStateWithLifecycle()
-                            LibraryScreen(library, { owner.library(it, revision) })
+                            val picker = current.features.picker
+                            val recovery = picker?.recovery?.collectAsStateWithLifecycle()?.value
+                            if (recovery != null) Column(Modifier.padding(24.dp).testTag("app_root_recovery")) {
+                                Text(stringResource(R.string.library_restore_error), Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                                Text(stringResource(when (recovery) {
+                                    AppError.Access.PERMISSION_REVOKED -> R.string.library_error_permission_revoked
+                                    AppError.Access.PERMISSION_DENIED -> R.string.library_error_permission_denied
+                                    AppError.Access.PRIVATE_STORAGE_UNAVAILABLE -> R.string.library_error_private_storage
+                                    AppError.Access.PROVIDER_UNAVAILABLE -> R.string.library_error_provider_unavailable
+                                    AppError.Access.PROVIDER_IO_FAILURE -> R.string.library_error_provider_io
+                                    is AppError.Validation -> R.string.library_error_invalid
+                                    else -> R.string.library_error_stale
+                                }))
+                                val pending = library.rootSelection == LibraryOperation.Pending
+                                if (pending) Text(stringResource(R.string.library_selection_pending))
+                                OutlinedButton(onClick = { picker.reconcile() }, modifier = Modifier.heightIn(min = 48.dp), enabled = !pending) {
+                                    Text(stringResource(R.string.library_retry))
+                                }
+                                OutlinedButton(onClick = { owner.library(LibraryAction.ChooseRoot, revision) },
+                                    modifier = Modifier.heightIn(min = 48.dp), enabled = !pending) {
+                                    Text(stringResource(R.string.library_select_folder))
+                                }
+                            } else LibraryScreen(library, { owner.library(it, revision) })
                         }
                         AppDestination.SETTINGS -> {
                             val settings by current.features.settings.state.collectAsStateWithLifecycle()

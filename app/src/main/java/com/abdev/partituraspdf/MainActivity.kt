@@ -1,6 +1,14 @@
 package com.abdev.partituraspdf
 
 import android.os.Bundle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.abdev.partituraspdf.app.host.AppHostState
+import com.abdev.partituraspdf.app.host.bindRootPicker
+import com.abdev.partituraspdf.storage.saf.SafTreeGrantAccess
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,10 +27,33 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.abdev.partituraspdf.ui.theme.PartiturasPDFTheme
 
 class MainActivity : ComponentActivity() {
+    private lateinit var host: AppHostViewModel
+    private var restoredPicker: String? = null
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        val pending = (host.state.value as? AppHostState.Ready)?.features?.picker?.request?.value
+        outState.putString("app.saf.pending", pending)
+        outState.putString("app.host.lifetime", host.lifetimeId)
+        super.onSaveInstanceState(outState)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val host = ViewModelProvider(this, AppHostFactory(application))[AppHostViewModel::class.java]
+        host = ViewModelProvider(this, AppHostFactory(application))[AppHostViewModel::class.java]
+        restoredPicker = if (savedInstanceState?.getString("app.host.lifetime") != host.lifetimeId)
+            savedInstanceState?.getString("app.saf.pending") else null
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                host.state.collectLatest { state ->
+                    val picker = (state as? AppHostState.Ready)?.features?.picker ?: return@collectLatest
+                    restoredPicker?.let { picker.incomplete() }
+                    restoredPicker = null
+                    bindRootPicker(activityResultRegistry, picker) {
+                        SafTreeGrantAccess(contentResolver).treePickerIntent()
+                    }
+                }
+            }
+        }
         setContent { PartiturasPDFTheme { AppHost(host) } }
     }
 }

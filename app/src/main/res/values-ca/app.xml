@@ -6,6 +6,6 @@
     <string name="app_retry">Torna a provar l’inici</string>
     <string name="app_settings">Configuració</string>
     <string name="app_back">Torna a la biblioteca</string>
-    <string name="app_integration_boundary">La selecció de carpetes i l’obertura de PDF encara no estan disponibles. Els efectes globals de la configuració s’integraran més endavant.</string>
+    <string name="app_integration_boundary">L’obertura de PDF encara no està disponible. Els efectes globals dels ajustos s’integraran més endavant.</string>
     <string name="app_reader_unavailable">El lector encara no està disponible.</string>
 </resources>

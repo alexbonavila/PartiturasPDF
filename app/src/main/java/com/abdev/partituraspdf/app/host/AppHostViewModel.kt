@@ -20,6 +20,7 @@ internal class AppHostViewModel(
     private val recoverable: (Throwable) -> Boolean,
     private val reportFailure: (Throwable) -> Unit,
 ) : ViewModel() {
+    val lifetimeId: String = java.util.UUID.randomUUID().toString()
     private val lock = Any()
     private val owner = SupervisorJob()
     private val handler = CoroutineExceptionHandler { _, failure -> dispose(failure) }
@@ -120,7 +121,9 @@ internal class AppHostViewModel(
     fun library(action: LibraryAction, expectedRevision: Long) = synchronized(lock) {
         if (!closing && navigation.value.revision == expectedRevision &&
             navigation.value.destination == com.abdev.partituraspdf.app.navigation.AppDestination.LIBRARY)
-            (state.value as? AppHostState.Ready)?.features?.library?.dispatch(action)
+            (state.value as? AppHostState.Ready)?.features?.let { features ->
+                if (features.picker?.recovery?.value == null || action == LibraryAction.ChooseRoot) features.library.dispatch(action)
+            }
     }
 
     fun settings(action: SettingsAction, expectedRevision: Long) = synchronized(lock) {
@@ -136,6 +139,7 @@ internal class AppHostViewModel(
             return@synchronized disposed
         }
         closing = true
+        (state.value as? AppHostState.Ready)?.features?.picker?.close()
         terminalFailure = combine(terminalFailure, cause)
         mutableState.value = AppHostState.Closing
         val boot = startup

@@ -6,6 +6,6 @@
     <string name="app_retry">Retry startup</string>
     <string name="app_settings">Settings</string>
     <string name="app_back">Back to library</string>
-    <string name="app_integration_boundary">Folder selection and PDF opening are not available yet. Global settings effects will be integrated later.</string>
+    <string name="app_integration_boundary">PDF opening is not available yet. Global settings effects will be integrated later.</string>
     <string name="app_reader_unavailable">The reader is not available yet.</string>
 </resources>

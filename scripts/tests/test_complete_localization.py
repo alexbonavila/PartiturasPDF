@@ -55,7 +55,7 @@ class CompleteLocalizationTests(unittest.TestCase):
         self.assertEqual([], validate(ROOT, require_complete=True))
         expected = {e.get('name') for p in (ROOT/'values').glob('*.xml')
                     for e in ET.parse(p).getroot() if e.tag == 'string'}
-        self.assertEqual(147, len(expected))
+        self.assertEqual(155, len(expected))
         for locale in ('values','values-es','values-en','values-ca'):
             self.assertFalse(list((ROOT/locale).glob('*_spanish_first.xml')))
             actual = {e.get('name') for p in (ROOT/locale).glob('*.xml')

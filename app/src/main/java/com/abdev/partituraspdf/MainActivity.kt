@@ -4,6 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.ViewModelProvider
+import com.abdev.partituraspdf.app.host.AppHost
+import com.abdev.partituraspdf.app.host.AppHostFactory
+import com.abdev.partituraspdf.app.host.AppHostViewModel
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -18,16 +22,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            PartiturasPDFTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = stringResource(R.string.starter_recipient),
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
-            }
-        }
+        val host = ViewModelProvider(this, AppHostFactory(application))[AppHostViewModel::class.java]
+        setContent { PartiturasPDFTheme { AppHost(host) } }
     }
 }
 

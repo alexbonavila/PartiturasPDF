@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -40,12 +41,14 @@ class FoundationInstrumentedTest {
     val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun starterActivityLaunchesWithResourceGreeting() {
-        val context = compose.activity
-        val greeting = context.getString(
-            R.string.starter_greeting, context.getString(R.string.starter_recipient)
-        )
-        compose.onNodeWithText(greeting).assertIsDisplayed()
+    fun launcherActivityDisplaysProductionLibraryShell() {
+        lateinit var host: com.abdev.partituraspdf.app.host.AppHostViewModel
+        compose.activityRule.scenario.onActivity {
+            host = androidx.lifecycle.ViewModelProvider(it)[com.abdev.partituraspdf.app.host.AppHostViewModel::class.java]
+        }
+        compose.waitUntil(10_000) { host.state.value is com.abdev.partituraspdf.app.host.AppHostState.Ready }
+        compose.onNodeWithTag("app_shell").assertIsDisplayed()
+        compose.onNodeWithText(compose.activity.getString(R.string.library_title)).assertExists()
     }
 
     @Test

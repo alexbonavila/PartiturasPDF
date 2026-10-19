@@ -27,6 +27,7 @@ import com.abdev.partituraspdf.core.foundation.*
 import com.abdev.partituraspdf.core.preferences.PageFit
 import com.abdev.partituraspdf.core.result.*
 import com.abdev.partituraspdf.pdf.android.AndroidPdfReadEngine
+import com.abdev.partituraspdf.pdf.android.isolated.IsolatedPdfReadEngine
 import com.abdev.partituraspdf.pdf.api.*
 import com.abdev.partituraspdf.storage.api.*
 import com.abdev.partituraspdf.ui.theme.PartiturasPDFTheme
@@ -59,6 +60,7 @@ class ReaderNativeIntegrationTest {
     private val composition = ReaderTestComposition(compose)
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val limits = RenderLimits(512, 512L * 512)
+    private val isolatedEngine by lazy { IsolatedPdfReadEngine(instrumentation.targetContext, limits) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var directory: File
     private lateinit var controller: ReaderController
@@ -188,7 +190,7 @@ class ReaderNativeIntegrationTest {
                     nativeOperation = "native open started"
                     val opened = try {
                         verifyDescriptor(resource.descriptor,selected)
-                        AndroidPdfReadEngine(limits).open(PdfReadSource(handle, (request as? DocumentOpenRequest.Registered)?.document))
+                        isolatedEngine.open(PdfReadSource(handle, (request as? DocumentOpenRequest.Registered)?.document))
                     } finally { if (handle.ownership == ReadOwnership.OWNED) handle.close() }
                     nativeOperation = "native open completed: ${if (opened is Outcome.Success) "session" else opened}"
                     when (opened) {

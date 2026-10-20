@@ -1,0 +1,210 @@
+{
+  "schema": 1,
+  "scenarios": [
+    {
+      "id": "J-A-jvm",
+      "check": "jvm",
+      "packages": [
+        "J02",
+        "J06",
+        "J10",
+        "J11"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-lint",
+      "check": "lint",
+      "packages": [
+        "J01"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-debug",
+      "check": "debug",
+      "packages": [
+        "J02"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-release",
+      "check": "release",
+      "packages": [
+        "J02"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-fixture-dependencies",
+      "check": "fixture-dependencies",
+      "packages": [
+        "J02"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-python",
+      "check": "python",
+      "packages": [
+        "J14"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-localization",
+      "check": "localization",
+      "packages": [
+        "J09"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J-A-fixtures",
+      "check": "fixtures",
+      "packages": [
+        "J02"
+      ],
+      "tier": "A",
+      "implemented": true
+    },
+    {
+      "id": "J02-future",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J03-future",
+      "packages": [
+        "J03"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J04-future",
+      "packages": [
+        "J04"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J05-future",
+      "packages": [
+        "J05"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J06-future",
+      "packages": [
+        "J06"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J07-future",
+      "packages": [
+        "J07"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J08-future",
+      "packages": [
+        "J08"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "DEFERRED BY OWNER",
+      "note": "Deferred to Phase R"
+    },
+    {
+      "id": "J09-future",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J10-future",
+      "packages": [
+        "J10"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J11-future",
+      "packages": [
+        "J11"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J12-future",
+      "packages": [
+        "J12"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J13-future",
+      "packages": [
+        "J13"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J15-future",
+      "packages": [
+        "J15"
+      ],
+      "tier": "B/C",
+      "implemented": false,
+      "status": "NOT RUN",
+      "note": "Planned; not implemented by M1"
+    }
+  ]
+}

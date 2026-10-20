@@ -450,7 +450,12 @@ def validate_screenshot(data):
 
 
 class Runner:
-    def __init__(self, home, sdk, suite="saf", inject_failure=False):
+    def __init__(self, home, sdk, suite="saf", inject_failure=False, report_profile=None):
+        self.report_profile = report_profile
+        self.j_capture = None
+        self.j_complete = False
+        if report_profile:
+            evidence.j_path(home.absolute(), 'reports')
         self.home, self.sdk, self.suite = home.resolve(), sdk.resolve(), suite
         self.run_id = uuid.uuid4().hex
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -681,6 +686,9 @@ class Runner:
     def command(self, name, command, *, timeout=900, env=None):
         started = time.monotonic()
         entry = {"command": [str(x) for x in command], "log": name}
+        if self.report_profile:
+            entry.update(started=datetime.now(timezone.utc).isoformat(), run=self.run_id,
+                         revision=self.summary['commit'])
         self.summary["commands"].append(entry)
         try:
             result = execute(command, timeout=timeout, env=env)
@@ -690,6 +698,9 @@ class Runner:
             raise
         self.record(name, result.stdout + "\n" + result.stderr)
         entry.update(exit=result.returncode, elapsed_seconds=time.monotonic() - started)
+        if self.report_profile:
+            entry.update(finished=datetime.now(timezone.utc).isoformat(),
+                         sha256=hashlib.sha256((self.out / name).read_bytes()).hexdigest())
         return result
 
     def gradle(self, name, tasks, properties=(), timeout=900, *, instrumentation=False, mode="saf"):
@@ -992,6 +1003,9 @@ class Runner:
                         if report.stat().st_mtime_ns != previous_xml.get(report.name):
                             shutil.copy2(report, destination / report.name)
                     fresh = list(destination.glob("TEST-*.xml"))
+                    if self.report_profile:
+                        self.summary['j_jvm_artifacts'] = {
+                            p.relative_to(self.out).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in fresh}
                     if fresh:
                         item["tests"] = sum(len(list(ET.parse(p).getroot().iter("testcase"))) for p in fresh)
                     if item["status"] == "PASS":
@@ -1216,6 +1230,32 @@ class Runner:
         self.record("summary.json", json.dumps(self.summary, indent=2))
         self.record("index.html", "<!doctype html><meta charset='utf-8'><title>Local validation</title><pre>" +
                     html.escape(json.dumps(self.summary, indent=2)) + "</pre>")
+        if self.report_profile:
+            self.phase_j_reports()
+            # A rejected projection invalidates the orchestration reports as well.
+            self.record("summary.json", json.dumps(self.summary, indent=2))
+            self.record("index.html", "<!doctype html><title>Local validation</title><pre>" +
+                        html.escape(json.dumps(self.summary, indent=2)) + "</pre>")
+            if self.summary['status'] == 'BLOCKED' and all(c['status'] == 'PASS' for c in cases):
+                cases.append(dict(name='phase-j-evidence', status='BLOCKED', detail=self.summary.get('detail', 'Incomplete evidence')))
+                evidence.write_junit(self.out / 'junit.xml', 'local-orchestration-groups', cases)
+
+    def phase_j_reports(self):
+        try:
+            if self.j_capture is None:
+                raise ValueError('Initial source/build capture unavailable')
+            document = evidence.j_report(self.out, self.j_capture, self.summary,
+                evidence.j_catalogue(ROOT / 'scripts/j_scenarios.json'),
+                current=evidence.j_capture(ROOT, self.run_id), complete=self.j_complete)
+            if self.j_complete and document['status'] == 'BLOCKED':
+                self.summary.update(status='BLOCKED', detail='Phase J evidence incomplete')
+        except (ValueError, OSError, ET.ParseError, TypeError, KeyError) as error:
+            self.summary.update(status='BLOCKED', detail='Phase J evidence invalid: ' + str(error))
+            evidence.j_atomic(self.out, 'phase-j/summary.json', json.dumps({
+                'schema': 1, 'profile': 'phase-j', 'status': 'BLOCKED', 'run': self.run_id,
+                'complete': False, 'detail': evidence.j_redact(str(error))}))
+            evidence.j_atomic(self.out, 'phase-j/report.html', '<!doctype html><title>Phase J BLOCKED</title><h1>BLOCKED</h1>')
+
 
     def workflow_saf(self):
         if self.suite not in ("saf", "full"):
@@ -1283,6 +1323,8 @@ class Runner:
             coverage.save()
         if self.summary.get("groups") is not None:
             return self.group_reports()
+        if self.report_profile:
+            self.phase_j_reports()
         tests = self.summary["tests"]
         self.summary["counts"] = {status: sum(x["status"] == status for x in tests)
                                   for status in ("PASS", "FAIL", "BLOCKED")}
@@ -1317,6 +1359,10 @@ class Runner:
         try:
             self.summary["commit"] = checked(["git", "rev-parse", "HEAD"])
             self.summary["working_tree"] = checked(["git", "status", "--porcelain"])
+            if self.report_profile:
+                if self.suite != 'host':
+                    raise Blocked('Phase J M1 supports Tier A host only; no device execution')
+                self.j_capture = evidence.j_capture(ROOT, self.run_id)
             with exclusive(self.home):
                 try:
                     self.workflow()
@@ -1348,7 +1394,10 @@ class Runner:
             self.summary.update(status="BLOCKED", detail=f"{type(error).__name__}: {error}")
             code = 2
         finally:
+            self.j_complete = True
             self.reports()
+            if self.report_profile and self.summary['status'] == 'BLOCKED':
+                code = 2
         print(f"{self.summary['status']}: {self.out}")
         return code
 
@@ -1358,15 +1407,39 @@ def main(argv=None):
     parser.add_argument("--home", type=Path, default=DEFAULT_HOME, help="Dedicated AVD state and unique reports")
     parser.add_argument("--sdk", type=Path, default=None)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("doctor", help="Read-only host, SDK, acceleration and owned AVD diagnostics")
+    diagnostic = commands.add_parser("doctor", help="Read-only host, SDK, acceleration and owned AVD diagnostics")
+    diagnostic.add_argument('--report-profile', choices=('phase-j',))
     setup = commands.add_parser("provision", help="Explicitly create a new private API 26 AVD; never overwrite")
     setup.add_argument("--port", type=int, default=5580)
     run = commands.add_parser("run")
     run.add_argument("--suite", choices=("saf", "host", "android", "reader", "library", "full", "coverage"), required=True)
+    run.add_argument('--report-profile', choices=('phase-j',))
     run.add_argument("--inject-failure", action="store_true", help="Deliberate assertion failure after real picker authorization")
     backup = commands.add_parser("backup-preflight", help="Read-only C06 discovery on a separate explicit emulator")
     backup.add_argument("--serial", required=True)
     args = parser.parse_args(argv)
+    profile = getattr(args, 'report_profile', None)
+    if profile:
+        if args.command == 'run' and (args.suite != 'host' or args.inject_failure):
+            parser.error('Phase J M1 allows only --suite host without failure injection')
+        for path in [args.home.absolute(), *args.home.absolute().parents]:
+            if path.is_symlink():
+                parser.error('Phase J output must not use symlinks')
+        if args.command == 'doctor':
+            try:
+                sdk = discover_sdk(args.sdk)
+                capture = evidence.j_capture(ROOT, uuid.uuid4().hex)
+                java = execute(['java', '-version'], timeout=15)
+                if java.returncode:
+                    raise Blocked('JDK version probe failed')
+                capture['environment']['java'] = (java.stdout + java.stderr).strip()
+                capture['environment']['sdk_available'] = sdk.is_dir()
+                capture.update(status='PASS', scope='host identity/JDK/SDK discovery only; project checks NOT RUN', android='NOT RUN')
+                print(json.dumps(evidence.j_redact(capture), indent=2))
+                return 0
+            except (ValueError, OSError, subprocess.SubprocessError, Blocked) as error:
+                print(json.dumps({'status': 'BLOCKED', 'detail': evidence.j_redact(str(error))}))
+                return 2
     sdk = discover_sdk(args.sdk)
     if args.command == "doctor":
         report = doctor(args.home.resolve(), sdk)
@@ -1385,6 +1458,8 @@ def main(argv=None):
         return runner.run()
     if args.inject_failure and args.suite not in ("saf", "full"):
         parser.error("--inject-failure is supported only for saf/full")
+    if profile:
+        return Runner(args.home, sdk, args.suite, args.inject_failure, report_profile=profile).run()
     return Runner(args.home, sdk, args.suite, args.inject_failure).run()
 
 

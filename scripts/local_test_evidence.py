@@ -298,15 +298,22 @@ def j_catalogue(path):
         raise ValueError('Unknown catalogue schema')
     entries = catalogue['scenarios']
     ids = [s['id'] for s in entries]
-    checks = [s['check'] for s in entries if s['implemented']]
+    checks = [s['check'] for s in entries if s['implemented'] and s['tier'] == 'A']
     if len(ids) != len(set(ids)) or len(checks) != len(set(checks)):
         raise ValueError('Duplicate scenario')
     if set(checks) != {'jvm', 'lint', 'debug', 'release', 'fixture-dependencies', 'python', 'localization', 'fixtures'}:
         raise ValueError('Incomplete Tier A catalogue')
     if any(s.get('status', 'NOT RUN') not in ('NOT RUN', 'DEFERRED BY OWNER') for s in entries if not s['implemented']):
         raise ValueError('Unimplemented scenarios cannot claim execution')
-    if any(s['tier'] != 'A' for s in entries if s['implemented']):
-        raise ValueError('Device scenario not authorized')
+    for scenario in entries:
+        if scenario['implemented'] and scenario['tier'] != 'A':
+            if scenario['tier'] != 'B' or scenario.get('status') != 'NOT RUN' or 'check' in scenario:
+                raise ValueError('Device catalogue is descriptive only; execution not authorized')
+            for field in ('test_method', 'evidence_origin', 'fixture', 'expected_outcome', 'execution', 'test_environment'):
+                if not scenario.get(field):
+                    raise ValueError('Missing device scenario attribution')
+            if not re.fullmatch(r'[\w.]+', scenario['test_method']):
+                raise ValueError('Invalid mapped JUnit method')
     if not any(s['packages'] == ['J08'] and not s['implemented'] and s.get('status') == 'DEFERRED BY OWNER' for s in entries):
         raise ValueError('J08 must stay deferred')
     return catalogue
@@ -328,13 +335,18 @@ def j_report(root, capture, summary, catalogue, *, current, complete=False):
         raise ValueError('Mismatched run/revision')
     checks = summary.get('host_checks', [])
     names = [c['name'] for c in checks]
-    allowed = {s['check'] for s in catalogue['scenarios'] if s['implemented']}
+    allowed = {s['check'] for s in catalogue['scenarios'] if s['implemented'] and s['tier'] == 'A'}
     if len(names) != len(set(names)) or not set(names) <= allowed:
         raise ValueError('Duplicate/unexpected evidence')
     rows = []
     for scenario in catalogue['scenarios']:
         row = dict(id=scenario['id'], packages=scenario['packages'], status=scenario.get('status', 'NOT RUN'), artifacts=[])
-        if scenario['implemented']:
+        if scenario['implemented'] and scenario['tier'] == 'B':
+            row.update({key: scenario[key] for key in ('test_method', 'evidence_origin', 'fixture', 'expected_outcome', 'test_environment')})
+            row.update(status='NOT RUN', executed_test_method=None, source_revision=capture['revision'],
+                       source_digest=capture['source_digest'], execution_environment='NOT RUN: device execution not authorized',
+                       device='NOT SELECTED')
+        if scenario['implemented'] and scenario['tier'] == 'A':
             item = next((x for x in checks if x['name'] == scenario['check']), None)
             if item:
                 status = item['status']
@@ -385,7 +397,7 @@ def j_report(root, capture, summary, catalogue, *, current, complete=False):
                             j_atomic(root, ref, j_redact_xml(path))
                             row['artifacts'].append(dict(path=ref, sha256=hashlib.sha256(j_path(root,ref).read_bytes()).hexdigest()))
         rows.append(row)
-    active = [r for r,s in zip(rows,catalogue['scenarios']) if s['implemented']]
+    active = [r for r,s in zip(rows,catalogue['scenarios']) if s['implemented'] and s['tier'] == 'A']
     status = 'FAIL' if any(r['status'] == 'FAIL' for r in active) else (
         'PASS' if complete and summary.get('status') == 'PASS' and all(r['status'] == 'PASS' for r in active) else 'BLOCKED')
     document = dict(schema=1, profile='phase-j', capture=capture, finished=datetime.now(timezone.utc).isoformat(),

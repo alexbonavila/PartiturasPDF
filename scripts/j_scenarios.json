@@ -205,6 +205,186 @@
       "implemented": false,
       "status": "NOT RUN",
       "note": "Planned; not implemented by M1"
+    },
+    {
+      "id": "J-B-launcher",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppHostActivityTest.launcherShowsLibraryInsteadOfStarterGreeting",
+      "evidence_origin": "production-entry",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "MainActivity shows usable Library shell and settings action; host destination is LIBRARY",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-settings-navigation",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppHostActivityTest.settingsAndToolbarBackReuseTheSameFeatureOwners",
+      "evidence_origin": "production-entry",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "Settings and toolbar Back retain feature owners and return to Library",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-registered-roundtrip",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.libraryReaderSettingsRoundTripPersistsUiChoicesAndRegisteredPosition",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "UI registration and favorite; posted score pixels, page 2 and PAGE/WIDTH; UI Back retires route; Settings UI durably changes theme/fit; reopen preserves registration, favorite and page; source and grants unchanged",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-transient",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.transientCanonicalPdfDisplaysNavigatesChangesFitBackAndReopensWithoutRegistration",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "Visible canonical pixels, next page and WIDTH; retired controller on Back; no registration or persisted position; new controller on reopen",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-registered-recreation",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.registeredDisplayedPageFlushesThroughProductionRouteAndRecreationDoesNotReopen",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "Registered presented page flushes; Activity recreation retains native owner; isolated nonexported worker",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-fit-default",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.persistedDefaultFitAndLocalMenuRemainDistinctWhileConfirmedChangesStayInSameNativeSession",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "Local PAGE override remains distinct from durable WIDTH; confirmed fit change reaches visible frame without session replacement",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-folder-navigation",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.LibraryPersistenceIntegrationTest.acceptedRootListsNavigatesRegistersAndPersistsFavoriteAcrossControllerRestart",
+      "evidence_origin": "simulated-provider-controller",
+      "fixture": {
+        "id": "synthetic",
+        "sha256": null
+      },
+      "expected_outcome": "Controlled root callback lists/enters/backs, registers, favorites and survives controller restart with READ-only take request",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-picker-binding",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.RootPickerBindingTest.actualRegistryForwardsOriginalIntentUriAndFlagsWithoutAuthorizationOnLaunch",
+      "evidence_origin": "simulated-activity-result",
+      "fixture": {
+        "id": "synthetic",
+        "sha256": null
+      },
+      "expected_outcome": "ActivityResultRegistry forwards original tree result and flags; launch alone never authorizes",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-read-only-grant-contract",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppSafLifecycleIntegrationTest.hostPersistsOnlyReturnedReadCapabilityAndRequiresReportedConfirmation",
+      "evidence_origin": "simulated-grant-platform",
+      "fixture": {
+        "id": "synthetic",
+        "sha256": null
+      },
+      "expected_outcome": "READ-only take requested; reported persisted grant confirmation required; metadata preserved",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; isolated test storage where applicable"
+    },
+    {
+      "id": "J-B-genuine-saf",
+      "packages": [
+        "J02"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.storage.saf.SafLocalE2eTest.acquire",
+      "evidence_origin": "genuine-documentsui-opt-in",
+      "fixture": {
+        "id": "01",
+        "sha256": "301340714954d3821e94558c524a44ab92b08b3e3db91e463b38c3985506c642"
+      },
+      "expected_outcome": "Real DocumentsUI selection, persisted READ-only capability, canonical bytes and unrelated grant preservation; debug acceptance Activity, not production MainActivity picker",
+      "execution": "requires separate device authorization",
+      "test_environment": "Owned disposable API 26 emulator; opt-in SAF APK and guarded runner"
     }
   ]
 }

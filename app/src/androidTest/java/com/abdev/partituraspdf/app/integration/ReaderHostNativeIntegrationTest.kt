@@ -328,7 +328,7 @@ class ReaderHostNativeIntegrationTest {
             PixelCopy.request(view.holder.surface, snapshot, { status = it; copied.countDown() }, Handler(Looper.getMainLooper()))
             assertTrue(copied.await(20, TimeUnit.SECONDS)); assertEquals(PixelCopy.SUCCESS, status)
             val info = entry().controller.state.value.frame!!.displayInfo
-            val layout = readerImageLayout(info.width, info.height, ReaderViewport(view.width, view.height), PageFit.PAGE, ReaderTransform())!!
+            val layout = readerImageLayout(info.width, info.height, ReaderViewport(view.width, view.height), entry().controller.state.value.fit, ReaderTransform())!!
             var ink = false; var paper = false
             for (y in maxOf(0, layout.top.toInt()) until minOf(view.height, (layout.top + layout.height).toInt()) step 2)
                 for (x in maxOf(0, layout.left.toInt()) until minOf(view.width, (layout.left + layout.width).toInt()) step 2) {
@@ -366,6 +366,78 @@ class ReaderHostNativeIntegrationTest {
         assertTrue(runBlocking { session!!.registry.findRegistration(session!!.storage) } is Outcome.Failure)
         open(); visible(); assertNotSame(first.controller, entry().controller); assertTrue(entry().intent.sequence > first.intent.sequence)
         assertEquals(2, session!!.constructions)
+    }
+    /** M2-A: production host/feature UI and native worker with isolated storage and injected
+     * file capabilities. This does not exercise the production graph factory or SAF picker. */
+    @Test fun libraryReaderSettingsRoundTripPersistsUiChoicesAndRegisteredPosition() {
+        mount("02")
+        val fixture = session!!
+        val original = fixture.source.readBytes()
+        val grants = context.contentResolver.persistedUriPermissions.map {
+            Triple(it.uri, it.isReadPermission, it.isWritePermission)
+        }.toSet()
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_register_description, "score.pdf"))
+            .performScrollTo().assertIsDisplayed().assertHasClickAction().performClick()
+        compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
+        val document = (pdf().association as LibraryAssociation.Registered).value.document
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_favorite_add_description, "score.pdf"))
+            .performScrollTo().performClick()
+        compose.waitUntil(15_000) {
+            ((pdf().association as? LibraryAssociation.Registered)?.metadata as? Observation.Ready)?.value?.favorite == true
+        }
+        open(); visible("m2-a-first-frame"); verifyPostedScorePixels()
+        val first = entry()
+        assertEquals(document, (first.intent.request as DocumentOpenRequest.Registered).document)
+        assertEquals(PageFit.PAGE, first.controller.state.value.fit)
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
+        compose.waitUntil(20_000) { first.controller.state.value.presentedPage == PageIndex(1) }
+        visible("m2-a-next-page")
+        for (fit in listOf(PageFit.WIDTH, PageFit.PAGE)) {
+            val previousFrame = first.controller.state.value.frame
+            compose.onNodeWithText(compose.activity.getString(R.string.reader_options)).performClick()
+            compose.onNodeWithText(compose.activity.getString(if (fit == PageFit.PAGE)
+                R.string.reader_fit_page else R.string.reader_fit_width)).performClick()
+            compose.waitUntil(20_000) {
+                val state = first.controller.state.value
+                state.fit == fit && state.phase == ReaderPhase.VISIBLE && state.frame !== previousFrame
+            }
+            visible("m2-a-fit-${fit.key}")
+            assertEquals(PageIndex(1), first.controller.state.value.presentedPage)
+        }
+        compose.onNodeWithTag("app_back").assertIsDisplayed().performClick()
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.LIBRARY }
+        compose.waitUntil(15_000) { pdf().opening == LibraryOpening.Idle }
+        assertEquals(ReaderPhase.RETIRED, first.controller.state.value.phase)
+        assertNull(first.controller.state.value.frame)
+        assertTrue(routeClosed())
+        assertEquals(Outcome.Success(PageIndex(1)), runBlocking { fixture.positions.restore(document, 2) })
+        compose.onNodeWithTag("app_settings").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("settings_theme_dark").performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(15_000) { (host!!.preferences.value as? Observation.Ready)?.value?.theme == ThemeSelection.DARK }
+        compose.onNodeWithTag("settings_theme_dark").assertIsSelected()
+        compose.onNodeWithTag("settings_fit_width").performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(15_000) { (host!!.preferences.value as? Observation.Ready)?.value?.reader?.pageFit == PageFit.WIDTH }
+        compose.onNodeWithTag("settings_fit_width").assertIsSelected()
+        val stored = runBlocking { withTimeout(15_000) { fixture.preferencesRepository.observe().first { it is Observation.Ready } } }
+        assertEquals(ThemeSelection.DARK, (stored as Observation.Ready).value.theme)
+        assertEquals(PageFit.WIDTH, stored.value.reader.pageFit)
+        assertEquals(1, fixture.nativeOpens) // Settings must not open a Reader session.
+        compose.onNodeWithTag("app_back").assertIsDisplayed().performClick()
+        compose.waitUntil(15_000) { host!!.navigation.value.destination == AppDestination.LIBRARY }
+        open(); visible("m2-a-reopened-frame"); verifyPostedScorePixels()
+        assertEquals(document, (entry().intent.request as DocumentOpenRequest.Registered).document)
+        assertEquals(PageFit.WIDTH, entry().controller.state.value.fit)
+        assertEquals(PageIndex(1), entry().controller.state.value.presentedPage)
+        assertNotSame(first.controller, entry().controller)
+        compose.onNodeWithTag("app_back").performClick()
+        compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.LIBRARY }
+        assertTrue(routeClosed())
+        val metadata = runBlocking { withTimeout(15_000) { fixture.metadata.observe(document).first { it is Observation.Ready } } }
+        assertTrue((metadata as Observation.Ready).value.favorite)
+        assertArrayEquals(original, fixture.source.readBytes())
+        assertEquals(grants, context.contentResolver.persistedUriPermissions.map {
+            Triple(it.uri, it.isReadPermission, it.isWritePermission)
+        }.toSet())
     }
     @Test fun registeredDisplayedPageFlushesThroughProductionRouteAndRecreationDoesNotReopen() {
         mount("02")

@@ -28,7 +28,7 @@ class PhaseJEvidenceTests(unittest.TestCase):
         self.summary = dict(suite='host',run=self.capture['run'],commit=self.capture['revision'],status='PASS',
                             host_checks=[],commands=[],j_jvm_artifacts={})
         for s in self.catalogue['scenarios']:
-            if not s['implemented']: continue
+            if not s['implemented'] or s['tier'] != 'A': continue
             name = s['check']; log = 'host/'+name+'.log'
             ev.j_atomic(self.root,log,'Completed check\n')
             self.summary['host_checks'].append(dict(name=name,status='PASS',log=log,tests=1))
@@ -162,7 +162,7 @@ class PhaseJEvidenceTests(unittest.TestCase):
 
     def test_unimplemented_scenario_cannot_claim_pass(self):
         catalogue = copy.deepcopy(self.catalogue)
-        catalogue['scenarios'][-1]['status'] = 'PASS'
+        next(s for s in catalogue['scenarios'] if not s['implemented'])['status'] = 'PASS'
         path = self.root / 'catalogue.json'
         path.write_text(json.dumps(catalogue))
         with self.assertRaises(ValueError):
@@ -200,6 +200,35 @@ class PhaseJEvidenceTests(unittest.TestCase):
             result=self.report()
             self.assertEqual(status,result['scenarios'][0]['status'])
             self.assertEqual('BLOCKED',result['status'])
+
+    def test_device_mappings_resolve_to_real_tests_without_claiming_execution(self):
+        ordinary = ev.android_inventory(ROOT / 'app/src/androidTest')
+        opt_in = ev.android_inventory(ROOT / 'scripts/local-e2e/androidTest', smoke=None)
+        report = self.report()
+        manifest = {f['id']: f for f in json.loads((ROOT / 'test-fixtures/manifest.json').read_text())['files']}
+        for scenario in self.catalogue['scenarios']:
+            if not scenario['implemented'] or scenario['tier'] != 'B':
+                continue
+            with self.subTest(id=scenario['id']):
+                self.assertIn(scenario['test_method'], ordinary | opt_in)
+                row = next(r for r in report['scenarios'] if r['id'] == scenario['id'])
+                self.assertEqual('NOT RUN', row['status'])
+                self.assertIsNone(row['executed_test_method'])
+                self.assertEqual(self.capture['revision'], row['source_revision'])
+                self.assertEqual('NOT SELECTED', row['device'])
+                if scenario['fixture']['id'] in manifest:
+                    self.assertEqual(manifest[scenario['fixture']['id']]['sha256'], row['fixture']['sha256'])
+        self.assertEqual('PASS', report['status']) # Host PASS is never device PASS.
+
+    def test_device_scenario_cannot_become_host_command_or_claim_pass(self):
+        path = self.root / 'catalogue.json'
+        for field, value in [('status', 'PASS'), ('check', 'android'), ('test_method', '')]:
+            catalogue = copy.deepcopy(self.catalogue)
+            scenario = next(s for s in catalogue['scenarios'] if s['implemented'] and s['tier'] == 'B')
+            scenario[field] = value
+            path.write_text(json.dumps(catalogue))
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                ev.j_catalogue(path)
 
     def test_invalid_catalogue_rejected(self):
         p=self.root/'catalogue.json'

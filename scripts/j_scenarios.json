@@ -11,7 +11,159 @@
         "J11"
       ],
       "tier": "A",
-      "implemented": true
+      "implemented": true,
+      "test_cases": [
+        {
+          "id": "J06-late-failed-open",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.app.coordination.ReaderRouteOwnerTest.lateFailedRegisteredOpenCannotReplaceQueuedDifferentDocumentAndReleasesInput",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "injected-provider-io",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Older registered failure cannot replace different queued transient; failed handle and final session close once; registry and positions untouched",
+          "recovery_cleanup": "Older registered failure cannot replace different queued transient; failed handle and final session close once; registry and positions untouched"
+        },
+        {
+          "id": "J06-picker-duplicate",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.app.host.RootPickerCoordinatorTest.concurrentDuplicateCallbackDuringAcceptanceCannotRepeatPersistence",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "simulated-picker-callback",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Duplicate during gated acceptance takes/persists once and completes once",
+          "recovery_cleanup": "Duplicate during gated acceptance takes/persists once and completes once"
+        },
+        {
+          "id": "J06-picker-stale",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.app.host.RootPickerCoordinatorTest.oldCallbackCannotAuthorizeANewerRequest",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "simulated-picker-callback",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Canceled old token cannot authorize or replace the newer pending request",
+          "recovery_cleanup": "Canceled old token cannot authorize or replace the newer pending request"
+        },
+        {
+          "id": "J06-root-replacement",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.app.host.RootPickerCoordinatorTest.partialRootUpdateReportsFailureWithoutRollbackAndRequiresAuthoritativeReconciliation",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "injected-navigation-failure",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Failed synchronization preserves old trail; explicit authoritative restore reconciles without persistence replay",
+          "recovery_cleanup": "Failed synchronization preserves old trail; explicit authoritative restore reconciles without persistence replay"
+        },
+        {
+          "id": "J06-late-render",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.reader.ReaderSessionLifetimeTest.completedLateRenderReusesSessionOnlyAfterFreshNativeValidation",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "simulated-native-contract",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Late bitmap disposed once; low-memory reuse only after fresh validation; no publication while suspended",
+          "recovery_cleanup": "Late bitmap disposed once; low-memory reuse only after fresh validation; no publication while suspended"
+        },
+        {
+          "id": "J06-destructive-cancel",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.reader.ReaderSessionLifetimeTest.destructiveCancellationNeverReborrowsInvalidSessionAndWaitsForExplicitResume",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "simulated-native-contract",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Cancellation invalidates session; no calls after invalidation; explicit resume opens replacement",
+          "recovery_cleanup": "Cancellation invalidates session; no calls after invalidation; explicit resume opens replacement"
+        },
+        {
+          "id": "J06-checkpoint-cleanup",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.app.host.ReaderHostLifetimeTest.checkpointAndCloseTypedFailuresAreVisibleAndNeverPreventRemainingCleanup",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "injected-checkpoint-and-close-failures",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Checkpoint and close failures remain typed in cleanup report; retirement still finishes exactly once",
+          "recovery_cleanup": "Checkpoint and close failures remain typed in cleanup report; retirement still finishes exactly once"
+        },
+        {
+          "id": "J06-startup-retry",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.app.host.AppHostViewModelTest.operationalStartupFailureClosesPartialAttemptAndExplicitRetryUsesFreshResources",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "injected-startup-io",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Partial attempt closes; duplicate retries construct one fresh attempt; original failure preserved",
+          "recovery_cleanup": "Partial attempt closes; duplicate retries construct one fresh attempt; original failure preserved"
+        },
+        {
+          "id": "J06-settings-failure",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.settings.SettingsControllerTest.failedFitIsIndependentAndRetryPreservesLegacyLanguageAndTheme",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "injected-settings-write",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Failed fit preserves observed preferences; explicit retry changes only the fit target",
+          "recovery_cleanup": "Failed fit preserves observed preferences; explicit retry changes only the fit target"
+        },
+        {
+          "id": "J06-terminal-pdf-contract",
+          "packages": [
+            "J06"
+          ],
+          "test_method": "com.abdev.partituraspdf.reader.ReaderRecoveryTest.terminalOpenErrorsRequireHostReviewOrANewIntentInsteadOfADeadRetryButton",
+          "evidence_origin": "jvm-test-doubles",
+          "failure_classification": "simulated-pdf-errors",
+          "fixture": {
+            "id": "synthetic",
+            "sha256": null
+          },
+          "expected_outcome": "Unsupported/invalid inputs have no dead Retry; only a new valid intent recovers",
+          "recovery_cleanup": "Unsupported/invalid inputs have no dead Retry; only a new valid intent recovers"
+        }
+      ]
     },
     {
       "id": "J-A-lint",
@@ -385,6 +537,86 @@
       "expected_outcome": "Real DocumentsUI selection, persisted READ-only capability, canonical bytes and unrelated grant preservation; debug acceptance Activity, not production MainActivity picker",
       "execution": "requires separate device authorization",
       "test_environment": "Owned disposable API 26 emulator; opt-in SAF APK and guarded runner"
+    },
+    {
+      "id": "J06-registered-access",
+      "packages": [
+        "J06"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.registeredAccessFailureMatrixPreservesDurableStateAndOnlyRetriesRecoverableErrors",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "failure_classification": "injected-access-errors",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "Exact denied/revoked/unavailable/IO/deleted errors; no native open on failure; identity/favorite/confirmed page/settings retained; UI Retry renders only recoverable failures; no real grant change",
+      "recovery_cleanup": "Exact denied/revoked/unavailable/IO/deleted errors; no native open on failure; identity/favorite/confirmed page/settings retained; UI Retry renders only recoverable failures; no real grant change",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; UUID-owned stores and injected file capabilities, not authentic SAF grants"
+    },
+    {
+      "id": "J06-registered-malformed",
+      "packages": [
+        "J06"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.registeredMalformedPdfFailurePreservesFavoritePositionAndPreferences",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "failure_classification": "genuine-canonical-invalid-input",
+      "fixture": {
+        "id": "15",
+        "sha256": "261d1676ac3fa026957c9569de8bd9c037d6c69c5694df0976614944c8adf7d4"
+      },
+      "expected_outcome": "Native invalid PDF has no successful frame or Retry; safe Back preserves real registration/favorite/position/preferences and source bytes",
+      "recovery_cleanup": "Native invalid PDF has no successful frame or Retry; safe Back preserves real registration/favorite/position/preferences and source bytes",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; UUID-owned stores and injected file capabilities, not authentic SAF grants"
+    },
+    {
+      "id": "J06-registered-protected",
+      "packages": [
+        "J06"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.registeredProtectedPdfFailurePreservesFavoritePositionAndPreferences",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "failure_classification": "genuine-canonical-protected-input",
+      "fixture": {
+        "id": "14",
+        "sha256": "20dfebe3069f7d673cf26a271f9162d9f9ea3111fe74d21a5115ac739581a291"
+      },
+      "expected_outcome": "Exact PASSWORD_PROTECTED or DOCUMENT_FORMAT; no frame or Retry; safe Back preserves real metadata/preferences and bytes",
+      "recovery_cleanup": "Exact PASSWORD_PROTECTED or DOCUMENT_FORMAT; no frame or Retry; safe Back preserves real metadata/preferences and bytes",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; UUID-owned stores and injected file capabilities, not authentic SAF grants"
+    },
+    {
+      "id": "J06-checkpoint-native",
+      "packages": [
+        "J06"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.injectedCheckpointFailurePreservesRealEarlierPositionAndSafeReopenAfterEmptyRouteVerification",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "failure_classification": "injected-checkpoint-write",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "Real native presentation with failed checkpoint retains earlier durable page; empty route verification permits safe reopen; only expected diagnostics cleared",
+      "recovery_cleanup": "Real native presentation with failed checkpoint retains earlier durable page; empty route verification permits safe reopen; only expected diagnostics cleared",
+      "execution": "requires separate device authorization",
+      "test_environment": "Android API 26+ ordinary instrumentation; UUID-owned stores and injected file capabilities, not authentic SAF grants"
     }
   ]
 }

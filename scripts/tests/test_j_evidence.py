@@ -25,6 +25,8 @@ class PhaseJEvidenceTests(unittest.TestCase):
             expected_jvm=['Example.test'], build={p:'e'*64 for p in (
                 'app/build.gradle.kts','gradle/libs.versions.toml','gradle/wrapper/gradle-wrapper.properties')})
         self.catalogue = ev.j_catalogue(ROOT/'scripts/j_scenarios.json')
+        # Synthetic fixture has one test; real mapped identities are checked separately below.
+        self.catalogue['scenarios'][0]['test_cases'] = []
         self.summary = dict(suite='host',run=self.capture['run'],commit=self.capture['revision'],status='PASS',
                             host_checks=[],commands=[],j_jvm_artifacts={})
         for s in self.catalogue['scenarios']:
@@ -228,6 +230,41 @@ class PhaseJEvidenceTests(unittest.TestCase):
             scenario[field] = value
             path.write_text(json.dumps(catalogue))
             with self.subTest(field=field), self.assertRaises(ValueError):
+                ev.j_catalogue(path)
+
+    def test_recovery_jvm_mappings_resolve_and_require_verified_execution(self):
+        catalogue = ev.j_catalogue(ROOT / 'scripts/j_scenarios.json')
+        source = ev.android_inventory(ROOT / 'app/src/test', smoke=None)
+        mapped = catalogue['scenarios'][0]['test_cases']
+        self.assertTrue(mapped)
+        for case in mapped:
+            self.assertIn(case['test_method'], source)
+        case = copy.deepcopy(mapped[0])
+        case['test_method'] = 'Example.test'
+        self.catalogue['scenarios'][0]['test_cases'] = [case]
+        row = self.report()['scenarios'][0]['test_cases'][0]
+        self.assertEqual('PASS', row['status'])
+        self.assertEqual('Example.test', row['executed_test_method'])
+        self.assertEqual('validated-full-jvm-inventory', row['provenance'])
+        case['test_method'] = 'Missing.test'
+        with self.assertRaises(ValueError):
+            self.report()
+        self.summary['host_checks'][0]['status'] = 'BLOCKED'
+        row = self.report()['scenarios'][0]['test_cases'][0]
+        self.assertEqual('BLOCKED', row['status'])
+        self.assertIsNone(row['executed_test_method'])
+
+    def test_recovery_mappings_reject_duplicate_ids_and_missing_attribution(self):
+        path = self.root / 'catalogue.json'
+        for mutation in ('duplicate', 'missing'):
+            catalogue = ev.j_catalogue(ROOT / 'scripts/j_scenarios.json')
+            case = catalogue['scenarios'][0]['test_cases'][0]
+            if mutation == 'duplicate':
+                case['id'] = catalogue['scenarios'][0]['id']
+            else:
+                case.pop('failure_classification')
+            path.write_text(json.dumps(catalogue))
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 ev.j_catalogue(path)
 
     def test_invalid_catalogue_rejected(self):

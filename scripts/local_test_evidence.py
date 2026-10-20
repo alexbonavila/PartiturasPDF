@@ -298,6 +298,14 @@ def j_catalogue(path):
         raise ValueError('Unknown catalogue schema')
     entries = catalogue['scenarios']
     ids = [s['id'] for s in entries]
+    for scenario in entries:
+        mapped = scenario.get('test_cases', [])
+        if mapped and not (scenario.get('check') == 'jvm' and scenario['implemented'] and scenario['tier'] == 'A'):
+            raise ValueError('Per-method host evidence requires the existing JVM inventory')
+        for case in mapped:
+            if any(not case.get(key) for key in ('id', 'test_method', 'evidence_origin', 'failure_classification', 'fixture', 'expected_outcome', 'recovery_cleanup')):
+                raise ValueError('Missing JVM case attribution')
+            ids.append(case['id'])
     checks = [s['check'] for s in entries if s['implemented'] and s['tier'] == 'A']
     if len(ids) != len(set(ids)) or len(checks) != len(set(checks)):
         raise ValueError('Duplicate scenario')
@@ -343,6 +351,7 @@ def j_report(root, capture, summary, catalogue, *, current, complete=False):
         row = dict(id=scenario['id'], packages=scenario['packages'], status=scenario.get('status', 'NOT RUN'), artifacts=[])
         if scenario['implemented'] and scenario['tier'] == 'B':
             row.update({key: scenario[key] for key in ('test_method', 'evidence_origin', 'fixture', 'expected_outcome', 'test_environment')})
+            row.update({key: scenario[key] for key in ('failure_classification', 'recovery_cleanup') if key in scenario})
             row.update(status='NOT RUN', executed_test_method=None, source_revision=capture['revision'],
                        source_digest=capture['source_digest'], execution_environment='NOT RUN: device execution not authorized',
                        device='NOT SELECTED')
@@ -396,6 +405,19 @@ def j_report(root, capture, summary, catalogue, *, current, complete=False):
                             ref = 'phase-j/artifacts/host/jvm-xml/' + path.name
                             j_atomic(root, ref, j_redact_xml(path))
                             row['artifacts'].append(dict(path=ref, sha256=hashlib.sha256(j_path(root,ref).read_bytes()).hexdigest()))
+        if scenario.get('test_cases'):
+            row['test_cases'] = []
+            for specification in scenario['test_cases']:
+                case = dict(specification)
+                method = case['test_method']
+                verified = row['status'] == 'PASS' and method in row.get('test_inventory', [])
+                if row['status'] == 'PASS' and not verified:
+                    raise ValueError('Mapped JVM scenario did not execute: ' + method)
+                case.update(status='PASS' if verified else 'NOT RUN' if item is None else 'BLOCKED',
+                    executed_test_method=method if verified else None, source_revision=capture['revision'],
+                    source_digest=capture['source_digest'], execution_environment=capture['environment'],
+                    provenance='validated-full-jvm-inventory' if verified else 'method evidence not validated')
+                row['test_cases'].append(case)
         rows.append(row)
     active = [r for r,s in zip(rows,catalogue['scenarios']) if s['implemented'] and s['tier'] == 'A']
     status = 'FAIL' if any(r['status'] == 'FAIL' for r in active) else (

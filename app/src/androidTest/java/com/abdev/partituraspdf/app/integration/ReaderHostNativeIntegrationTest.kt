@@ -793,6 +793,92 @@ class ReaderHostNativeIntegrationTest {
         // Real Room/native/position storage with an injected write failure, not a failing physical disk.
     }
 
+    /** Real storage; only the read capability failure is injected. No Android grant is revoked. */
+    @Test fun registeredAccessFailureMatrixPreservesDurableStateAndOnlyRetriesRecoverableErrors() {
+        mount("02", persistent = true); register()
+        val fixture = session!!
+        val document = (pdf().association as LibraryAssociation.Registered).value.document
+        preference(PreferenceChange.Theme(ThemeSelection.DARK))
+        preference(PreferenceChange.Fit(PageFit.WIDTH))
+        runBlocking {
+            assertEquals(Outcome.Success(Unit), fixture.metadata.setFavorite(document, true))
+            assertEquals(Outcome.Success(Unit), fixture.positions.saveVisible(fixture.positions.writer(document), 0, PageIndex(0)))
+        }
+        val original = fixture.source.readBytes()
+        val registration = runBlocking { fixture.registry.resolve(document) }
+        val preferences = host!!.preferences.value
+        val grants = context.contentResolver.persistedUriPermissions.map { Triple(it.uri, it.isReadPermission, it.isWritePermission) }.toSet()
+        for (error in listOf(AppError.Access.PERMISSION_DENIED, AppError.Access.PERMISSION_REVOKED,
+            AppError.Access.PROVIDER_UNAVAILABLE, AppError.Access.PROVIDER_IO_FAILURE, AppError.Access.DOCUMENT_DELETED)) {
+            fixture.accessError = error
+            val before = fixture.nativeOpens
+            open()
+            compose.waitUntil(15_000) { entry().controller.state.value.phase == ReaderPhase.ERROR }
+            val failed = entry().controller.state.value
+            assertEquals(ReaderStage.OPEN, failed.failure!!.stage)
+            assertEquals(error, failed.failure.error)
+            assertNull(failed.frame); assertNull(failed.session); assertNull(failed.presentedPage)
+            assertTrue(routeClosed()); assertEquals(before, fixture.nativeOpens)
+            assertEquals(registration, runBlocking { fixture.registry.resolve(document) })
+            assertEquals(Outcome.Success(PageIndex(0)), runBlocking { fixture.positions.restore(document, 2) })
+            val metadata = runBlocking { withTimeout(15_000) { fixture.metadata.observe(document).first { it is Observation.Ready } } }
+            assertTrue((metadata as Observation.Ready).value.favorite)
+            assertEquals(preferences, host!!.preferences.value)
+            if (error == AppError.Access.DOCUMENT_DELETED) {
+                assertEquals(ReaderRetry.NONE, readerRetry(failed))
+                compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).assertDoesNotExist()
+            } else {
+                assertEquals(ReaderRetry.OPEN, readerRetry(failed))
+                fixture.accessError = null
+                compose.onNodeWithText(compose.activity.getString(R.string.reader_retry))
+                    .performScrollTo().assertIsDisplayed().assertHasClickAction().performClick()
+                visible("m2-b-$error-recovered")
+                assertEquals(before + 1, fixture.nativeOpens)
+                assertEquals(document, (entry().intent.request as DocumentOpenRequest.Registered).document)
+            }
+            back()
+            assertEquals(registration, runBlocking { fixture.registry.resolve(document) })
+            assertEquals(Outcome.Success(PageIndex(0)), runBlocking { fixture.positions.restore(document, 2) })
+        }
+        assertArrayEquals(original, fixture.source.readBytes())
+        assertEquals(grants, context.contentResolver.persistedUriPermissions.map { Triple(it.uri, it.isReadPermission, it.isWritePermission) }.toSet())
+    }
+
+    private fun registeredInvalidPdfPreservesStorage(id: String, expected: Set<AppError>) {
+        mount(id, persistent = true); register()
+        val fixture = session!!
+        val document = (pdf().association as LibraryAssociation.Registered).value.document
+        preference(PreferenceChange.Theme(ThemeSelection.DARK))
+        val preferences = host!!.preferences.value
+        runBlocking {
+            assertEquals(Outcome.Success(Unit), fixture.metadata.setFavorite(document, true))
+            assertEquals(Outcome.Success(Unit), fixture.positions.saveVisible(fixture.positions.writer(document), 0, PageIndex(0)))
+        }
+        val registration = runBlocking { fixture.registry.resolve(document) }
+        val original = fixture.source.readBytes()
+        open()
+        compose.waitUntil(20_000) { entry().controller.state.value.phase == ReaderPhase.ERROR }
+        val failed = entry().controller.state.value
+        assertTrue("Unexpected terminal PDF error: ${failed.failure}", failed.failure!!.error in expected)
+        assertEquals(ReaderRetry.NONE, readerRetry(failed))
+        assertNull(failed.frame); assertNull(failed.session); assertNull(failed.presentedPage)
+        assertTrue(routeClosed())
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).assertDoesNotExist()
+        back()
+        assertEquals(registration, runBlocking { fixture.registry.resolve(document) })
+        assertEquals(Outcome.Success(PageIndex(0)), runBlocking { fixture.positions.restore(document, 2) })
+        val metadata = runBlocking { withTimeout(15_000) { fixture.metadata.observe(document).first { it is Observation.Ready } } }
+        assertTrue((metadata as Observation.Ready).value.favorite)
+        assertEquals(preferences, host!!.preferences.value)
+        assertArrayEquals(original, fixture.source.readBytes())
+    }
+    @Test fun registeredMalformedPdfFailurePreservesFavoritePositionAndPreferences() {
+        registeredInvalidPdfPreservesStorage("15", setOf(AppError.Validation.INVALID_DOCUMENT))
+    }
+    @Test fun registeredProtectedPdfFailurePreservesFavoritePositionAndPreferences() {
+        registeredInvalidPdfPreservesStorage("14", setOf(AppError.Unsupported.PASSWORD_PROTECTED, AppError.Unsupported.DOCUMENT_FORMAT))
+    }
+
     @Test fun malformedCanonicalPdfFailsInIsolatedReaderAndStillReturnsSafely() {
         mount("15"); open()
         compose.waitUntil(20_000) { entry().controller.state.value.phase == ReaderPhase.ERROR }

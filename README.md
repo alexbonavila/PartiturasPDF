@@ -4,7 +4,7 @@
 
 Partituras PDF is a tablet-first project designed to turn an Android device into a practical digital music stand and a manageable library of musical scores. Its goal is to keep scores in ordinary PDF files, provide distraction-free reading with simple page turns, and make common changes without requiring a desktop PDF editor.
 
-> **Project status (2026-10-20):** Phase I's application integration is implemented locally on `feat/app-mvp-integration-i`, audited from `f51cc42df996390cf7e6aacf6cff85e004c9ca17`. The launcher now connects Library, the genuine Android folder picker, Reader and Settings. **Implementation delivered — final acceptance pending.** Fresh local builds, JVM/Python tests, localization and fixture checks pass. Android API 26/27/36, physical-tablet/manual acceptance, hosted CI and AAB language-delivery acceptance remain open. The branch has not been published or merged. See the [Phase I acceptance register](docs/acceptance/I_APP_MVP_ACCEPTANCE.md) for exact evidence and limits. Editing, annotations, Drive and global search remain planned.
+> **Current state (2026-10-20):** Phase I is integrated into `main` through [PR #24](https://github.com/alexbonavila/PartiturasPDF/pull/24), squash SHA `f06197a`. All nine feature-branch CI checks passed, including Android API 26/27/36, and merged-main mandatory checks passed. The owner reports satisfactory manual use on a tablet and emulator; individual manual evidence is not yet fully documented. This is the **read-only functional MVP**, not the future editing/annotation/Drive product. See [MVP release](docs/releases/MVP_RELEASE.md) and [acceptance](docs/acceptance/I_APP_MVP_ACCEPTANCE.md).
 
 ## Implemented application flow
 
@@ -14,7 +14,7 @@ Partituras PDF is a tablet-first project designed to turn an Android device into
 - **Language:** primary device es/ca/en selects Spanish/Catalan/English; an unsupported primary language falls back to Spanish, even when a supported secondary language exists. No manual selector or legacy-language override.
 - **Lifecycle:** retained owners across eligible Activity recreation; serialized background/memory/Back cleanup; bounded registered-only navigation reconstruction when Android supplies eligible saved state. Temporary document capabilities are not restored after process death.
 
-These are source-implemented capabilities. Android UI, genuine permission enforcement, native presentation, process death, accessibility and physical-device outcomes still require current-revision execution. AAB-selected language splits need separate delivery/switching acceptance; complete universal APK resources do not prove that behavior.
+The Android integration suite exercises the UI and isolated native worker on API 26/27/36; authentic user-specific SAF grants, device process death, accessibility and offline system-language switching still need separately itemized evidence. The owner reports successful general tablet/emulator use. Language splits are disabled in the AAB, but artifact-level verification does not replace real offline switching.
 
 ## Product direction and remaining capabilities
 
@@ -87,6 +87,8 @@ See the CI guide for the exact evidence; passing CI does not authorize future wo
 - [`docs/PHASE_0A_REPORT.md`](docs/PHASE_0A_REPORT.md): historical audit, initial verification and then-unresolved gates.
 - [`docs/TECH_STACK.md`](docs/TECH_STACK.md): current toolchain, theme/locales and candidate dependency risks.
 - [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md): current implementation, validation and deferred-acceptance status.
+- [`docs/releases/MVP_RELEASE.md`](docs/releases/MVP_RELEASE.md): functional MVP evidence, scope and planned tag.
+- [`CHANGELOG.md`](CHANGELOG.md): project milestone/version history.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): completed technical milestones and future product scope.
 - [`LICENSE`](LICENSE): the repository's restrictive Creative Commons license text.
 
@@ -111,7 +113,7 @@ PartiturasPDF/
 
 The PDF dataset is present and immutable. Install its declared Python dependencies
 and run `python test-fixtures/scripts/verify_fixtures.py`; never regenerate it in
-CI. The owner merged the foundation, backend, F/G/H and pre-I closeout work. Phase I now connects the existing features locally; its integration and formal acceptance remain pending. PDF editing remains unimplemented. See [current status](docs/PROJECT_STATUS.md). Failed or missing mandatory checks still block acceptance.
+CI. The owner merged the foundation, backend, F/G/H and Phase I through PR #24. This is an integrated functional MVP with passing automated evidence and owner-reported usability; per-scenario manual sign-off and release publication remain separately tracked. PDF editing remains unimplemented. See [current status](docs/PROJECT_STATUS.md). Failed or missing mandatory checks still block acceptance.
 
 ## License and reuse
 

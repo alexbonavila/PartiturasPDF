@@ -1,6 +1,18 @@
 # Current project status — PartiturasPDF
 
-## Phase I implementation delivered — final acceptance pending (2026-10-20)
+## Current MVP state — 2026-10-20
+
+**Implementation merged:** [PR #24](https://github.com/alexbonavila/PartiturasPDF/pull/24) merged Phase I into `main` by squash commit `f06197a75a2e420fb87153c0e64e3fe2a28841ea` on 2026-10-20. The final feature commit `aebddfd8adf0bab2954af9918140d668269d0a1f` has an **identical Git tree** to merged `main`: no Phase I files were omitted.
+
+**Automated verification:** [CI #99](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39424923611) passed nine jobs, including 630 JVM tests, 407 ordinary Android tests on each of API 26/27/36, localization, fixtures, and separately classified PDFium diagnostics (`DIAGNOSTICS_VALIDATED`). [CI #101](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39456085172) passed all seven mandatory jobs on merged `main`; optional API 27/36 jobs were **skipped** on that push, not rerun.
+
+**Manual result reported by owner:** on 2026-10-20 the owner reported being satisfied after using the MVP on a physical tablet and emulator. This is a **general functional assessment**; specific device model/OS, performed actions, screenshots, TalkBack, process-death, provider revocation and offline language-switch results were not recorded. Do not infer per-criterion manual PASS.
+
+**Release milestone:** documentation-only branch `docs/mvp-release-closeout` prepares the proposed annotated tag `v1.0.0-mvp`. The tag and GitHub Release **do not exist yet**; only create them on final `main` after the documentation PR passes and the owner approves its merge. Android `versionCode=1`, `versionName=1.0` are unchanged. See [MVP release record](releases/MVP_RELEASE.md), [acceptance](acceptance/I_APP_MVP_ACCEPTANCE.md) and [CHANGELOG](../CHANGELOG.md).
+
+**Boundaries:** delivered read-only Library/Reader/Settings MVP. PDF editing, annotations, Drive exchange, global search and file mutations remain unimplemented. Existing backup/D2D, detailed manual device/accessibility/translation, performance, security and licensing questions are tracked separately.
+
+## Historical I12 report before merge (2026-10-20)
 
 Current working branch: `feat/app-mvp-integration-i`. I12 starts at
 `f51cc42df996390cf7e6aacf6cff85e004c9ca17`; source implementation is unchanged by I12.

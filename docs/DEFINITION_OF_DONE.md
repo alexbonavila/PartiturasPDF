@@ -18,7 +18,7 @@ Submitting a PR is delivery for review; it is not integration or phase acceptanc
 - New business logic meets 90% line / 80% branch coverage with scoped reports;
   all defined critical PDF edit/save scenarios have explicit tests. Mark coverage
   NOT APPLICABLE where no business logic exists, with justification.
-- Spanish resources and completed translations satisfy the approved staged localization policy; eventual complete English/Catalan acceptance remains mandatory deferred work;
+- Complete Spanish-default, Catalan and English resources satisfy the localization validator; actual device language changes and human linguistic/accessibility acceptance still require documented evidence;
   immutable PDF fixtures pass the authoritative verifier and remain outside
   production assets. Exceptions cannot be inferred from the phase split.
 - No unresolved critical/high security findings or leaked secrets, credentials,

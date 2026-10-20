@@ -1,5 +1,7 @@
 # Partituras PDF — Product & Engineering Specification
 
+> **Implementation context (2026-10-20):** This file remains the original design specification, not a current delivery ledger. PR #24 merged the read-only Library/Reader/Settings MVP. Editing, annotations and Drive below remain future design goals. See [status](PROJECT_STATUS.md), [release](releases/MVP_RELEASE.md) and [acceptance](acceptance/I_APP_MVP_ACCEPTANCE.md).
+
 **Document version:** 1.0 (initial design baseline)  
 **Project:** `alexbonavila/PartiturasPDF`  
 **Application name:** Partituras PDF  
@@ -87,9 +89,7 @@ Only the first two brand colors are locked; other colors are adaptable for contr
 
 Owner-approved transition: initial functional UI is Spanish-first, with no manual language selector. Existing English/Catalan/Spanish resources remain intact. All new visible text and accessibility copy require Spanish resource values and valid argument/plural contracts, not hardcoded Kotlin literals.
 
-Current default `res/values/strings.xml` is English. I/localization owns a separately approved central migration to Spanish default/fallback, retaining English in `values-en` and existing Catalan/Spanish bundles. New staged Spanish copy uses paired default `*_spanish_first.xml` and Spanish resources under TESTING_POLICY.md; absent later English/Catalan translations are explicitly deferred mandatory work. This policy PR does not migrate production resources.
-
-The future host chooses Spanish for the first functional stage regardless of device language. Once separately approved complete feature translations are delivered, device es -> Spanish, ca -> Catalan, en -> English; unsupported languages -> Spanish. I applies this policy on API26+ and system-language changes, without a manual selector. Legacy persisted language values remain compatible but inactive. The later translation branch must establish full parity, formatting, human linguistic/accessibility review and device acceptance before claiming full multilingual delivery.
+**Current Phase I implementation:** The default and fallback language is Spanish; supported es/ca/en resource sets are complete and validated. The device's primary supported language selects Spanish, Catalan or English automatically on API26+, and an unsupported primary falls back to Spanish. The application has no manual language selector. The former `*_spanish_first.xml` staged translation mechanism is historical. AAB language splitting is disabled to include supported resources in the base delivery; complete offline language switching, human linguistic review and TalkBack are not individually documented as tested.
 
 ## 5. PDF library and file ownership
 

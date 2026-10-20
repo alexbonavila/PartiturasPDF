@@ -1,5 +1,7 @@
 # Prepared Phase I pull request — local draft only
 
+> **Historical PR draft (merged 2026-10-20):** This proposal became [PR #24](https://github.com/alexbonavila/PartiturasPDF/pull/24), squash-merged as `f06197a75a2e420fb87153c0e64e3fe2a28841ea` from final source `aebddfd8adf0bab2954af9918140d668269d0a1f`. CI #99 passed all nine feature-branch jobs and CI #101 passed mandatory checks on `main`. Any pending publication claims below were historical at drafting time; do not treat them as the current status. See [release record](../releases/MVP_RELEASE.md).
+
 Proposed title: **feat(app): integrate Library Reader and Settings MVP (Phase I)**
 
 Target: `main`; source: `feat/app-mvp-integration-i`. The audited baseline branch was published at

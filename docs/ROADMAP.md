@@ -1,6 +1,14 @@
 # Roadmap and approval boundaries
 
-## Phase I — Implementation delivered; final acceptance pending (2026-10-20)
+## Current milestone — merged functional MVP
+
+PR [#24](https://github.com/alexbonavila/PartiturasPDF/pull/24) integrated Phase I and all D04 corrections into `main` at `f06197a75a2e420fb87153c0e64e3fe2a28841ea`. [CI #99](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39424923611) passed all nine jobs with 407 ordinary Android tests on each API26/27/36; [CI #101](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39456085172) passed the mandatory post-merge checks. Owner-reported tablet/emulator usability is positive; individual manual acceptance observations have not been supplied.
+
+`docs/mvp-release-closeout` prepares the documentation-only milestone. After owner review and merge, a proposed annotated `v1.0.0-mvp` tag may be created on the resulting `main` commit. No tag exists yet. Future editing, annotation and Google Drive development requires separate authorization. See [MVP release record](releases/MVP_RELEASE.md).
+
+**The following sections are archived snapshots from before PR #24; their 'not merged' and 'unimplemented I' statements are no longer current.**
+
+## Historical phase I snapshot before merge (2026-10-20)
 
 I01–I11 are implemented locally on `feat/app-mvp-integration-i`: retained application composition,
 Library/Reader/Settings navigation, real picker wiring, registered/transient opening, lifecycle and

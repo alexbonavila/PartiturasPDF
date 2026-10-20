@@ -1,5 +1,7 @@
 # Phase I application integration — I03/I04 review handoff
 
+> **Merged provenance (2026-10-20):** Phase I including D04-D was squash-merged into `main` by [PR #24](https://github.com/alexbonavila/PartiturasPDF/pull/24), commit `f06197a75a2e420fb87153c0e64e3fe2a28841ea`. The source Git tree equals final feature SHA `aebddfd8adf0bab2954af9918140d668269d0a1f`; CI #99 and #101 succeeded as documented in [CI](../CI.md). This is an **incremental historic handoff**; earlier local-only/NOT RUN assertions below reflect their original dates. See [release](../releases/MVP_RELEASE.md) for current state.
+
 > **Current I12 audit — 2026-10-20:** I01–I11 are implemented locally. The dated sections below
 > retain their original incremental boundaries. Use [Phase I acceptance](../acceptance/I_APP_MVP_ACCEPTANCE.md)
 > for the final I-T01–I-T17 register, fresh local execution, source-specific coverage, Lint/AAB

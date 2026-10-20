@@ -1,5 +1,49 @@
 # Phase I — application MVP integration acceptance register
 
+## Current acceptance reconciliation after PR #24 — 2026-10-20
+
+**Source and publication:** PR [#24](https://github.com/alexbonavila/PartiturasPDF/pull/24) merged into `main` via squash commit `f06197a75a2e420fb87153c0e64e3fe2a28841ea`, whose Git tree equals final Phase I feature commit `aebddfd8adf0bab2954af9918140d668269d0a1f`. All pre-merge statements below saying the branch was unmerged are archival only.
+
+**Automated acceptance:** [CI #99](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39424923611) completed with nine jobs PASS; 630 JVM and 407 ordinary Android tests independently on API 26, API 27 and API 36, with localized resources, PDF fixtures and quality gate PASS. The controlled native protocol was `DIAGNOSTICS_VALIDATED`, retaining raw known PDFium platform failures distinctly. [CI #101](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39456085172) passed the seven mandatory checks on the identical merged tree; optional API27/36 jobs were skipped, not rerun.
+
+**Owner manual assessment:** On 2026-10-20 the owner reported running the application on a physical tablet and emulator and being satisfied with the result. This is accepted as an **owner-reported functional-MVP experience**, not evidence that each individual required manual scenario passed. Device model, physical API/version, app SHA, screenshots, genuine SAF permission sequences, offline language changes, TalkBack, process-death steps and full acceptance notes have not been provided. They must not be invented.
+
+### Reconciled I-T01–I-T17 evidence
+
+| Criterion | Function | Automated evidence | Manual evidence |
+|---|---|---|---|
+| I-T01 | Graph/recreation | CI Android PASS | Not itemized |
+| I-T02 | Library/Settings/Back | CI Android PASS | Owner general assessment |
+| I-T03 | SAF picker/READ permissions | Contract/host Android PASS | Real READ grant not itemized |
+| I-T04 | Picker cancel/replacement | Synthetic Android PASS | Actual OS cases not itemized |
+| I-T05 | Folder navigation/root | Android PASS | External provider not itemized |
+| I-T06 | Register/favorite/transient | Android PASS | Manual persistence steps not itemized |
+| I-T07 | F→G reader opening | Native Android PASS | Authentic root-to-reader path not itemized |
+| I-T08 | Render/page turn | Native Android PASS | Owner general assessment |
+| I-T09 | Last displayed page | Android PASS (synthetic saved state) | Actual process death not itemized |
+| I-T10 | Rotation/lifetime | Android PASS | Real rotation steps not itemized |
+| I-T11 | Background/memory/Back | Android PASS (simulated trims) | Real memory-pressure not itemized |
+| I-T12 | Theme/default fit | Android PASS | Device settings steps not itemized |
+| I-T13 | Locales/AAB | Localization, bundle, Android PASS | Offline system switch not itemized |
+| I-T14 | Keep-screen-on | Android Window tests PASS | Physical flag behavior not itemized |
+| I-T15 | Provider/worker recovery | Android PASS (injected faults, real worker) | External revocation not itemized |
+| I-T16 | No fixtures in production APK | Packaging check PASS | Not required for this criterion |
+| I-T17 | Accessibility/font/orientation | Android UI test PASS | TalkBack/large-font human review not itemized |
+
+**Interpretation:** All 407 ordinary tests passed on all three CI API targets; the user accepted the general tablet/emulator functional experience. Missing *itemized* manual evidence must remain visible. The original I12 table and 'NOT RUN' statements below refer to the historical environment and are not a current statement that Android CI was skipped.
+
+### MVP release boundary
+
+- Read-only Library/Reader/Settings integration is the delivered MVP. Editing, annotations, Drive, global search and mutations are not implemented.
+- The proposed annotated tag `v1.0.0-mvp` is **not yet created**; no GitHub release or signed APK is published. It may be created only after the documentation branch PR is approved and merged, on the exact then-current `main` commit.
+- Gradle version remains `versionCode=1`, `versionName=1.0`; no build change belongs to this documentary closeout.
+- Backup/device-to-device restore, performance/memory, human-language/accessibility and licensing/security reviews remain outside the evidence supplied here and are tracked separately.
+- See [MVP release record](../releases/MVP_RELEASE.md), [CI](../CI.md) and [current status](../PROJECT_STATUS.md).
+
+---
+
+**I12 historical record below:** Preserve original observations, commands and counts; new CI/merge evidence above supersedes those earlier pending fields.
+
 Recorded **2026-10-20, Europe/Madrid**. I12 final audit; implementation delivered,
 **formal Phase I acceptance pending**. This document grants no waiver, publication or merge.
 

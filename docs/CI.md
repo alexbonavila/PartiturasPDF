@@ -1,6 +1,8 @@
 # CI execution and troubleshooting
 
-> **Current-evidence note (2026-10-16):** The Phase 0 runs below are historical. L04 hosted [CI run #38857215346](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38857215346) at `87b864de` verified 165 JVM and 228 Android tests each on API26/27/36, with all nine jobs passing. This is not a claim that later documentation-only commits have their own CI run. See [current project status](PROJECT_STATUS.md) and [L04D](LOCAL_COMPATIBILITY_VALIDATION.md).
+> **Current merged-MVP evidence (2026-10-20):** [CI #99](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39424923611) on D04-D `aebddfd8adf0bab2954af9918140d668269d0a1f` passed **9/9 jobs**: build, lint, 630 JVM tests, 407/407 ordinary Android tests independently on API 26, 27 and 36, localization, fixtures and quality gate. Native controlled diagnostics returned `DIAGNOSTICS_VALIDATED` under their existing classifications; known raw PDFium platform failures were not reclassified as PASS. [CI #101](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39456085172) on merged `main` `f06197a75a2e420fb87153c0e64e3fe2a28841ea` passed seven mandatory jobs; optional compatibility jobs were **skipped** on that push. Older evidence below is historical.
+
+> **Historical evidence note (2026-10-16):** The Phase 0 runs below are historical. L04 hosted [CI run #38857215346](https://github.com/alexbonavila/PartiturasPDF/actions/runs/38857215346) at `87b864de` verified 165 JVM and 228 Android tests each on API26/27/36, with all nine jobs passing. This is not a claim that later documentation-only commits have their own CI run. See [current project status](PROJECT_STATUS.md) and [L04D](LOCAL_COMPATIBILITY_VALIDATION.md).
 
 The workflow in [ci.yml](../.github/workflows/ci.yml) runs for every PR targeting
 `main`, every push to `main`, manual dispatch and Mondays at **04:23 UTC**.

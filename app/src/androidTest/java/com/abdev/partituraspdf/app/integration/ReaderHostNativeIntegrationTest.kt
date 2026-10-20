@@ -642,8 +642,25 @@ class ReaderHostNativeIntegrationTest {
         val error=entry().controller.state.value.failure!!.error
         assertEquals(AppError.Conflict.STALE_SESSION,error)
         assertNotEquals(AppError.Access.DOCUMENT_DELETED,error); assertNotEquals(AppError.Access.PERMISSION_REVOKED,error)
-        retryWithDiagnosis("recovery", assertClickAction = true)
-        visible("after-worker-loss-retry"); assertNotEquals(previous,entry().controller.state.value.session!!.id)
+        val opensBeforeRetry = session!!.nativeOpens
+        diagnosis("worker-loss:before-retry-scroll")
+        try {
+            compose.onNodeWithText(compose.activity.getString(R.string.reader_retry))
+                .performScrollTo().assertIsDisplayed().assertHasClickAction()
+        } catch (failure: Throwable) {
+            throw AssertionError(diagnosis("worker-loss:retry-not-visible-or-clickable"), failure)
+        }
+        diagnosis("worker-loss:retry-visible-and-clickable")
+        try {
+            retryWithDiagnosis("recovery", assertClickAction = true)
+        } catch (failure: Throwable) {
+            throw AssertionError(diagnosis("worker-loss:retry-touch-dispatch-failed"), failure)
+        }
+        visible("after-worker-loss-retry")
+        // A returned touch call is not acceptance: require an observed reopen and new session.
+        assertEquals("Worker recovery must initiate exactly one native replacement open",
+            opensBeforeRetry + 1, session!!.nativeOpens)
+        assertNotEquals(previous,entry().controller.state.value.session!!.id)
         assertTrue(worker.pid!=session!!.engine.lastWorker!!.pid || worker.started!=session!!.engine.lastWorker!!.started)
         assertEquals(appPid,android.os.Process.myPid())
         assertTrue(runBlocking {session!!.registry.resolve(document)} is Outcome.Success)

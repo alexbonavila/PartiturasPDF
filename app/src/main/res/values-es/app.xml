@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_title">Partituras PDF</string>
+    <string name="app_loading">Preparando la aplicación…</string>
+    <string name="app_startup_failure">No se ha podido iniciar la aplicación.</string>
+    <string name="app_retry">Reintentar el inicio</string>
+    <string name="app_settings">Ajustes</string>
+    <string name="app_back">Volver a la biblioteca</string>
+    <string name="app_integration_boundary">Los efectos globales de los ajustes se integrarán más adelante.</string>
+    <string name="app_reader_unavailable">No se ha podido cerrar el lector con seguridad. Puedes seguir navegando por la biblioteca.</string>
+</resources>

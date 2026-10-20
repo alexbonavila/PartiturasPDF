@@ -4,7 +4,17 @@
 
 Partituras PDF is a tablet-first project designed to turn an Android device into a practical digital music stand and a manageable library of musical scores. Its goal is to keep scores in ordinary PDF files, provide distraction-free reading with simple page turns, and make common changes without requiring a desktop PDF editor.
 
-> **Project status (2026-10-19):** F Library, G Reader with isolated PDF worker, and H Settings are implemented and merged through [PR #18](https://github.com/alexbonavila/PartiturasPDF/pull/18), [#19](https://github.com/alexbonavila/PartiturasPDF/pull/19), and [#20](https://github.com/alexbonavila/PartiturasPDF/pull/20). They are independently tested components; `MainActivity` still shows the starter greeting. The real picker → library → reader → settings journey belongs to Phase I and is not implemented. See [current status](docs/PROJECT_STATUS.md) and the [pre-I closeout register](docs/acceptance/FGH_PRE_I_CLOSEOUT.md) for revision-specific evidence and deferred acceptance. Editing, annotations, Drive and global search remain planned.
+> **Project status (2026-10-20):** Phase I's application integration is implemented locally on `feat/app-mvp-integration-i`, audited from `f51cc42df996390cf7e6aacf6cff85e004c9ca17`. The launcher now connects Library, the genuine Android folder picker, Reader and Settings. **Implementation delivered — final acceptance pending.** Fresh local builds, JVM/Python tests, localization and fixture checks pass. Android API 26/27/36, physical-tablet/manual acceptance, hosted CI and AAB language-delivery acceptance remain open. The branch has not been published or merged. See the [Phase I acceptance register](docs/acceptance/I_APP_MVP_ACCEPTANCE.md) for exact evidence and limits. Editing, annotations, Drive and global search remain planned.
+
+## Implemented application flow
+
+- **Library:** choose an Android SAF folder, browse its bounded subfolders/PDF listings, explicitly register scores, mark favorites and request registered or temporary opening. Persisted access is READ-only; remembered locations do not prove current authorization.
+- **Reader:** isolated native PDF rendering, page navigation, PAGE/WIDTH fit and visual zoom; graphical-release barriers precede session cleanup. Only actually presented registered pages are eligible for checkpoints; a scheduled checkpoint is not yet a durable save.
+- **Settings:** authoritative SYSTEM/LIGHT/DARK and default PAGE/WIDTH preferences. Reader-local fit stays local until the confirmed global default genuinely changes.
+- **Language:** primary device es/ca/en selects Spanish/Catalan/English; an unsupported primary language falls back to Spanish, even when a supported secondary language exists. No manual selector or legacy-language override.
+- **Lifecycle:** retained owners across eligible Activity recreation; serialized background/memory/Back cleanup; bounded registered-only navigation reconstruction when Android supplies eligible saved state. Temporary document capabilities are not restored after process death.
+
+These are source-implemented capabilities. Android UI, genuine permission enforcement, native presentation, process death, accessibility and physical-device outcomes still require current-revision execution. AAB-selected language splits need separate delivery/switching acceptance; complete universal APK resources do not prove that behavior.
 
 ## Product direction and remaining capabilities
 
@@ -25,7 +35,7 @@ The core library, reader, and editor are intended to work **offline**. Internet 
 | Minimum Android version | Android 8.0 (API 26); Android 8.1 (API 27) tablet compatibility is essential |
 | UI | Jetpack Compose, Material Design 3 |
 | App structure | Initially one `app` module; MVVM/repositories as features are added |
-| PDF reading | Isolated `PdfRenderer` worker and independent Compose reader implemented; host integration pending |
+| PDF reading | Isolated `PdfRenderer` worker, Compose Reader and production host implemented; Android acceptance pending |
 | PDF manipulation | PDFBox-Android candidate, subject to format and annotation compatibility testing |
 | Local files | Android Storage Access Framework (SAF) |
 | Metadata and settings | Room and DataStore installed and used by current persistence repositories |
@@ -44,7 +54,7 @@ The exact build-tool versions are defined by the files in this repository. Do no
 
 1. Open the repository in a compatible version of **Android Studio**.
 2. Allow the Gradle sync to complete and install any Android SDK packages requested by the project.
-3. Run the generated starter application on an emulator or device (Android 8.0 or newer).
+3. Run the application host on a deliberately selected test emulator/device (Android 8.0 or newer); preserve existing user documents and data.
 4. From a terminal, run the available checks using the Gradle Wrapper:
 
 ```bash
@@ -61,8 +71,7 @@ and Android SDK 37; Java source/target compatibility remains 11.
 The Phase 0A workflow defines build, lint, JVM tests, actual API 26 emulator tests,
 localization, PDF fixture verification and an aggregate quality gate. Weekly and
 requested compatibility runs also execute API 27 and API 36 tests. See
-[`docs/CI.md`](docs/CI.md) for commands and limitations. The starter now uses a
-fixed brand light/dark theme and complete English/Catalan/Spanish resources.
+[`docs/CI.md`](docs/CI.md) for commands and limitations. The application uses a fixed brand palette and complete Spanish-default/Catalan/English resources. The following Phase 0 run is historical evidence only.
 The final [Phase 0 compatibility run](https://github.com/alexbonavila/PartiturasPDF/actions/runs/37972414539)
 passed on `main` at `e87fdf9f82d79ce6d0ee0b8d65a7dbe452674a37`, including
 actual API 26, API 27 and API 36 instrumentation and the aggregate quality gate.
@@ -102,7 +111,7 @@ PartiturasPDF/
 
 The PDF dataset is present and immutable. Install its declared Python dependencies
 and run `python test-fixtures/scripts/verify_fixtures.py`; never regenerate it in
-CI. The owner merged Phase 0A, Phase 0B, API27 compatibility fixes and subsequent approved backend phases. A0/A1, SAF/PDF reading adapters, C persistence and E composition now exist; user-facing library, reader and editor flows remain unimplemented. See [current status](docs/PROJECT_STATUS.md). Failed mandatory checks still block integration.
+CI. The owner merged the foundation, backend, F/G/H and pre-I closeout work. Phase I now connects the existing features locally; its integration and formal acceptance remain pending. PDF editing remains unimplemented. See [current status](docs/PROJECT_STATUS.md). Failed or missing mandatory checks still block acceptance.
 
 ## License and reuse
 

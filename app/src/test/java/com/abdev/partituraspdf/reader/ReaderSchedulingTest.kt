@@ -151,13 +151,35 @@ class ReaderSchedulingTest {
     }
     @Test fun expectedRenderFailureIsRetryableAndCancellationIsDistinct() = runTest {
         for(cancel in listOf(false,true)) withReader {
-            session.render={ if(cancel) throw CancellationException("render canceled") else Outcome.Failure(AppError.Resource.RENDER_LIMIT) }
+            var invalid = false
+            session.inspect = { page ->
+                check(!invalid) { "Canceled native session borrowed again" }
+                Outcome.Success(PageDisplayInfo(page,600,900))
+            }
+            session.render = {
+                check(!invalid)
+                if(cancel) {
+                    invalid = true // The isolated adapter retires potentially active canceled calls.
+                    throw CancellationException("render canceled; native session retired")
+                } else Outcome.Failure(AppError.Resource.RENDER_LIMIT)
+            }
             open()
+            assertEquals(cancel,invalid)
             if(cancel){ assertEquals(ReaderPhase.CANCELED,state.phase); assertNull(state.failure) }
             else { assertEquals(ReaderStage.RENDER,state.failure!!.stage); assertEquals(ReaderRetry.RENDER,state.failure!!.retry) }
             session.render={ Outcome.Success(TestPage(it).also{page->session.pages+=page}) }
+            if(cancel) {
+                assertNull(state.session)
+                assertEquals(ReaderRetry.OPEN,state.cancellationRetry)
+                opening={Outcome.Success(ReaderReady(it,TestSession("after-cancellation"),PageIndex(2)))}
+            }
             controller.dispatch(ReaderAction.Retry); runCurrent()
-            assertEquals(1,opens.size); assertEquals(ReaderPhase.RENDERED,state.phase)
+            assertEquals(if(cancel) 2 else 1,opens.size); assertEquals(ReaderPhase.RENDERED,state.phase)
+            if(cancel) {
+                assertEquals("Canceled session must not be planned again",1,session.inspections.size)
+                assertEquals("Canceled session must not be rendered again",1,session.requests.size)
+                assertEquals(ReadSessionId("after-cancellation"),state.session!!.id)
+            }
         }
     }
 }

@@ -1,6 +1,31 @@
 # Roadmap and approval boundaries
 
-## Current merged F/G/H snapshot — 2026-10-19
+## Phase I — Implementation delivered; final acceptance pending (2026-10-20)
+
+I01–I11 are implemented locally on `feat/app-mvp-integration-i`: retained application composition,
+Library/Reader/Settings navigation, real picker wiring, registered/transient opening, lifecycle and
+saved-state coordination, authoritative settings, automatic locale/window effects and recovery.
+I12 completes the available source/artifact audit and documentation. This branch is **not merged**.
+
+The tested source is `f51cc42df996390cf7e6aacf6cff85e004c9ca17`; I12 changes documentation only.
+Latest fetched main and merge base are `cd86db5c4f70201cfbe6970de20cdb3308a970d0`, without drift.
+Resolve the final audit commit with `git log -1 --format=%H -- docs/acceptance/I_APP_MVP_ACCEPTANCE.md`.
+Fresh builds,620 JVM,289 Python, localization,15 fixtures and scoped JVM logic coverage pass.
+See [current status](PROJECT_STATUS.md) and the [I-T01–I-T17 register](acceptance/I_APP_MVP_ACCEPTANCE.md)
+for exact commands, file counters and the complete pending-acceptance inventory.
+
+The next milestone is **owner review and missing acceptance**, not another development phase:
+current-revision mandatory CI, actual API26/27/36, genuine production SAF/native/Surface/process-
+death behavior, physical Android8.1 and manual/accessibility/linguistic validation remain open.
+AAB language-split delivery requires a separately approved packaging decision and runtime evidence;
+Lint remains0 errors/26 classified warnings. No Gradle/policy/worker change or waiver is made.
+
+A [PR description](integration/I_APP_MVP_PR_DESCRIPTION.md) is prepared locally. Publication,
+PR creation, synchronization if main later moves, merge and formal acceptance require their
+respective owner decisions. No push/PR/merge or next phase occurred. Earlier snapshots below retain
+their original date/revision; their former unimplemented-I statements are historical.
+
+## Historical merged F/G/H snapshot — 2026-10-19
 
 Verified Git baseline: `adcca2bd07693e0d985eee1c611bc931be1dfed1`. F merged in [PR #18](https://github.com/alexbonavila/PartiturasPDF/pull/18), G plus isolated native renderer in [PR #19](https://github.com/alexbonavila/PartiturasPDF/pull/19), H in [PR #20](https://github.com/alexbonavila/PartiturasPDF/pull/20). This section supersedes earlier *current* claims below that these components or their foundation/policy PRs remain unimplemented/unmerged. Dated historical results remain unchanged.
 

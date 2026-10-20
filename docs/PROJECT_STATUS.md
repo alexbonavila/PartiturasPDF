@@ -1,6 +1,44 @@
 # Current project status — PartiturasPDF
 
-## Current merged F/G/H snapshot — 2026-10-19
+## Phase I implementation delivered — final acceptance pending (2026-10-20)
+
+Current working branch: `feat/app-mvp-integration-i`. I12 starts at
+`f51cc42df996390cf7e6aacf6cff85e004c9ca17`; source implementation is unchanged by I12.
+Fetched `origin/main` and the merge base both remain
+`cd86db5c4f70201cfbe6970de20cdb3308a970d0` (no main drift). Final local audit revision:
+`git log -1 --format=%H -- docs/acceptance/I_APP_MVP_ACCEPTANCE.md`.
+The [acceptance register](acceptance/I_APP_MVP_ACCEPTANCE.md) contains exact commands, counters,
+I-T01–I-T17, manual procedures and decisions. The branch is not published or merged.
+
+- **IMPLEMENTED I01–I11:** one retained graph/host; Library/Settings/Reader navigation;
+  real Activity Result picker wiring and single READ/root reconciliation; registration/favorites;
+  isolated Reader opening/presentation ownership; background/trim/Back barriers; registered-only
+  eligible saved navigation; observed theme/default fit, device locale and Reader window policy;
+  typed recovery/cancellation without deletion or false checkpoint confirmation.
+- **LOCALLY VERIFIED I12:** debug/release/test APKs,620 JVM tests,289 Python tests,155 main
+  resource IDs per locale,20 debug IDs per locale,15 canonical PDFs; Lint0 errors/26 warnings.
+  The established host orchestrator also reports PASS. Each scoped host business-logic source
+  meets90% LINE/80% BRANCH. These are JVM and artifact results, not Android execution.
+- **NOT RUN / BLOCKED:** API26/27/36, genuine production SAF/native/surface journey, actual
+  system-language changes/process death, physical Android8.1, TalkBack/manual/linguistic review
+  and all seven final-revision hosted checks. No device is connected; KVM unavailable and
+  dedicated AVD UNPROVISIONED. GitHub API access returns proxy403; no outage repair/dispatch.
+- **AAB decision remains open:** actual bundletool1.18.3 selection confirms per-language splits:
+  an initial en/API26 install set lacks ca. The base retains Spanish fallback. Real split
+  install/update/offline switching is NOT RUN; owner approval is required before changing
+  Gradle language splitting or adding delivery support. Universal APKs do not settle this.
+- **Lint disposition:**24 historical warnings plus unused `app_integration_boundary` and
+  AppBundleLocaleChanges. No suppression, gate change or resource removal. The previously
+  unused Reader message is now used by I11's blocked-cleanup state, explaining27→26.
+
+I12 changes documentation only; no new application behavior, dependencies, policies, fixtures or
+worker exporter. It prepares a [local PR description](integration/I_APP_MVP_PR_DESCRIPTION.md),
+not a published PR. Formal acceptance requires actual current-revision CI/device/manual evidence
+and explicit human approval. No next phase is authorized. Historical snapshots below are retained
+at their original dates/revisions and do not override this branch-specific update. `AGENTS.md`'s
+old implementation-status paragraph is not edited; governance corrections require their own approval.
+
+## Historical merged F/G/H snapshot — 2026-10-19
 
 Verified Git baseline: `adcca2bd07693e0d985eee1c611bc931be1dfed1`. F merged in [PR #18](https://github.com/alexbonavila/PartiturasPDF/pull/18), G plus isolated native renderer in [PR #19](https://github.com/alexbonavila/PartiturasPDF/pull/19), H in [PR #20](https://github.com/alexbonavila/PartiturasPDF/pull/20). This section supersedes earlier *current* claims below that these components or their foundation/policy PRs remain unimplemented/unmerged. Dated historical results remain unchanged.
 

@@ -1,9 +1,25 @@
 package com.abdev.partituraspdf
 
 import android.os.Bundle
+import android.content.Context
+import com.abdev.partituraspdf.app.localization.localizedActivityContext
+import com.abdev.partituraspdf.app.localization.systemAppLanguage
+import com.abdev.partituraspdf.app.host.AppPresentation
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.abdev.partituraspdf.app.host.AppHostState
+import com.abdev.partituraspdf.app.host.bindRootPicker
+import com.abdev.partituraspdf.storage.saf.SafTreeGrantAccess
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.ViewModelProvider
+import com.abdev.partituraspdf.app.host.AppHost
+import com.abdev.partituraspdf.app.host.AppHostFactory
+import com.abdev.partituraspdf.app.host.AppHostViewModel
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -15,19 +31,63 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.abdev.partituraspdf.ui.theme.PartiturasPDFTheme
 
 class MainActivity : ComponentActivity() {
+    private val activityIdentity = java.util.UUID.randomUUID().toString()
+    private lateinit var host: AppHostViewModel
+    private var restoredPicker: String? = null
+    private var localeRecreationRequested = false
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(localizedActivityContext(newBase))
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        val pending = (host.state.value as? AppHostState.Ready)?.features?.picker?.request?.value
+        outState.putString("app.saf.pending", pending)
+        outState.putString("app.host.lifetime", host.lifetimeId)
+        outState.putString("app.navigation", host.saveNavigation())
+        super.onSaveInstanceState(outState)
+    }
+    override fun onStart() {
+        super.onStart()
+        // Android normally recreates for locale changes. Recheck after a background return too.
+        if (resources.configuration.locales[0].language != systemAppLanguage()) {
+            if (!localeRecreationRequested) { localeRecreationRequested = true; recreate() }
+            return
+        }
+        host.activityStarted(activityIdentity)
+    }
+    override fun onStop() {
+        host.activityStopped(activityIdentity, isChangingConfigurations)
+        super.onStop()
+    }
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::host.isInitialized) host.activityMemory(activityIdentity, level, isChangingConfigurations)
+    }
+    override fun onLowMemory() {
+        super.onLowMemory()
+        if (::host.isInitialized) host.activityMemory(activityIdentity, android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            PartiturasPDFTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = stringResource(R.string.starter_recipient),
-                        modifier = Modifier.padding(innerPadding)
-                    )
+        host = ViewModelProvider(this, AppHostFactory(application, savedInstanceState?.getString("app.navigation")))[AppHostViewModel::class.java]
+        host.activityCreated(activityIdentity)
+        restoredPicker = if (savedInstanceState?.getString("app.host.lifetime") != host.lifetimeId)
+            savedInstanceState?.getString("app.saf.pending") else null
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                host.state.collectLatest { state ->
+                    val picker = (state as? AppHostState.Ready)?.features?.picker ?: return@collectLatest
+                    restoredPicker?.let { picker.incomplete() }
+                    restoredPicker = null
+                    bindRootPicker(activityResultRegistry, picker) {
+                        SafTreeGrantAccess(contentResolver).treePickerIntent()
+                    }
                 }
             }
         }
+        setContent { AppPresentation(host, this) { AppHost(host) } }
     }
 }
 

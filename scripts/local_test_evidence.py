@@ -351,7 +351,7 @@ def j_report(root, capture, summary, catalogue, *, current, complete=False):
         row = dict(id=scenario['id'], packages=scenario['packages'], status=scenario.get('status', 'NOT RUN'), artifacts=[])
         if scenario['implemented'] and scenario['tier'] == 'B':
             row.update({key: scenario[key] for key in ('test_method', 'evidence_origin', 'fixture', 'expected_outcome', 'test_environment')})
-            row.update({key: scenario[key] for key in ('failure_classification', 'recovery_cleanup') if key in scenario})
+            row.update({key: scenario[key] for key in ('failure_classification', 'recovery_cleanup', 'execution_group', 'bounded_wait_ms') if key in scenario})
             row.update(status='NOT RUN', executed_test_method=None, source_revision=capture['revision'],
                        source_digest=capture['source_digest'], execution_environment='NOT RUN: device execution not authorized',
                        device='NOT SELECTED')

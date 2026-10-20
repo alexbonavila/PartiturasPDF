@@ -267,6 +267,38 @@ class PhaseJEvidenceTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 ev.j_catalogue(path)
 
+    def test_first_android_selection_is_explicit_standard_and_non_destructive(self):
+        catalogue = ev.j_catalogue(ROOT / 'scripts/j_scenarios.json')
+        ordinary = ev.android_inventory(ROOT / 'app/src/androidTest')
+        selected = [s for s in catalogue['scenarios'] if s.get('execution_group') == 'm2-first-safe']
+        self.assertTrue(selected)
+        methods = [s['test_method'] for s in selected]
+        self.assertEqual(len(methods), len(set(methods)))
+        for scenario in selected:
+            self.assertIn(scenario['test_method'], ordinary)
+            self.assertEqual('B', scenario['tier'])
+            self.assertEqual('NOT RUN', scenario['status'])
+            self.assertNotIn('realWorkerLoss', scenario['test_method'])
+            self.assertNotIn('SafLocalE2eTest', scenario['test_method'])
+        excluded = next(s for s in catalogue['scenarios'] if s['id'] == 'J-B-genuine-saf')
+        self.assertEqual('separate-saf-approval', excluded['execution_group'])
+        self.assertNotIn(excluded['test_method'], methods)
+        report = self.report()
+        self.assertTrue(all(s['status'] == 'NOT RUN' for s in report['scenarios'] if s.get('execution_group') == 'm2-first-safe'))
+
+    def test_readiness_python_instructions_compile_without_device_execution(self):
+        import ast
+        import re
+        text = (ROOT / 'docs/validation/J_M2_ANDROID_EXECUTION_MATRIX.md').read_text()
+        blocks = re.findall(r'```python\n(.*?)```', text, re.S)
+        self.assertTrue(blocks)
+        for block in blocks:
+            ast.parse(block) # Parse only: never execute embedded device instructions.
+            self.assertIn('runner.execute(command,timeout=1200)', block)
+            self.assertIn('ev.parse_android(output,expected)', block)
+            self.assertIn("dict(status='BLOCKED'", block)
+            self.assertIn('raise SystemExit(2)', block)
+
     def test_invalid_catalogue_rejected(self):
         p=self.root/'catalogue.json'
         bad=copy.deepcopy(self.catalogue);bad['scenarios'].append(bad['scenarios'][0])

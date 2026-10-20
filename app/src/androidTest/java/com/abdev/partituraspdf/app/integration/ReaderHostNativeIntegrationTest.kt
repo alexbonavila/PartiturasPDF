@@ -676,8 +676,22 @@ class ReaderHostNativeIntegrationTest {
         compose.onNodeWithText(compose.activity.getString(R.string.reader_error_provider)).assertExists()
         assertEquals(0,session!!.nativeOpens)
         session!!.accessError=null
-        retryWithDiagnosis("recovery", assertClickAction = true)
-        visible("after-provider-retry"); assertEquals(1,session!!.nativeOpens); back()
+        diagnosis("provider:before-retry-scroll")
+        try {
+            compose.onNodeWithText(compose.activity.getString(R.string.reader_retry))
+                .performScrollTo().assertIsDisplayed().assertHasClickAction()
+        } catch (failure: Throwable) {
+            throw AssertionError(diagnosis("provider:retry-not-visible-or-clickable"), failure)
+        }
+        diagnosis("provider:retry-visible-and-clickable")
+        try {
+            retryWithDiagnosis("provider-recovery", assertClickAction = true)
+        } catch (failure: Throwable) {
+            throw AssertionError(diagnosis("provider:retry-touch-dispatch-failed"), failure)
+        }
+        visible("after-provider-retry"); assertEquals(1,session!!.nativeOpens)
+        diagnosis("provider:recovery-completed")
+        back()
         // Injected contract access failure; this does not claim a real SAF provider outage.
     }
     @Test fun injectedCheckpointFailurePreservesRealEarlierPositionAndSafeReopenAfterEmptyRouteVerification() {

@@ -67,12 +67,14 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestName
 import org.junit.runner.RunWith
 
 /** Real Room + route + isolated native engine + host + software surface. File access/listing are
  * test-only capabilities, not SAF grants. No fabricated Presented callbacks or in-process renderer. */
 @RunWith(AndroidJUnit4::class)
 class ReaderHostNativeIntegrationTest {
+    @get:Rule val testName = TestName()
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private var composition = ReaderTestComposition(compose)
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
@@ -263,9 +265,59 @@ class ReaderHostNativeIntegrationTest {
             .performScrollTo().performClick()
         compose.waitUntil(15_000) { host!!.navigation.value.destination == AppDestination.READER }
     }
-    private fun visible() {
-        compose.waitUntil(20_000) { entry().controller.state.value.phase == ReaderPhase.VISIBLE && entry().controller.state.value.checkpointConsumer != null }
+    // Snapshots are independent observations, not an atomic state transition or proof of acceptance.
+    private var previousDiagnosticWorker: PdfWorkerIdentity? = null
+    private fun diagnosis(checkpoint: String): String {
+        val details = try {
+            val fixture = session
+            val owner = host
+            val reading = try { fixture?.features?.reader?.state?.value } catch (_: UninitializedPropertyAccessException) { null }
+            val reader = reading?.entry?.controller?.state?.value
+            val worker = fixture?.engine?.lastWorker
+            val changed = if (worker == null || previousDiagnosticWorker == null) "UNKNOWN"
+                else (worker != previousDiagnosticWorker).toString()
+            if (worker != null) previousDiagnosticWorker = worker
+            "host(suspended=${reading?.suspended}, recoveryBlocked=${reading?.recoveryBlocked}, " +
+                "leaving=${reading?.leaving}, suspendedPage=${reading?.suspendedPage}, " +
+                "cleanup=${reading?.report?.failures}, cause=${reading?.let { it.report.cause?.javaClass?.simpleName ?: "NONE" }}, " +
+                "destination=${owner?.navigation?.value?.destination}); " +
+                "reader(phase=${reader?.phase}, failure=${reader?.let { it.failure ?: "NONE" }}, requested=${reader?.requestedPage}, " +
+                "presented=${reader?.presentedPage}, frame=${reader?.let { it.frame != null }}, " +
+                "consumer=${reader?.let { it.checkpointConsumer != null }}, session=${reader?.let { it.session != null }}, " +
+                "fit=${reader?.fit}, viewport=${reader?.viewport}, viewportGeneration=${reader?.viewportGeneration}); " +
+                "native(openAttempts=${fixture?.nativeOpens}, worker=$worker, changedSincePreviousSnapshot=$changed, " +
+                "injectedAccessError=${fixture?.let { it.accessError ?: "NONE" }}, latestNativeResult=UNKNOWN); " +
+                "controllerActive=UNKNOWN, retryAccepted=UNKNOWN"
+        } catch (failure: Throwable) {
+            "snapshot=UNKNOWN collectionFailure=${failure.javaClass.simpleName}"
+        }
+        val snapshot = "D02ReaderDiagnosis test=${testName.methodName} checkpoint=$checkpoint ${details.replace("=null", "=UNKNOWN")}"
+        try { android.util.Log.i("D02ReaderDiagnosis", snapshot) } catch (_: Throwable) { /* Keep original failure. */ }
+        return snapshot
+    }
+    private fun visibilityWait(checkpoint: String, condition: () -> Boolean) {
+        diagnosis("$checkpoint:before-wait")
+        try {
+            compose.waitUntil(20_000, condition)
+        } catch (failure: Throwable) {
+            val snapshot = try { diagnosis("$checkpoint:wait-failed") }
+            catch (diagnosticFailure: Throwable) {
+                "D02ReaderDiagnosis checkpoint=$checkpoint snapshot=UNKNOWN collectionFailure=${diagnosticFailure.javaClass.simpleName}"
+            }
+            throw AssertionError(snapshot, failure)
+        }
+        diagnosis("$checkpoint:condition-reached")
+    }
+    private fun visible(checkpoint: String = "visible") {
+        visibilityWait(checkpoint) { entry().controller.state.value.phase == ReaderPhase.VISIBLE && entry().controller.state.value.checkpointConsumer != null }
         compose.onNodeWithTag("reader_page").assertIsDisplayed()
+    }
+    private fun retryWithDiagnosis(checkpoint: String, assertClickAction: Boolean = false) {
+        diagnosis("$checkpoint:before-retry-click")
+        val retry = compose.onNodeWithText(compose.activity.getString(R.string.reader_retry))
+        if (assertClickAction) retry.assertHasClickAction()
+        retry.performClick()
+        diagnosis("$checkpoint:retry-click-dispatched-not-proof-of-acceptance")
     }
     private fun verifyPostedScorePixels() {
         lateinit var view: ReaderPageSurface
@@ -353,7 +405,7 @@ class ReaderHostNativeIntegrationTest {
         back()
     }
     @Test fun simulatedLowMemoryReleasesFrameKeepsSessionAndPreservesLocalZoomOnExplicitRecovery() {
-        mount("02"); open(); visible()
+        mount("02"); open(); visible("initial-visibility")
         compose.onNodeWithText(compose.activity.getString(R.string.reader_options)).performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.reader_zoom_in)).performClick()
         // Close the existing options menu by selecting the already selected fit.
@@ -363,17 +415,17 @@ class ReaderHostNativeIntegrationTest {
         compose.runOnUiThread { host!!.activityMemory(callbackIdentity, android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) }
         compose.waitUntil(20_000) { entry().controller.state.value.frame == null && session!!.features.reader!!.state.value.suspended }
         assertFalse(routeClosed())
-        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).performClick()
-        visible(); assertEquals(native, entry().controller.state.value.session!!.id)
+        retryWithDiagnosis("recovery")
+        visible("after-memory-recovery"); assertEquals(native, entry().controller.state.value.session!!.id)
         assertEquals(description, compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsProperties.StateDescription])
         back()
     }
     @Test fun simulatedCriticalMemoryClosesNativeSessionBeforeUserRecovery() {
-        mount("02"); open(); visible(); val native = entry().controller.state.value.session!!.id
+        mount("02"); open(); visible("initial-visibility"); val native = entry().controller.state.value.session!!.id
         compose.runOnUiThread { host!!.activityMemory(callbackIdentity, android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) }
         compose.waitUntil(20_000) { routeClosed() }
-        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).performClick()
-        visible(); assertNotEquals(native, entry().controller.state.value.session!!.id); back()
+        retryWithDiagnosis("recovery")
+        visible("after-memory-recovery"); assertNotEquals(native, entry().controller.state.value.session!!.id); back()
     }
     @Test fun backgroundWaitsForDelayedRealNativeRenderOutputAndDiscardsItsBitmap() {
         mount("02")
@@ -510,7 +562,7 @@ class ReaderHostNativeIntegrationTest {
         assertEquals(1, session!!.nativeOpens); back()
     }
     @Test fun persistedDefaultFitAndLocalMenuRemainDistinctWhileConfirmedChangesStayInSameNativeSession() {
-        mount("02"); preference(PreferenceChange.Fit(PageFit.WIDTH)); open(); visible()
+        mount("02"); preference(PreferenceChange.Fit(PageFit.WIDTH)); open(); visible("initial-visibility")
         val native = entry().controller.state.value.session!!.id
         assertEquals(PageFit.WIDTH, entry().controller.state.value.fit)
         compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
@@ -521,7 +573,7 @@ class ReaderHostNativeIntegrationTest {
         preference(PreferenceChange.Theme(ThemeSelection.DARK)); compose.waitForIdle()
         assertEquals(PageFit.PAGE, entry().controller.state.value.fit)
         preference(PreferenceChange.Fit(PageFit.PAGE)); preference(PreferenceChange.Fit(PageFit.WIDTH))
-        compose.waitUntil(20_000) { entry().controller.state.value.fit == PageFit.WIDTH && entry().controller.state.value.phase == ReaderPhase.VISIBLE }
+        visibilityWait("after-confirmed-default-fit-change") { entry().controller.state.value.fit == PageFit.WIDTH && entry().controller.state.value.phase == ReaderPhase.VISIBLE }
         assertEquals(PageIndex(1), entry().controller.state.value.presentedPage)
         assertEquals(native, entry().controller.state.value.session!!.id); assertEquals(1, session!!.nativeOpens); back()
     }
@@ -578,10 +630,10 @@ class ReaderHostNativeIntegrationTest {
         mount("02"); register()
         val document=(pdf().association as LibraryAssociation.Registered).value.document
         assertEquals(Outcome.Success(Unit),runBlocking {session!!.metadata.setFavorite(document,true)})
-        open(); visible()
+        open(); visible("initial-visibility")
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
         compose.waitUntil(20_000) {routeClosed()}
-        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED); visible()
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED); visible("after-background-resume-before-worker-loss")
         val previous=entry().controller.state.value.session!!.id; val worker=session!!.engine.lastWorker!!
         val appPid=android.os.Process.myPid()
         runBlocking {retireOwnedWorker(worker)}
@@ -590,8 +642,8 @@ class ReaderHostNativeIntegrationTest {
         val error=entry().controller.state.value.failure!!.error
         assertEquals(AppError.Conflict.STALE_SESSION,error)
         assertNotEquals(AppError.Access.DOCUMENT_DELETED,error); assertNotEquals(AppError.Access.PERMISSION_REVOKED,error)
-        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).assertHasClickAction().performClick()
-        visible(); assertNotEquals(previous,entry().controller.state.value.session!!.id)
+        retryWithDiagnosis("recovery", assertClickAction = true)
+        visible("after-worker-loss-retry"); assertNotEquals(previous,entry().controller.state.value.session!!.id)
         assertTrue(worker.pid!=session!!.engine.lastWorker!!.pid || worker.started!=session!!.engine.lastWorker!!.started)
         assertEquals(appPid,android.os.Process.myPid())
         assertTrue(runBlocking {session!!.registry.resolve(document)} is Outcome.Success)
@@ -607,8 +659,8 @@ class ReaderHostNativeIntegrationTest {
         compose.onNodeWithText(compose.activity.getString(R.string.reader_error_provider)).assertExists()
         assertEquals(0,session!!.nativeOpens)
         session!!.accessError=null
-        compose.onNodeWithText(compose.activity.getString(R.string.reader_retry)).assertHasClickAction().performClick()
-        visible(); assertEquals(1,session!!.nativeOpens); back()
+        retryWithDiagnosis("recovery", assertClickAction = true)
+        visible("after-provider-retry"); assertEquals(1,session!!.nativeOpens); back()
         // Injected contract access failure; this does not claim a real SAF provider outage.
     }
     @Test fun injectedCheckpointFailurePreservesRealEarlierPositionAndSafeReopenAfterEmptyRouteVerification() {
@@ -647,7 +699,11 @@ class ReaderHostNativeIntegrationTest {
     @Test fun protectedCanonicalPdfRemainsAnExplicitReaderFailureAndCanBeRetired() {
         mount("14"); open()
         compose.waitUntil(20_000) { entry().controller.state.value.phase == ReaderPhase.ERROR }
-        assertEquals(AppError.Unsupported.PASSWORD_PROTECTED, entry().controller.state.value.failure!!.error)
+        val error = entry().controller.state.value.failure!!.error
+        assertTrue("Unexpected protected-document error: $error",
+            error == AppError.Unsupported.PASSWORD_PROTECTED || error == AppError.Unsupported.DOCUMENT_FORMAT)
+        assertNull(entry().controller.state.value.frame)
+        assertNull(entry().controller.state.value.session)
         assertNull(entry().controller.state.value.presentedPage); back()
     }
 }

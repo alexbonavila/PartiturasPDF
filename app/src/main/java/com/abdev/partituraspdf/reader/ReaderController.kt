@@ -97,14 +97,14 @@ class ReaderController(
         if (retired || !owner.isActive) return@synchronized
         when (action) {
             is ReaderAction.Viewport -> if (action.value != state.value.viewport) {
-                invalidateRender()
+                invalidateRender(cancelRender = false)
                 mutableState.value = state.value.copy(viewport = action.value,
                     viewportGeneration = state.value.viewportGeneration + 1,
                     failure = if (ready == null) state.value.failure else null)
                 scheduleRender()
             }
             is ReaderAction.Fit -> if (action.value != state.value.fit) {
-                invalidateRender()
+                invalidateRender(cancelRender = false)
                 mutableState.value = state.value.copy(fit = action.value,
                     viewportGeneration = state.value.viewportGeneration + 1,
                     failure = if (ready == null) state.value.failure else null)
@@ -193,7 +193,7 @@ class ReaderController(
                 fail(ReaderStage.PLAN, AppError.Validation.INVALID_PAGE, ReaderRetry.NONE)
             }
         } else if (state.value.requestedPage?.value != index) {
-            invalidateRender()
+            invalidateRender(cancelRender = false)
             mutableState.value = state.value.copy(requestedPage = PageIndex(index), failure = null)
             scheduleRender()
         }
@@ -206,9 +206,11 @@ class ReaderController(
         if (active && ready != null) mutableState.value = state.value.copy(phase = ReaderPhase.READY)
         signal()
     }
-    private fun invalidateRender() {
+    // Supersession invalidates publication, not the native session. Lifecycle/intent changes
+    // still abort and drain active native work through perform().
+    private fun invalidateRender(cancelRender: Boolean = true) {
         renderGeneration++
-        if (operationKind == Kind.RENDER || operationKind == Kind.ACK) operation?.cancel()
+        if ((cancelRender && operationKind == Kind.RENDER) || operationKind == Kind.ACK) operation?.cancel()
         if (operationKind == Kind.ACK) mutableState.value = state.value.copy(checkpoint = ReaderCheckpoint.Canceled)
         pendingPresentation = null; acknowledgedFrame = null
         mutableState.value = state.value.copy(checkpointConsumer = null)
@@ -297,10 +299,18 @@ class ReaderController(
             if (completed) @Suppress("UNCHECKED_CAST") discard(acquired as T)
             currentCoroutineContext().ensureActive()
             synchronized(lock) {
-                if (current(work)) {
+                val wasCurrent = current(work)
+                // Native cancellation may retire the session even when this generation is obsolete
+                // or paused. Invalidate only this borrowed session; a new intent has its own owner.
+                if (work is Work.Render && documentGeneration == work.generation && ready === work.ready) {
+                    ready = null; needsRender = false; needsCheck = false
+                    mutableState.value = state.value.copy(session = null)
+                    if (!retired && !active) needsOpen = true
+                }
+                if (wasCurrent) {
                     val canceledRetry = when (kind) {
                         Kind.OPEN, Kind.CHECK -> ReaderRetry.OPEN
-                        Kind.RENDER -> ReaderRetry.RENDER
+                        Kind.RENDER -> ReaderRetry.OPEN
                         Kind.ACK -> ReaderRetry.PRESENTATION
                     }
                     mutableState.value = state.value.copy(phase = ReaderPhase.CANCELED, cancellationRetry = canceledRetry,
@@ -406,7 +416,17 @@ class ReaderController(
         var retained = false
         try {
             synchronized(lock) {
-                if (!current(work)) return@synchronized
+                if (!current(work)) {
+                    // An obsolete bitmap is discardable, but a native session failure is not.
+                    if (result is Outcome.Failure && documentGeneration == work.generation && ready === work.ready &&
+                        readerFailureRetry(result.error, stage) != ReaderRetry.RENDER &&
+                        result.error != AppError.Validation.INVALID_PAGE && result.error != AppError.Validation.INVALID_RENDER_REQUEST) {
+                        ready = null; needsRender = false
+                        mutableState.value = state.value.copy(session = null)
+                        fail(stage, result.error, readerFailureRetry(result.error, stage))
+                    }
+                    return@synchronized
+                }
                 when (result) {
                     is Outcome.Failure -> {
                         val retry = readerFailureRetry(result.error, stage)

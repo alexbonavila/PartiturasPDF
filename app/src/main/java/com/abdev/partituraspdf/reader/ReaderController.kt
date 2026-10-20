@@ -38,6 +38,7 @@ class ReaderController(
     private var ready: ReaderReady? = null
     private var needsOpen = false
     private var needsCheck = false
+    private var validateCompletedRender = false
     private var needsRender = false
     private var retiringFrame: ReaderFrame? = null
     private var pendingPresentation: ReaderPresentation? = null
@@ -52,7 +53,7 @@ class ReaderController(
         data class Release(val frame: ReaderFrame) : Work
         data object Stop : Work
         data class Open(val generation: Long, val intent: ReaderOpenIntent) : Work
-        data class Check(val generation: Long) : Work
+        data class Check(val generation: Long, val candidate: ReaderReady?) : Work
         data class Render(val generation: Long, val render: Long, val ready: ReaderReady,
             val page: PageIndex, val viewport: ReaderViewport, val viewportGeneration: Long, val fit: PageFit) : Work
         data class Ack(val generation: Long, val presentation: ReaderPresentation) : Work
@@ -86,7 +87,7 @@ class ReaderController(
         documentGeneration++
         invalidateRender()
         operation?.cancel()
-        ready = null; needsCheck = false; needsOpen = true
+        ready = null; needsCheck = false; needsOpen = true; validateCompletedRender = false
         mutableState.value = state.value.copy(intent = intent, session = null, requestedPage = null,
             presentedPage = null, phase = if (active) ReaderPhase.OPENING else ReaderPhase.QUIESCED,
             failure = null, checkpoint = ReaderCheckpoint.None, cancellationRetry = ReaderRetry.NONE, checkpointConsumer = null)
@@ -227,7 +228,7 @@ class ReaderController(
             ReaderRetry.NONE -> Unit
             ReaderRetry.OPEN -> {
                 if (state.value.intent == null) return
-                documentGeneration++; invalidateRender(); ready = null; needsOpen = true; needsCheck = false
+                documentGeneration++; invalidateRender(); ready = null; needsOpen = true; needsCheck = false; validateCompletedRender = false
                 mutableState.value = state.value.copy(phase = ReaderPhase.OPENING, session = null, failure = null)
                 signal()
             }
@@ -250,7 +251,12 @@ class ReaderController(
             mutableState.value = state.value.copy(phase = ReaderPhase.OPENING, failure = null)
             return@synchronized Work.Open(documentGeneration, intent)
         }
-        if (needsCheck) { needsCheck = false; return@synchronized Work.Check(documentGeneration) }
+        if (needsCheck) {
+            needsCheck = false
+            val candidate = ready.takeIf { validateCompletedRender }
+            validateCompletedRender = false
+            return@synchronized Work.Check(documentGeneration, candidate)
+        }
         pendingPresentation?.let {
             pendingPresentation = null
             if (validPresentation(it) && acknowledgedFrame !== it.frame) {
@@ -302,10 +308,21 @@ class ReaderController(
                 val wasCurrent = current(work)
                 // Native cancellation may retire the session even when this generation is obsolete
                 // or paused. Invalidate only this borrowed session; a new intent has its own owner.
-                if (work is Work.Render && documentGeneration == work.generation && ready === work.ready) {
-                    ready = null; needsRender = false; needsCheck = false
-                    mutableState.value = state.value.copy(session = null)
-                    if (!retired && !active) needsOpen = true
+                val canceledSession = when {
+                    work is Work.Render && documentGeneration == work.generation -> work.ready
+                    work is Work.Check && documentGeneration == work.generation -> work.candidate
+                    else -> null
+                }
+                if (canceledSession != null && ready === canceledSession) {
+                    val completedOutput = work is Work.Render && completed && acquired is Outcome.Success<*>
+                    validateCompletedRender = completedOutput && !active && !retired
+                    if (!validateCompletedRender) {
+                        ready = null; needsRender = false; needsCheck = false
+                        mutableState.value = state.value.copy(session = null)
+                        if (!retired && !active) needsOpen = true
+                    }
+                    // A completed lease proves only output acquisition. Resume must validate the
+                    // candidate through a fresh native operation before borrowing it again.
                 }
                 if (wasCurrent) {
                     val canceledRetry = when (kind) {
@@ -348,7 +365,21 @@ class ReaderController(
                 }
             }
             is Work.Check -> {
-                val result = perform(work, Kind.CHECK) { route.current() } // null is a valid closed route.
+                val result = perform(work, Kind.CHECK) {
+                    val current = route.current() // null is a valid closed route.
+                    val candidate = work.candidate
+                    if (candidate != null && current?.session === candidate.session &&
+                        current.session.info == candidate.session.info && current.request == candidate.request) {
+                        val info = current.session.info
+                        val page = ReadPageRef(info.id, info.sourceGeneration, current.page, info.revision)
+                        // Neither route identity nor a completed bitmap establishes native validity.
+                        // This fresh call runs only after explicit resume, never while quiesced.
+                        when (val checked = current.session.displayInfo(page)) {
+                            is Outcome.Failure -> null
+                            is Outcome.Success -> current.takeIf { checked.value.page == page }
+                        }
+                    } else current
+                }
                 synchronized(lock) {
                     if (!current(work) || state.value.phase == ReaderPhase.CANCELED) return@synchronized
                     when {

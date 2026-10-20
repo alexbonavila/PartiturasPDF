@@ -114,6 +114,80 @@ class ReaderSessionLifetimeTest {
         assertEquals(ReaderRetry.OPEN, state.failure!!.retry)
         assertTrue(session.requests.isEmpty()); assertTrue(displayed.isEmpty())
     } }
+    private suspend fun TestScope.lateCompletedOutput(trim: ReaderTrim, invalidAfterCompletion: Boolean) = withReader {
+        val gate = gate()
+        var nativeFinished = false
+        var validations = 0
+        session.render = { request ->
+            val output = TestPage(request).also { session.pages += it }
+            nativeFinished = true
+            withContext(NonCancellable) { gate.await() }
+            Outcome.Success(output)
+        }
+        open()
+        assertTrue(nativeFinished); assertEquals(1, session.pages.size)
+        val paused = async { controller.quiesce(trim) }; runCurrent()
+        assertFalse(paused.isCompleted); assertEquals(0, session.pages.single().closes)
+        gate.complete(Unit); runCurrent(); paused.await()
+        assertEquals(1, session.pages.single().closes)
+        assertNull(state.frame); assertTrue(displayed.isEmpty()); assertEquals(1, opens.size)
+        session.inspect = { page ->
+            validations++
+            if (invalidAfterCompletion) Outcome.Failure(AppError.Conflict.SESSION_CLOSED)
+            else Outcome.Success(PageDisplayInfo(page,600,900))
+        }
+        session.render = { request -> Outcome.Success(TestPage(request).also { session.pages += it }) }
+        val replacement = TestSession("after-late-completion")
+        opening = { Outcome.Success(ReaderReady(it,replacement,PageIndex(2))) }
+        if (trim != ReaderTrim.LOW_MEMORY) { route.background(); route.close() }
+        runCurrent(); assertEquals(0,validations) // No native validation while suspended.
+        controller.resume(); runCurrent()
+        val reused = trim == ReaderTrim.LOW_MEMORY && !invalidAfterCompletion
+        assertEquals(if (reused) 1 else 2, opens.size)
+        assertEquals(if (reused) session.info else replacement.info,state.session)
+        assertEquals(if (trim != ReaderTrim.LOW_MEMORY) 0 else if (reused) 2 else 1,validations)
+        assertEquals(1,session.pages.first().closes)
+        assertEquals(ReaderPhase.RENDERED,state.phase); assertTrue(displayed.isEmpty())
+        val consumer = attach(); controller.dispatch(ReaderAction.Presented(consumer)); runCurrent()
+        assertEquals(ReaderPhase.VISIBLE,state.phase)
+    }
+    @Test fun completedLateRenderReusesSessionOnlyAfterFreshNativeValidation() = runTest {
+        lateCompletedOutput(ReaderTrim.LOW_MEMORY,invalidAfterCompletion = false)
+    }
+    @Test fun completedBitmapCannotAuthorizeReuseOfAnInvalidNativeSession() = runTest {
+        lateCompletedOutput(ReaderTrim.LOW_MEMORY,invalidAfterCompletion = true)
+    }
+    @Test fun criticalAndBackgroundStillReopenAfterCompletedLateOutput() = runTest {
+        for (trim in listOf(ReaderTrim.CRITICAL,ReaderTrim.BACKGROUND))
+            lateCompletedOutput(trim,invalidAfterCompletion = false)
+    }
+    @Test fun cancellationDuringFreshNativeValidationCannotLeaveCandidateReusable() = runTest { withReader {
+        val gate = gate()
+        session.render = { request ->
+            val output = TestPage(request).also { session.pages += it }
+            withContext(NonCancellable) { gate.await() }
+            Outcome.Success(output)
+        }
+        open()
+        val firstPause = async { controller.quiesce(ReaderTrim.LOW_MEMORY) }; runCurrent()
+        gate.complete(Unit); runCurrent(); firstPause.await()
+        var invalid = false
+        var validationStarted = false
+        session.inspect = {
+            check(!invalid)
+            validationStarted = true
+            try { awaitCancellation() } finally { invalid = true }
+        }
+        controller.resume(); runCurrent(); assertTrue(validationStarted)
+        val secondPause = async { controller.quiesce(ReaderTrim.LOW_MEMORY) }; runCurrent(); secondPause.await()
+        assertTrue(invalid); assertNull(state.session); assertEquals(1,opens.size)
+        val replacement = TestSession("after-canceled-validation")
+        opening = { Outcome.Success(ReaderReady(it,replacement,PageIndex(2))) }
+        controller.resume(); runCurrent()
+        assertEquals(2,opens.size); assertEquals(replacement.info,state.session)
+        assertEquals(1,session.pages.single().closes)
+        assertEquals(ReaderPhase.RENDERED,state.phase)
+    } }
     @Test fun retirementDrainsDestructiveCancellationWithoutReopeningOrPublishing() = runTest { withReader {
         var canceled = false
         session.render = { try { awaitCancellation() } finally { canceled = true } }

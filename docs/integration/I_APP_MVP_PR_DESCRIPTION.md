@@ -97,7 +97,8 @@ The obsolete banner and all other warnings remain unchanged, not suppressed or d
 
 Exact artifact/size/hash/reproduction and owner authorization evidence is in the
 [acceptance correction addendum](../acceptance/I_APP_MVP_ACCEPTANCE.md#owner-approved-offline-language-delivery-correction--2026-10-20).
-Corrected release AAB3,438,057 bytes (observed+4 versus fresh baseline); debug14,984,186 (−4).
+Initial pre-commit release AAB3,438,057 bytes (+4); final implementation-commit rebuild3,438,058
+(+5) because AGP updates embedded version-control metadata; debug14,984,186 (−4) is unchanged.
 Base APK payload grows by including all bundled translations; AAB-byte deltas are not device
 install/download/performance claims. Exact final correction SHA:
 `git log -1 --format=%H -- app/build.gradle.kts`; validated Gradle blob `8fc68429518a66b131217466bf05f05762123965`.
@@ -206,3 +207,12 @@ acceptance/handoff/PR-description files. Source locale policy/translation/Kotlin
 infrastructure/tests stay unchanged. Historical I12 findings remain in the acceptance record;
 this updated description presents current packaging and unresolved runtime acceptance accurately.
 No next phase, push, PR, merge or policy/threshold change is authorized/performed by this correction.
+
+
+Tested implementation commit: `7381ac5fc8dc618c4f0ab40ee8ed6deb3679bd88`. Final-commit builds
+and620 JVM tests PASS. The rebuilt release hash is
+`8e8698d42a431d0620ced0a96f489506f24f19c8b59882e4dcc74f6d650c7f58`; same configuration and all4
+release delivery selections reverified using the same existing debug key. The follow-up commit
+records provenance only, preserving original pre-commit measurements and the exact tested source.
+Actual Android switching/compatibility/physical/CI acceptance remains NOT RUN and correction is
+not pushed. See the acceptance record for the one-byte VCS metadata explanation and evidence.

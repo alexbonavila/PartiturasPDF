@@ -1967,3 +1967,18 @@ real SAF/Surface/native/process-death/manual acceptance or new hosted CI PASS. U
 addendum's English-install→offline Catalan→Spanish→English/French device procedure on a verified
 owner-authorized disposable target only. I09/Phase I remains pending formal acceptance; no next
 phase, automatic publication or merge follows from artifact PASS.
+
+
+### Committed packaging provenance follow-up — 2026-10-20
+
+Implementation/tested commit: `7381ac5fc8dc618c4f0ab40ee8ed6deb3679bd88`.
+Final-commit Gradle tasks and620 JVM tests pass. The release rebuild embeds that Git revision,
+changing AAB size from the pre-commit3,438,057 to3,438,058 bytes; current SHA-256 is
+`8e8698d42a431d0620ced0a96f489506f24f19c8b59882e4dcc74f6d650c7f58`. Debug hash/size are unchanged.
+Only expected version-control metadata differs beyond the approved BundleConfig change; no code/
+resource/native payload changed. The committed release set was regenerated with the same existing
+debug key and all4 initial-language resource/dimension checks pass again. See the acceptance
+addendum for exact provenance, artifact logs and direct cached-bundletool fallback after a later
+sandbox/Gradle local-network restriction. This follow-up is documentation only; no push/PR/merge,
+runtime acceptance claim or additional production change. Final delivery SHA is the documentation
+tip, while the artifacts explicitly identify the tested implementation commit above.

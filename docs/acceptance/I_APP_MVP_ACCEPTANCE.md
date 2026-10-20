@@ -603,10 +603,51 @@ though those resources were already inside the original AAB.
 | release | 3,438,053 | 3,438,057 | +4 bytes | `426b520ffe6bd9cf3a015d23d54f91cc3b0714ae1dc62ddf8d4156dbc7c04c54` |
 | debug | 14,984,190 | 14,984,186 | -4 bytes | `c8f2bba65dc69443bcc3d109a1389c9451a4a9bdcc3248476f53c1658542adff` |
 
+**Post-commit verification at exact implementation SHA
+`7381ac5fc8dc618c4f0ab40ee8ed6deb3679bd88`:** the full requested Gradle tasks and620 JVM tests
+were rerun successfully (`final-commit-validation.log`, original XML verifier PASS). The table
+above records the original pre-commit measurement, not a promise of identical archives after
+committing. AGP embeds the current Git revision in release
+`base/root/META-INF/version-control-info.textproto`. The committed rebuild updates that field
+from f11ca0c to7381ac5, making the release AAB **3,438,058 bytes** (observed+5 versus baseline),
+SHA-256 `8e8698d42a431d0620ced0a96f489506f24f19c8b59882e4dcc74f6d650c7f58`.
+Debug AAB size/hash remain as in the table. This is explained provenance metadata, not an
+unexplained resource/code change. No history was rewritten to make hashes match.
+
+The committed release's parsed BundleConfig exactly matches the corrected pre-commit config.
+Its APK set was generated again with the same existing debug key and all4 en/ca/es/fr selections
+again pass every retained default/es/ca/en resource check. Selected release sets remain
+base-master+base-x86_64; base-master is1,792,184 bytes. All4 selected base hashes agree.
+Evidence: `/tmp/offline-language-evidence/committed-signed-release-summary.json` and
+`committed-signed-release-{config,apks,extract-en,extract-ca,extract-es,extract-fr}.log`.
+The later documentation-only provenance commit does not alter the verified Gradle blob or code;
+its exact delivery SHA is available from `git log -1 --format=%H` and the final response.
+Rebuilding at another documentation SHA can legitimately update the embedded revision again.
+
+A supplemental Gradle config-dump command became BLOCKED after the execution sandbox policy
+changed (`Could not determine a usable wildcard IP`). The earlier complete final-commit Gradle
+validation had already passed. Direct Java execution of the same cached bundletool1.18.3 and
+its cached AGP dependencies completed the additional config/APK-set/extraction verification
+without a Gradle daemon, downloads, network bypass or repository change. Exact equivalent form:
+
+```bash
+BUNDLETOOL_CLASSPATH="$(cat /tmp/offline-language-evidence/bundletool-classpath.txt)"
+/workspace/partituras-tools/jdk-25.0.4.1/bin/java -Duser.home=/workspace/partituras-tools \
+ -cp "$BUNDLETOOL_CLASSPATH" com.android.tools.build.bundletool.BundleToolMain \
+ dump config --bundle=app/build/outputs/bundle/release/app-release.aab
+```
+
+The actual external `/tmp/verify_committed_language_bundle.py` uses the same classpath/executable
+for build-apks and extract-apks argument forms documented below. A first direct inspection lacked
+the configured tool home and emitted unsigned inspection APKs; those are **not installation
+artifacts**. The final `committed-signed-release.apks` explicitly uses the existing configured
+home/debug key, as its log confirms. No signing configuration or key was changed. No set was
+installed on a device. Supplemental command failures are recorded, not passed off as runtime PASS.
+
 For the API26 base-master APK, release changes1,644,728→1,792,184 bytes (+147,456);
 debug14,779,608→15,307,992 (+528,384). These are debug-key-signed generated base APK file sizes,
 not an all-device download or install-size claim. Retained density/ABI splits still vary by device.
-Comparing uncompressed AAB entry contents, release changes only `BundleConfig.pb`; debug changes
+Comparing the initial pre-commit AAB entry contents, release changes only `BundleConfig.pb`; debug changes
 that entry and its existing `META-INF` signing digests/signature. Every other entry is identical
 to the fresh baseline. No signing configuration/key, code, native library or resource payload changed.
 

@@ -93,3 +93,14 @@ existing J07 methods plus separate smoke for future API26/27/36 execution. All
 new mappings remain NOT RUN; M2 historical evidence and its selection are preserved.
 M3-A1 changes mapping/integrity tests only. M3-A2 device readiness and actual runtime
 results require separate approval; neither M3-B nor M3-C starts here.
+
+## M3-A2 evidence review update — 2026-10-21
+
+[Independent compatibility evidence review](J_M3_A2_ANDROID_COMPATIBILITY_EVIDENCE.md)
+records seventeen J07 methods plus smoke PASS (18/18) independently on API26/27/36
+at `a9905d497979520cfabf59e038b51f0ed453a8a3`. The preceding NOT RUN text preserves
+its original planning context; historical reports/catalogue are not relabeled.
+The report records API26 package uninstallations and the owner's conversational
+authorization clarification. Separate archived approval and independent evidence of
+prior data disposability remain absent. Formal acceptance and excluded operations,
+physical checks, M3-B and M3-C remain unresolved.

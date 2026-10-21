@@ -1192,6 +1192,167 @@
       "test_environment": "Android API 26/27/36 ordinary instrumentation; owner-verified disposable emulator, native ABI, unlocked display, matching APKs; no system grant mutation",
       "recovery_cleanup": "Await owned route/controller/store work; close descriptors, sessions and leases; remove only UUID-owned copies/stores; preserve source bytes and pre-existing grants; never force cleanup after timeout",
       "bounded_wait_ms": 20000
+    },
+    {
+      "id": "J09-resource-languages",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppLocaleIntegrationTest.deliveredPrimaryLanguagesResolveRealNavigationFeatureAndAccessibilityResources",
+      "evidence_origin": "scoped-real-resource-context-simulated-locale",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "Real scoped es/ca/en contexts resolve navigation, Library/Reader/Settings and accessibility resources; not device-language switching",
+      "execution_group": "m3-locale-offline-observation",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution": "requires separate device and settings authorization",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-unsupported-fallback",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppLocaleIntegrationTest.unsupportedPrimaryNeverUsesSupportedSecondaryAndEmptyInputsUseSpanishResources",
+      "evidence_origin": "scoped-real-resource-context-simulated-locale",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "Unsupported primary with supported secondary, empty or blank inputs resolves Spanish scoped resources",
+      "execution_group": "m3-locale-offline-observation",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution": "requires separate device and settings authorization",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-configuration-preservation",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppLocaleIntegrationTest.configurationContextPreservesNightOrientationDensityFontScaleAndLeavesBaseAndGlobalUntouched",
+      "evidence_origin": "scoped-real-resource-context-simulated-locale",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "Scoped Catalan context preserves orientation, night mode, density and font scale without changing base/global configuration",
+      "execution_group": "m3-locale-offline-observation",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution": "requires separate device and settings authorization",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-activity-recreation",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppLocaleIntegrationTest.productionActivityUsesActualSystemPolicyAndRecreationRetainsHostAndLocalizedControls",
+      "evidence_origin": "production-activity-current-device-locale",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "Actual MainActivity follows current system policy; recreation retains host, Settings content and localized Back control",
+      "execution_group": "m3-locale-offline-observation",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution": "requires separate device and settings authorization",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-error-resources",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppLocaleIntegrationTest.contextualRecoveryMessagesStayTranslatedAndDistinctWithoutExposingTechnicalPaths",
+      "evidence_origin": "scoped-real-resource-context-simulated-locale",
+      "fixture": {
+        "id": "none",
+        "sha256": null
+      },
+      "expected_outcome": "Scoped es/ca/en recovery strings are distinct and nonblank without technical URI/exception leakage; not visible error-screen linguistic acceptance",
+      "execution_group": "m3-locale-offline-observation",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution": "requires separate device and settings authorization",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-local-registered-journey",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.libraryReaderSettingsRoundTripPersistsUiChoicesAndRegisteredPosition",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "UI registration and favorite; posted score pixels, page 2 and PAGE/WIDTH; UI Back retires route; Settings UI durably changes theme/fit; reopen preserves registration, favorite and page; source and grants unchanged; offline attribution requires separately recorded disconnected environment, never inferred from this method alone",
+      "execution": "requires separate device and settings authorization",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution_group": "m3-locale-offline-observation",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-local-transient-journey",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.transientCanonicalPdfDisplaysNavigatesChangesFitBackAndReopensWithoutRegistration",
+      "evidence_origin": "production-ui-native-test-capabilities",
+      "fixture": {
+        "id": "02",
+        "sha256": "50f6447d3893b3822ed902fa370ecdfe2c116bbdaeb09afaa9e735cdc21fd512"
+      },
+      "expected_outcome": "Visible canonical pixels, next page and WIDTH; retired controller on Back; no registration or persisted position; new controller on reopen; offline attribution requires separately recorded disconnected environment, never inferred from this method alone",
+      "execution": "requires separate device and settings authorization",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "execution_group": "m3-locale-offline-observation",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants"
+    },
+    {
+      "id": "J09-local-persistence",
+      "packages": [
+        "J09"
+      ],
+      "tier": "B",
+      "implemented": true,
+      "status": "NOT RUN",
+      "test_method": "com.abdev.partituraspdf.app.integration.AppPersistenceIntegrationTest.everyThemeAndFitSurvivesJoinedStoreAndRoomReinitialization",
+      "evidence_origin": "real-isolated-disk-adapters",
+      "fixture": {
+        "id": "synthetic",
+        "sha256": null
+      },
+      "expected_outcome": "All six theme/fit combinations survive joined DataStore and Room graph reinitialization; registration/favorite unchanged; offline attribution requires separately recorded disconnected environment, never inferred from this method alone",
+      "recovery_cleanup": "Dispose owned Activity/host/stores/copies; restore and verify owner-recorded device settings separately; preserve bytes and existing grants",
+      "execution": "requires separate device and settings authorization",
+      "test_environment": "Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration",
+      "bounded_wait_ms": 60000,
+      "execution_group": "m3-locale-offline-observation"
     }
   ]
 }

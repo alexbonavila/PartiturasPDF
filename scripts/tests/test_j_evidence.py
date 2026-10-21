@@ -392,4 +392,71 @@ class PhaseJEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError): ev.j_catalogue(path)
 
 
+    def locale_offline_rows(self, catalogue):
+        rows = [s for s in catalogue['scenarios'] if s.get('execution_group') == 'm3-locale-offline-observation']
+        self.assertEqual(8, len(rows))
+        self.assertEqual({s['id'] for s in rows}, {s['id'] for s in catalogue['scenarios']
+            if s['implemented'] and s['id'].startswith('J09-')})
+        self.assertEqual(8, len({s['test_method'] for s in rows}))
+        source = ev.android_inventory(ROOT / 'app/src/androidTest')
+        fixtures = {f['id']: f for f in json.loads((ROOT / 'test-fixtures/manifest.json').read_text())['files']}
+        doc = (ROOT / 'docs/validation/J_M3_B_LOCALE_OFFLINE_MATRIX.md').read_text()
+        for row in rows:
+            self.assertEqual(['J09'], row['packages'])
+            self.assertEqual('NOT RUN', row['status'])
+            self.assertEqual('B', row['tier'])
+            self.assertNotIn('check', row)
+            self.assertIn(row['test_method'], source)
+            self.assertEqual('Android API 26/27/36 ordinary instrumentation; verified disposable emulator; separate approval for install, execution, locale/connectivity changes and restoration', row['test_environment'])
+            self.assertEqual('requires separate device and settings authorization', row['execution'])
+            self.assertTrue(row['evidence_origin'])
+            self.assertTrue(row['recovery_cleanup'])
+            f = row['fixture']
+            if f['id'] in fixtures:
+                self.assertEqual(fixtures[f['id']]['sha256'], f['sha256'])
+            else:
+                self.assertIn(f['id'], ('none', 'synthetic'))
+                self.assertIsNone(f['sha256'])
+            self.assertIn(row['id'], doc)
+            self.assertIn(row['test_method'].removeprefix('com.abdev.partituraspdf.'), doc)
+        return rows
+
+    def test_locale_offline_mappings_are_real_and_never_host_android_pass(self):
+        rows = self.locale_offline_rows(self.catalogue)
+        report = self.report()
+        for scenario in rows:
+            row = next(s for s in report['scenarios'] if s['id'] == scenario['id'])
+            self.assertEqual('NOT RUN', row['status'])
+            self.assertIsNone(row['executed_test_method'])
+        self.assertIn(ev.SMOKE, ev.android_inventory(ROOT / 'app/src/androidTest'))
+
+    def test_locale_offline_preserves_all_prior_catalogue_entries(self):
+        previous = [s for s in ev.j_catalogue(ROOT / 'scripts/j_scenarios.json')['scenarios']
+                    if s.get('execution_group') != 'm3-locale-offline-observation']
+        self.assertEqual('fdaf31b223f34b50657fd8ce6e387af6a8579d1e6ae19887046ac6e59b48cb55', hashlib.sha256(json.dumps(previous, sort_keys=True).encode()).hexdigest())
+
+    def test_locale_offline_invalid_mapping_is_rejected_by_integrity_checks(self):
+        for field, value in [('test_method','Missing.Test.method'),('test_environment','API 36 only'),
+                             ('status','PASS'),('execution_group','automatic'),
+                             ('fixture',{'id':'02','sha256':'0'*64}),('execution','automatic')]:
+            with self.subTest(field=field):
+                cat = copy.deepcopy(self.catalogue)
+                next(s for s in cat['scenarios'] if s.get('execution_group') == 'm3-locale-offline-observation')[field] = value
+                with self.assertRaises(AssertionError): self.locale_offline_rows(cat)
+        cat = copy.deepcopy(self.catalogue)
+        rows = [s for s in cat['scenarios'] if s.get('execution_group') == 'm3-locale-offline-observation']
+        rows[1]['test_method'] = rows[0]['test_method']
+        with self.assertRaises(AssertionError): self.locale_offline_rows(cat)
+
+    def test_locale_offline_loader_rejects_false_execution_and_preserves_boundaries(self):
+        cat = copy.deepcopy(self.catalogue)
+        next(s for s in cat['scenarios'] if s.get('execution_group') == 'm3-locale-offline-observation')['status'] = 'PASS'
+        path = self.root / 'catalogue.json'
+        path.write_text(json.dumps(cat))
+        with self.assertRaises(ValueError): ev.j_catalogue(path)
+        doc = (ROOT / 'docs/validation/J_M3_B_LOCALE_OFFLINE_MATRIX.md').read_text()
+        for boundary in ('NOT RUN', 'BLOCKED', 'restore', 'AAB', 'scoped', 'connectivity', 'M3-B2'):
+            self.assertIn(boundary, doc)
+
+
 if __name__=='__main__':unittest.main()

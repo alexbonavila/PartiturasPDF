@@ -104,3 +104,11 @@ The report records API26 package uninstallations and the owner's conversational
 authorization clarification. Separate archived approval and independent evidence of
 prior data disposability remain absent. Formal acceptance and excluded operations,
 physical checks, M3-B and M3-C remain unresolved.
+
+## M3-B1 locale/offline mapping — 2026-10-21
+
+[Locale/offline matrix](J_M3_B_LOCALE_OFFLINE_MATRIX.md) maps eight existing Android
+methods plus separate smoke, all J09 NOT RUN. Scoped resources and injected local
+capabilities are distinct from real device-language, offline and AAB acceptance.
+M3-B2 requires exact-device/settings/restoration approval; no device execution or
+M3-C begins here. Historical M2/J07 evidence and reports remain unchanged.

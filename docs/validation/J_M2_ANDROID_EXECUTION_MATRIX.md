@@ -174,3 +174,13 @@ Genuine DocumentsUI grant acquisition/release/revocation, external providers, ex
 or crash induction, force-stop, backup/restore, uninstall/data clearing, actual OS process death,
 controlled native diagnostics and physical-device acceptance. API27/36 are separate compatibility
 runs. No M2-C2 authorization is implied. Historical CI/M2 evidence is not evidence for this run.
+
+## Dated execution evidence update — 2026-10-21
+
+The preceding text preserves its original planning/readiness context. Subsequent
+owner-local API26 execution is independently reviewed in
+[J_M2_C2B_ANDROID_API26_EVIDENCE.md](J_M2_C2B_ANDROID_API26_EVIDENCE.md):
+first attempt BLOCKED (15/20 actual tests), second attempt PASS (19 selected ordinary
+methods plus smoke, 20/20). This is subset evidence, not full M2/Phase J acceptance.
+Genuine SAF and other excluded operations remain NOT RUN in this evidence set.
+Historical host-only reports and catalogue projections are not relabeled.

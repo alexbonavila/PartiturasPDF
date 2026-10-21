@@ -75,3 +75,13 @@ Force-stop, kill, grant revoke, device setting changes, clear/uninstall/restore/
 operation-specific approval and test-owned data. Contracts/manifest/worker/schema/SAF semantics,
 dependencies, CI, gates and policies need separate protected approval. Only the owner merges,
 tags, publishes and formally accepts a phase. M1 does not reconcile release docs or start M2.
+
+## Dated execution evidence update — 2026-10-21
+
+The preceding text preserves its original planning/readiness context. Subsequent
+owner-local API26 execution is independently reviewed in
+[J_M2_C2B_ANDROID_API26_EVIDENCE.md](J_M2_C2B_ANDROID_API26_EVIDENCE.md):
+first attempt BLOCKED (15/20 actual tests), second attempt PASS (19 selected ordinary
+methods plus smoke, 20/20). This is subset evidence, not full M2/Phase J acceptance.
+Genuine SAF and other excluded operations remain NOT RUN in this evidence set.
+Historical host-only reports and catalogue projections are not relabeled.

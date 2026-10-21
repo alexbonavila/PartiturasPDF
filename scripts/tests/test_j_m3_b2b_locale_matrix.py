@@ -457,6 +457,19 @@ class ManualLocaleTests(unittest.TestCase):
         entry=dict(identity=self.identity,original_locales=['en-US'],original_settings=self.settings(['en-US']))
         return dict(source=self.capture,devices={'26':entry},configurations={},apks=dict(app='a',test='b')),entry
 
+    def test_primary_locale_accepts_secondary_languages(self):
+        examples=[
+            (['es-ES'], ['es-ES','en-US']),
+            (['ca-ES'], ['ca-ES','es-ES']),
+            (['en-US'], ['en-US','es-ES']),
+            (['fr-FR','en-US'], ['fr-FR','en-US','es-ES']),
+        ]
+        for desired, actual in examples:
+            self.assertEqual('VERIFIED',m.manual_configuration(self.settings(actual),desired)['status'])
+        self.assertEqual('BLOCKED',m.manual_configuration(self.settings(['es-ES','en-US']),['en-US'])['status'])
+        self.assertEqual('BLOCKED',m.manual_configuration(self.settings(['fr-FR','es-ES','en-US']),['fr-FR','en-US'])['status'])
+        self.assertEqual('BLOCKED',m.manual_configuration(self.settings(['en-US','es-ES']),['en-US'],exact=True)['status'])
+
     def test_adb_gate_never_invents_instrumentation_or_secondary_language(self):
         result=m.manual_configuration(self.settings(['en-US']),['en-US'])
         self.assertEqual('VERIFIED',result['status']);self.assertEqual('NOT RUN',result['instrumentation'])
@@ -549,7 +562,7 @@ class ManualLocaleTests(unittest.TestCase):
     def manual_pilot_sequence(self, failure=None):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);out=root/'build/j-m3-b2b/manual';ledger,entry=self.ledger();c=m.Coordinator('adb');events=[]
-            current=['en-US','es-ES'];steps=iter([['en-US'],['es-ES'],['en-US']])
+            current=['en-US','es-ES'];steps=iter([['es-ES','en-US'],['en-US','es-ES']])
             def ask(prompt):
                 current[:]=next(steps);events.append(('owner',list(current)));return ''
             def stage(device,expected,tags,action,directory):
@@ -560,29 +573,29 @@ class ManualLocaleTests(unittest.TestCase):
                 return {'status':'PASS'}
             for name in ('app/build/outputs/apk/debug/app-debug.apk','app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'):
                 f=root/name;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b'apk')
-            (root/'old').mkdir();m.atomic(root/'old/matrix.json',dict(devices={'26':dict(identity=self.identity)}))
-            with patch.object(m,'ROOT',root),patch.object(m,'source',return_value=self.capture),patch.object(m.runner,'execute',return_value=type('Result',(),dict(returncode=0,stdout='',stderr=''))()),patch.object(c,'discover',return_value={26:self.identity}),patch.object(c,'install'),patch.object(m,'recovery_entry',return_value=entry),patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',side_effect=lambda serial:self.settings(current)),patch.object(c,'installed',return_value=dict(app=m.digest(root/'app/build/outputs/apk/debug/app-debug.apk'),test=m.digest(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'))),patch.object(c,'stage',side_effect=stage),patch.object(m,'validate_stage',side_effect=lambda folder,expected:dict(source=self.capture,installed=dict(app=m.digest(root/'app/build/outputs/apk/debug/app-debug.apk'),test=m.digest(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')))),patch.object(m,'manual_report',return_value=dict(status='PASS',restorations={'26':'PASS'})):
+            # New manual pilot captures today's locale baseline.
+            with patch.object(m,'ROOT',root),patch.object(m,'source',return_value=self.capture),patch.object(m.runner,'execute',return_value=type('Result',(),dict(returncode=0,stdout='',stderr=''))()),patch.object(c,'discover',return_value={26:self.identity}),patch.object(c,'install'),patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',side_effect=lambda serial:self.settings(current)),patch.object(c,'installed',return_value=dict(app=m.digest(root/'app/build/outputs/apk/debug/app-debug.apk'),test=m.digest(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'))),patch.object(c,'stage',side_effect=stage),patch.object(m,'validate_stage',side_effect=lambda folder,expected:dict(source=self.capture,installed=dict(app=m.digest(root/'app/build/outputs/apk/debug/app-debug.apk'),test=m.digest(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')))),patch.object(m,'manual_report',return_value=dict(status='PASS',restorations={'26':'PASS'})):
                 if failure:
                     with self.assertRaises(KeyboardInterrupt if failure=='interrupt' else m.runner.FunctionalFailure):
-                        m.manual_workflow(c,out,pilot=True,recovery_from=root/'old',ask=ask)
+                        m.manual_workflow(c,out,pilot=True,ask=ask)
                 else:self.assertEqual('PASS',m.manual_workflow(c,out,pilot=True,recovery_from=root/'old',ask=ask)['status'])
             return events
 
     def test_manual_pilot_sequence_recovers_original_and_restores_without_auto_actions(self):
         events=self.manual_pilot_sequence()
-        self.assertEqual([('owner',['en-US']),('manual',{m.LOCALE},['en-US']),('owner',['es-ES']),
-                              ('manual',{m.LOCALE},['es-ES']),('manual',{m.READER,m.ev.SMOKE},['es-ES']),
-                              ('owner',['en-US']),('manual',{m.LOCALE},['en-US'])],events)
+        self.assertEqual([('manual',{m.LOCALE},['en-US','es-ES']),('owner',['es-ES','en-US']),
+                              ('manual',{m.LOCALE},['es-ES','en-US']),('manual',{m.READER,m.ev.SMOKE},['es-ES','en-US']),
+                              ('owner',['en-US','es-ES']),('manual',{m.LOCALE},['en-US','es-ES'])],events)
 
     def test_functional_failure_is_not_retried_but_final_manual_restoration_runs(self):
         events=self.manual_pilot_sequence('functional')
-        self.assertEqual(1,events.count(('manual',{m.LOCALE},['es-ES'])))
-        self.assertNotIn(('manual',{m.READER,m.ev.SMOKE},['es-ES']),events)
-        self.assertEqual([('owner',['en-US']),('manual',{m.LOCALE},['en-US'])],events[-2:])
+        self.assertEqual(1,events.count(('manual',{m.LOCALE},['es-ES','en-US'])))
+        self.assertNotIn(('manual',{m.READER,m.ev.SMOKE},['es-ES','en-US']),events)
+        self.assertEqual([('owner',['en-US','es-ES']),('manual',{m.LOCALE},['en-US','es-ES'])],events[-2:])
 
     def test_interrupted_junit_retains_final_manual_restoration_opportunity(self):
         events=self.manual_pilot_sequence('interrupt')
-        self.assertEqual([('owner',['en-US']),('manual',{m.LOCALE},['en-US'])],events[-2:])
+        self.assertEqual([('owner',['en-US','es-ES']),('manual',{m.LOCALE},['en-US','es-ES'])],events[-2:])
 
     def test_manual_restore_failure_keeps_fail_exit_even_when_operation_is_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:

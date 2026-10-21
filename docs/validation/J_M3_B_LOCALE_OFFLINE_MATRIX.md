@@ -140,3 +140,14 @@ No genuine grant acquisition/revocation, worker loss, OS process death, backup/D
 uninstall/clear, full suite, benchmarks/endurance or physical-device operation is
 implied. Those M2/M3 gaps remain open; J08 stays DEFERRED TO PHASE R. M3-C coverage
 is separate. This document authorizes neither M3-B2 nor device configuration changes.
+
+## M3-B2-A J09 execution evidence update — 2026-10-21
+
+[Independent J09 evidence](J_M3_B2A_J09_ANDROID_EVIDENCE.md) records eight selected
+methods plus smoke PASS (9/9) on each API26/27/36 at
+`df643959c4d6bd19f8301f972d4e00bca9636596`, under original en-US settings.
+Matching before/after settings are endpoint records, not proof of continuous
+configuration or offline networking. Earlier NOT RUN text retains its planning
+context; catalogue and historical host reports are unchanged. Actual language
+changes, visible translations, disconnected networking, AAB delivery and changed
+settings restoration remain unresolved. M3-B2-B/C and M3-C are not started.

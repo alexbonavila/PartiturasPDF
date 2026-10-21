@@ -85,3 +85,11 @@ first attempt BLOCKED (15/20 actual tests), second attempt PASS (19 selected ord
 methods plus smoke, 20/20). This is subset evidence, not full M2/Phase J acceptance.
 Genuine SAF and other excluded operations remain NOT RUN in this evidence set.
 Historical host-only reports and catalogue projections are not relabeled.
+
+## M3-A1 mapping update — 2026-10-21
+
+[The compatibility matrix](J_M3_A_COMPATIBILITY_MATRIX.md) describes seventeen
+existing J07 methods plus separate smoke for future API26/27/36 execution. All
+new mappings remain NOT RUN; M2 historical evidence and its selection are preserved.
+M3-A1 changes mapping/integrity tests only. M3-A2 device readiness and actual runtime
+results require separate approval; neither M3-B nor M3-C starts here.

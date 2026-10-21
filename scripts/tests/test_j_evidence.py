@@ -306,4 +306,90 @@ class PhaseJEvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):ev.j_catalogue(p)
 
 
+    def compatibility_rows(self, catalogue):
+        # CI integrity checks for descriptive metadata; the generic runtime loader is unchanged.
+        rows = [s for s in catalogue['scenarios'] if s.get('execution_group') == 'm3-compatibility-ordinary']
+        self.assertEqual(17, len(rows)) # Reviewed representative set, not global Android inventory.
+        self.assertEqual({s['id'] for s in rows}, {s['id'] for s in catalogue['scenarios']
+            if s['implemented'] and s['id'].startswith('J07-')})
+        inventory = ev.android_inventory(ROOT / 'app/src/androidTest')
+        fixtures = {f['id']: f for f in json.loads((ROOT / 'test-fixtures/manifest.json').read_text())['files']}
+        methods = [s['test_method'] for s in rows]
+        self.assertEqual(len(methods), len(set(methods)))
+        self.assertEqual(len(catalogue['scenarios']), len({s['id'] for s in catalogue['scenarios']}))
+        matrix = (ROOT / 'docs/validation/J_M3_A_COMPATIBILITY_MATRIX.md').read_text()
+        for s in rows:
+            self.assertTrue(s['id'].startswith('J07-'))
+            self.assertEqual(['J07'], s['packages'])
+            self.assertEqual('B', s['tier'])
+            self.assertEqual('NOT RUN', s['status'])
+            self.assertNotIn('check', s)
+            self.assertIn(s['test_method'], inventory)
+            self.assertEqual('Android API 26/27/36 ordinary instrumentation; owner-verified disposable emulator, native ABI, unlocked display, matching APKs; no system grant mutation', s['test_environment'])
+            self.assertEqual('requires separate device authorization', s['execution'])
+            self.assertTrue(s['recovery_cleanup'])
+            self.assertIs(type(s['bounded_wait_ms']), int)
+            self.assertGreater(s['bounded_wait_ms'], 0)
+            self.assertLessEqual(s['bounded_wait_ms'], 1200000)
+            fixture = s['fixture']
+            if fixture['id'] in fixtures:
+                self.assertEqual(fixtures[fixture['id']]['sha256'], fixture['sha256'])
+            else:
+                self.assertIn(fixture['id'], ('none', 'synthetic'))
+                self.assertIsNone(fixture['sha256'])
+            self.assertIn(s['id'], matrix)
+            self.assertIn(s['test_method'].removeprefix('com.abdev.partituraspdf.'), matrix)
+        return rows
+
+    def test_compatibility_catalogue_and_matrix_are_source_attributed(self):
+        rows = self.compatibility_rows(self.catalogue)
+        # Reuse existing diagnostic ownership policy, not a second exclusion list.
+        import sys
+        sys.path.insert(0, str(ROOT / 'app/src/androidTest/java/com/abdev/partituraspdf/reader'))
+        import pdfium_diagnostic_evidence as diagnostic
+        import run_pdfium_process_experiments as experiments
+        inventory = diagnostic.test_inventory(ROOT, experiments.SCENARIOS)
+        for s in rows:
+            cls, method = s['test_method'].rsplit('.', 1)
+            self.assertIn(cls + '#' + method, inventory['standard'])
+            self.assertNotIn(cls + '#' + method, inventory['assigned'])
+            self.assertNotIn('realWorkerLoss', method)
+            self.assertNotIn('SafLocalE2eTest', cls)
+        projected = self.report()
+        for s in rows:
+            row = next(r for r in projected['scenarios'] if r['id'] == s['id'])
+            self.assertEqual('NOT RUN', row['status'])
+            self.assertIsNone(row['executed_test_method'])
+
+    def test_compatibility_preserves_original_m2_selection(self):
+        rows = [s for s in self.catalogue['scenarios'] if s.get('execution_group') == 'm2-first-safe']
+        self.assertEqual('01c337ecaa9fe0633634d1c183536a7a2c00c08f82bae61ac5fac05e5624f93d', hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest())
+
+    def test_compatibility_integrity_rejects_inconsistent_metadata(self):
+        mutations = [('test_method', 'Missing.Test.method'), ('test_environment', 'Android API 27/36'),
+                     ('fixture', {'id': '02', 'sha256': '0'*64}), ('fixture', {'id':'unknown','sha256':None}),
+                     ('execution_group', 'wrong-group'), ('bounded_wait_ms', 0), ('status', 'PASS'), ('packages', ['J02']),
+                     ('execution', 'automatic'), ('recovery_cleanup', '')]
+        for field, value in mutations:
+            with self.subTest(field=field, value=value):
+                cat = copy.deepcopy(self.catalogue)
+                next(s for s in cat['scenarios'] if s.get('execution_group') == 'm3-compatibility-ordinary')[field] = value
+                with self.assertRaises(AssertionError): self.compatibility_rows(cat)
+        cat = copy.deepcopy(self.catalogue)
+        rows = [s for s in cat['scenarios'] if s.get('execution_group') == 'm3-compatibility-ordinary']
+        rows[1]['test_method'] = rows[0]['test_method']
+        with self.assertRaises(AssertionError): self.compatibility_rows(cat)
+        cat = copy.deepcopy(self.catalogue)
+        cat['scenarios'].append(copy.deepcopy(rows[0]))
+        with self.assertRaises((ValueError, AssertionError)):
+            self.compatibility_rows(cat)
+
+    def test_compatibility_runtime_loader_rejects_false_execution_claim(self):
+        cat = copy.deepcopy(self.catalogue)
+        next(s for s in cat['scenarios'] if s.get('execution_group') == 'm3-compatibility-ordinary')['status'] = 'PASS'
+        path = self.root / 'catalogue.json'
+        path.write_text(json.dumps(cat))
+        with self.assertRaises(ValueError): ev.j_catalogue(path)
+
+
 if __name__=='__main__':unittest.main()

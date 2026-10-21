@@ -376,6 +376,11 @@ class ReaderHostNativeIntegrationTest {
         val grants = context.contentResolver.persistedUriPermissions.map {
             Triple(it.uri, it.isReadPermission, it.isWritePermission)
         }.toSet()
+        if (LocaleMatrixUi.enabled) {
+            assertEquals(LocaleMatrixUi.expectedLanguage(), compose.activity.resources.configuration.locales[0].language)
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.library_register)).performScrollTo().assertIsDisplayed()
+            LocaleMatrixUi.capture("library-fixture-visible")
+        }
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_register_description, "score.pdf"))
             .performScrollTo().assertIsDisplayed().assertHasClickAction().performClick()
         compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
@@ -392,9 +397,20 @@ class ReaderHostNativeIntegrationTest {
         compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
         compose.waitUntil(20_000) { first.controller.state.value.presentedPage == PageIndex(1) }
         visible("m2-a-next-page")
+        if (LocaleMatrixUi.enabled) {
+            assertEquals(LocaleMatrixUi.expectedLanguage(), compose.activity.resources.configuration.locales[0].language)
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.reader_page_counter, 2, 2)).assertIsDisplayed()
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.reader_next)).assertIsDisplayed()
+            LocaleMatrixUi.capture("reader-visible")
+        }
         for (fit in listOf(PageFit.WIDTH, PageFit.PAGE)) {
             val previousFrame = first.controller.state.value.frame
             compose.onNodeWithText(compose.activity.getString(R.string.reader_options)).performClick()
+            if (LocaleMatrixUi.enabled) {
+                compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.reader_fit_page)).assertIsDisplayed()
+                compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.reader_fit_width)).assertIsDisplayed()
+                LocaleMatrixUi.capture("reader-menu-" + fit.key)
+            }
             compose.onNodeWithText(compose.activity.getString(if (fit == PageFit.PAGE)
                 R.string.reader_fit_page else R.string.reader_fit_width)).performClick()
             compose.waitUntil(20_000) {

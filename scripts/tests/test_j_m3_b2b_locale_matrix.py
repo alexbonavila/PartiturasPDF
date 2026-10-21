@@ -163,7 +163,9 @@ class LocaleCoordinatorTests(unittest.TestCase):
                 events.append(action);directory.mkdir(parents=True)
                 if action=='probe':
                     (directory/'before.json').write_text('{"systemLocales":["en-US"]}')
-                    return {'status':'PASS'}
+                    (directory/'library-visible.json').write_text('{"systemLocales":["en-US"]}')
+                    (directory/'instrumentation.txt').write_text(raw({m.LOCALE}))
+                    return {'status':'PASS','exit':0}
                 return {'status':'FAIL'}
             capture=dict(branch='test/mvp-stabilization-j',revision='a',tree='b',source_digest='c',build={},dirty=True)
             with patch.object(m,'ROOT',root),patch.object(m,'source',return_value=capture),\
@@ -213,6 +215,116 @@ class LocaleCoordinatorTests(unittest.TestCase):
                  patch.object(c,'stage') as stage,patch.object(m,'restore_device',side_effect=lambda coordinator,directory,entry: entry.update(restoration='PASS') or 'PASS'),\
                  patch.object(m,'validate_stage',side_effect=validated),patch.object(m,'report',return_value={'status':'PASS'}):
                 self.assertEqual('PASS',m.workflow(c,out,resume=True)['status']);stage.assert_not_called()
+
+
+    def test_missing_database_uses_explicit_effective_en_us_not_default(self):
+        config='config: mcc310-mnc260-en-rUS-ldltr-sw720dp-v26'
+        for value in (None, '', 'null', ' null '):
+            with self.subTest(value=value):
+                result=m.locale_evidence(dict(locales=value,config=config),['en-US'])
+                self.assertEqual('VERIFIED',result['status'])
+                self.assertEqual('UNAVAILABLE',result['channels']['database']['state'])
+                self.assertEqual(['effective_configuration'],result['verified_channels'])
+        self.assertEqual('BLOCKED',m.locale_evidence(dict(locales='null'),['en-US'])['status'])
+
+    def test_explicit_channels_agree_on_full_french_order(self):
+        result=m.locale_evidence(dict(locales='fr-FR,en-US',config='config: fr-rFR,en-rUS-ldltr-v36'),['fr-FR','en-US'],['fr-FR','en-US'])
+        self.assertEqual('VERIFIED',result['status'])
+        self.assertEqual(['database','effective_configuration'],result['verified_channels'])
+
+    def test_contradictions_are_not_treated_as_unavailable(self):
+        for data in (dict(locales='es-ES',config='config: en-rUS-ldltr-v26'),
+                     dict(locales='en-US',config='config: es-rES-ldltr-v26')):
+            result=m.locale_evidence(data,['en-US'])
+            self.assertEqual('BLOCKED',result['status'])
+            self.assertTrue(any(c['state']=='CONTRADICTORY' for c in result['channels'].values()))
+
+    def test_french_secondary_is_never_inferred(self):
+        for settings,observed in [(dict(locales='null',config='config: fr-rFR-ldltr-v26'),['fr-FR','en-US']),
+                                  (dict(locales='fr-FR'),['fr-FR']),
+                                  (dict(locales='null',config='config: fr-rFR-ldltr-v26'),['fr-FR'])]:
+            self.assertEqual('BLOCKED',m.locale_evidence(settings,observed,['fr-FR','en-US'])['status'])
+        self.assertEqual('VERIFIED',m.locale_evidence(dict(locales='null',config='config: fr-rFR,en-rUS-ldltr-v26'),['fr-FR','en-US'],['fr-FR','en-US'])['status'])
+
+    def test_malformed_settings_or_instrumentation_blocks(self):
+        for value in ('en_US','en-US,','en-US,en-US','null,en-US',42):
+            result=m.locale_evidence(dict(locales=value,config='config: en-rUS-ldltr-v26'),['en-US'])
+            self.assertEqual('BLOCKED',result['status'])
+            self.assertEqual('MALFORMED',result['channels']['database']['state'])
+        for observed in (None,[],['en-US','en-US'],['en_US']):
+            self.assertEqual('BLOCKED',m.locale_evidence(dict(locales='en-US'),observed)['status'])
+        self.assertEqual('BLOCKED',m.locale_evidence(dict(locales='en-US',config='config: en--rUS-ldltr-v26'),['en-US'])['status'])
+
+    def test_config_parser_does_not_invent_regions_or_order(self):
+        self.assertEqual(['zh-Hans-CN','en-US'],m.effective_locales('config: b+zh+Hans+CN,en-rUS-ldltr-v36')['locales'])
+        for config in ('config: en-rUS-v26','',None):
+            self.assertEqual('BLOCKED',m.locale_evidence(dict(locales='null',config=config),['en-US'])['status'])
+        self.assertEqual('BLOCKED',m.locale_evidence(dict(locales='null',config='config: en-ldltr-v26'),['en-US'])['status'])
+
+    def test_restoration_stage_validates_when_database_is_absent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);folder=root/'stage';record=self.fixture_stage(folder)
+            record['action']='restore';record['command'][record['command'].index('jLocaleAction')+1]='restore'
+            record['settings_after'].update(locales='null',config='config: fr-rFR,en-rUS-ldltr-v26')
+            m.atomic(folder/'execution.json',record)
+            self.assertEqual('PASS',m.validate_stage(folder,{m.LOCALE})['status'])
+            coordinator=m.Coordinator('adb')
+            entry=dict(identity=record['device'],original_locales=record['tags'],original_settings=record['settings_after'],locale_change_attempted=True)
+            # The synthetic files stand in for already completed restoration instrumentation.
+            with patch.object(coordinator,'stage',return_value=record),patch.object(m.uuid,'uuid4',return_value=type('Id',(),dict(hex='fixture'))()):
+                folder.rename(root/'restore-fixture')
+                self.assertEqual('PASS',m.restore_device(coordinator,root,entry))
+
+    def test_early_baseline_contradiction_preserves_raw_channels_without_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger=dict(devices={},configurations={});identity=dict(api='26',serial='emulator-5554',avd='Tablet2')
+            coordinator=m.Coordinator('adb')
+            def stage(device,expected,tags,action,directory):
+                self.assertEqual('probe',action);directory.mkdir()
+                for name in ('before','library-visible'):(directory/(name+'.json')).write_text('{"systemLocales":["en-US"]}')
+                (directory/'instrumentation.txt').write_text(raw({m.LOCALE}))
+                return dict(status='PASS',exit=0)
+            with patch.object(coordinator,'settings',return_value=dict(locales='es-ES',config='config: en-rUS-ldltr-v26')),patch.object(coordinator,'stage',side_effect=stage):
+                with self.assertRaises(m.runner.Blocked):m.capture_baseline(coordinator,root,ledger,identity)
+            entry=m.read_json(root/'matrix.json')['devices']['26']
+            self.assertTrue(entry['auxiliary_probe_completed'])
+            self.assertFalse(entry['locale_change_attempted']);self.assertFalse(entry['language_change_observed'])
+            self.assertIn('NOT REQUIRED',entry['restoration'])
+            self.assertEqual('es-ES',entry['baseline_evidence']['channels']['database']['raw'])
+            self.assertEqual('CONTRADICTORY',entry['baseline_evidence']['channels']['database']['state'])
+
+
+    def test_baseline_null_setting_retains_verified_effective_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger=dict(devices={},configurations={});identity=dict(api='26',serial='emulator-5554',avd='Tablet2')
+            coordinator=m.Coordinator('adb')
+            def stage(device,expected,tags,action,directory):
+                self.assertEqual('probe',action);directory.mkdir()
+                for name in ('before','library-visible'):(directory/(name+'.json')).write_text('{"systemLocales":["en-US"]}')
+                (directory/'instrumentation.txt').write_text(raw({m.LOCALE}))
+                return dict(status='PASS',exit=0)
+            with patch.object(coordinator,'settings',return_value=dict(locales='null',config='config: mcc310-mnc260-en-rUS-ldltr-v26')),patch.object(coordinator,'stage',side_effect=stage):
+                entry=m.capture_baseline(coordinator,root,ledger,identity)
+            self.assertTrue(entry['baseline_verified']);self.assertTrue(entry['auxiliary_probe_completed'])
+            self.assertEqual(['en-US'],entry['original_locales'])
+            self.assertEqual('null',entry['original_settings']['locales'])
+            self.assertFalse(entry['locale_change_attempted']);self.assertFalse(entry['language_change_observed'])
+            self.assertEqual(['effective_configuration'],entry['baseline_evidence']['verified_channels'])
+
+    def test_interrupted_baseline_does_not_restore_or_modify_locale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger=dict(devices={},configurations={});identity=dict(api='26',serial='emulator-5554',avd='Tablet2')
+            coordinator=m.Coordinator('adb')
+            with patch.object(coordinator,'settings',return_value=dict(locales='null',config='config: en-rUS-ldltr-v26')),patch.object(coordinator,'stage',side_effect=KeyboardInterrupt) as stage:
+                with self.assertRaises(m.runner.Blocked):m.capture_baseline(coordinator,root,ledger,identity)
+                self.assertEqual('probe',stage.call_args.args[3])
+            entry=m.read_json(root/'matrix.json')['devices']['26']
+            self.assertFalse(entry['auxiliary_probe_completed']);self.assertFalse(entry['locale_change_attempted'])
+            self.assertIn('interrupted',entry['baseline_reason'])
+            with patch.object(coordinator,'stage') as stage:
+                self.assertIn('NOT REQUIRED',m.restore_device(coordinator,root,entry));stage.assert_not_called()
+            summary=m.report(root)
+            self.assertEqual('BLOCKED',summary['status']);self.assertEqual('null',summary['baselines']['26']['original_settings']['locales'])
 
 
 if __name__=='__main__':unittest.main()

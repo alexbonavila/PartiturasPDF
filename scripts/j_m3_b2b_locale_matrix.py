@@ -47,6 +47,103 @@ def read_json(path):
     return json.loads(path.read_text())
 
 
+def ordered_locales(raw):
+    """Parse explicit BCP47 language lists, never supply a missing language/region."""
+    if not isinstance(raw, list) or not raw or any(not isinstance(t, str) for t in raw):
+        raise ValueError('Missing/malformed ordered instrumentation locales')
+    tags=[]
+    for value in raw:
+        if not re.fullmatch(r'[a-zA-Z]{2,3}(?:-[a-zA-Z]{4})?(?:-(?:[a-zA-Z]{2}|[0-9]{3}))?', value):
+            raise ValueError('Malformed explicit locale tag')
+        pieces=value.split('-')
+        tags.append('-'.join([pieces[0].lower(), *[x.title() if len(x)==4 else x.upper() for x in pieces[1:]]]))
+    if len(tags)!=len(set(tags)):raise ValueError('Duplicate ordered locale')
+    return tags
+
+
+def database_locales(raw):
+    channel=dict(raw=raw, state='UNAVAILABLE', locales=None)
+    if raw is None or (isinstance(raw,str) and raw.strip() in ('', 'null')):
+        return channel
+    try:
+        if not isinstance(raw,str):raise ValueError('Non-text setting')
+        channel.update(state='EXPLICIT',locales=ordered_locales(raw.strip().split(',')))
+    except ValueError as error:channel.update(state='MALFORMED',reason=str(error))
+    return channel
+
+
+def effective_locales(raw):
+    """Read explicit Android resource qualifiers in order; no substring/default inference.
+
+    Supported AOSP form: config: [mcc...-][mnc...-]en-rUS,fr-rFR-ldltr-...
+    BCP47 resource qualifiers (b+zh+Hans+CN) are also explicit. Unknown forms block
+    when no other independent explicit channel establishes the full ordering.
+    """
+    channel=dict(raw=raw,state='UNAVAILABLE',locales=None)
+    if raw is None or raw=='':return channel
+    if not isinstance(raw,str):return dict(channel,state='MALFORMED',reason='Non-text effective configuration')
+    lines=re.findall(r'(?m)^config:\s*(\S+)\s*$',raw)
+    if len(lines)!=1:return dict(channel,state='MALFORMED',reason='Missing/duplicate config line')
+    body=re.sub(r'^(?:mcc[0-9]+-)?(?:mnc[0-9]+-)?','',lines[0])
+    # Layout direction delimits the locale list in the actual am get-config output.
+    match=re.match(r'^(.*?)-(?:ldltr|ldrtl)(?:-|$)',body)
+    if not match:
+        return dict(channel,state='UNAVAILABLE',reason='No supported full locale qualifier boundary')
+    locales=match[1]
+    if not locales:
+        return dict(channel,reason='No explicit effective locale')
+    try:
+        tags=[]
+        for qualifier in locales.split(','):
+            if qualifier.startswith('b+'):
+                tag=qualifier[2:].replace('+','-')
+            else:
+                if not re.fullmatch(r'[a-zA-Z]{2,3}(?:-r(?:[A-Z]{2}|[0-9]{3}))?',qualifier):
+                    raise ValueError('Unsupported/malformed locale qualifier')
+                tag=qualifier.replace('-r','-')
+            tags.append(tag)
+        channel.update(state='EXPLICIT',locales=ordered_locales(tags))
+    except ValueError as error:channel.update(state='MALFORMED',reason=str(error))
+    return channel
+
+
+def locale_evidence(settings, observed, expected=None):
+    """Require instrumentation plus an independently explicit full ordered channel.
+
+    Missing DB values are unavailable, not contradictory and never a default.
+    Primary-only evidence cannot certify a French secondary English locale.
+    """
+    channels=dict(database=database_locales(settings.get('locales')),
+                  effective_configuration=effective_locales(settings.get('config')),
+                  instrumentation=dict(raw=observed,state='UNAVAILABLE' if observed is None else 'MALFORMED',locales=None))
+    result=dict(status='BLOCKED',channels=channels)
+    try:
+        actual=ordered_locales(observed)
+        channels['instrumentation'].update(state='EXPLICIT',locales=actual)
+        if expected is not None and actual!=ordered_locales(expected):
+            raise ValueError('Instrumentation does not match exact required locale order')
+        independent=[]
+        for name in ('database','effective_configuration'):
+            channel=channels[name]
+            if channel['state']=='MALFORMED':raise ValueError(name+': malformed locale evidence')
+            if channel['state']=='EXPLICIT':
+                if channel['locales']!=actual:
+                    channel['state']='CONTRADICTORY'
+                    raise ValueError(name+': explicit ordered locales contradict instrumentation')
+                independent.append(name)
+        if not independent:
+            raise ValueError('No independent explicit full ordered locale channel; Settings UI evidence required')
+        result.update(status='VERIFIED',locales=actual,verified_channels=independent,reason=None)
+    except ValueError as error:result['reason']=str(error)
+    return result
+
+
+def require_locale_evidence(settings, observed, expected=None):
+    evidence=locale_evidence(settings,observed,expected)
+    if evidence['status']!='VERIFIED':raise ValueError(evidence['reason'])
+    return evidence
+
+
 def classify(output, expected, code):
     """Preserve complete functional failures, block partial or unexplained process errors."""
     try:
@@ -188,8 +285,6 @@ class Coordinator:
             if self.identity(serial, api) != device:
                 raise runner.Blocked('Android restart: no genuine existing-application transition proven')
             metadata['settings_after'] = self.settings(serial)
-            if action!='probe' and metadata['settings_after']['locales'].split(',')!=tags:
-                raise runner.Blocked('Host system_locales does not confirm exact target ordering')
             if any(metadata['settings_before'][k] != metadata['settings_after'][k] for k in ('wifi','airplane','mobile')):
                 raise runner.Blocked('Unexpected network setting change')
             self.collect(serial, token, directory)
@@ -198,10 +293,12 @@ class Coordinator:
                 raise runner.Blocked('Source changed during instrumentation')
             if metadata['status'] == 'PASS':
                 names = ['library-visible', 'recreated-settings-visible'] if expected == {LOCALE} else ['reader-visible', 'reader-menu-page', 'reader-menu-width']
+                metadata['locale_evidence']={}
                 for name in names:
                     observation = read_json(directory / (name + '.json'))
-                    if action != 'probe' and observation['systemLocales'] != tags:
-                        raise runner.Blocked('Exact system locale ordering not observed')
+                    evidence=locale_evidence(metadata['settings_after'],observation.get('systemLocales'),None if action=='probe' else tags)
+                    metadata['locale_evidence'][name]=evidence
+                    if evidence['status']!='VERIFIED':raise runner.Blocked(evidence['reason'])
                     for suffix in ('.png','.xml'):
                         if not (directory / (name + suffix)).is_file() or not (directory / (name + suffix)).stat().st_size:
                             raise runner.Blocked('Missing live UI observation')
@@ -250,7 +347,6 @@ def validate_stage(directory, expected):
         if cmd.count(key)!=1 or cmd[cmd.index(key)+1]!=value: raise ValueError('Command locale metadata mismatch')
     if device['avd']!=DEVICES[int(device['api'])] or device['abi']!='arm64-v8a' or device['qemu']!='1' or device['boot']!='1':
         raise ValueError('Device identity mismatch')
-    if record['action']!='probe' and record['settings_after']['locales'].split(',')!=record['tags']:raise ValueError('Host locale evidence mismatch')
     for k in ('wifi','airplane','mobile'):
         if record['settings_before'][k]!=record['settings_after'][k]: raise ValueError('Network state changed')
     names=['library-visible','recreated-settings-visible'] if expected=={LOCALE} else ['reader-visible','reader-menu-page','reader-menu-width']
@@ -260,7 +356,7 @@ def validate_stage(directory, expected):
         if not (directory/(name+'.png')).read_bytes().startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('Invalid screenshot')
         ET.parse(directory/(name+'.xml'))
         observation=read_json(directory/(name+'.json'))
-        if record['action']!='probe' and observation['systemLocales']!=record['tags']: raise ValueError('Locale evidence mismatch')
+        require_locale_evidence(record['settings_after'],observation.get('systemLocales'),None if record['action']=='probe' else record['tags'])
     if record['action']!='probe' and expected=={LOCALE}:
         if 'returned-to-existing-app.json' not in record['files']: raise ValueError('Missing existing-app return')
         if any(n not in record['files'] for n in ('before.json','returned-to-existing-app.json')):raise ValueError('Transition observation is not hash-bound')
@@ -312,18 +408,68 @@ def report(directory):
     complete = len(verdicts)==12 and all(v['junit']=='PASS' and v['visible']=='PASS' for v in verdicts.values()) and restored
     return dict(status='PASS' if complete else 'FAIL' if any(v['junit']=='FAIL' for v in verdicts.values()) else 'BLOCKED',
                 configurations=verdicts, restoration_recorded=restored, contextual_errors='BLOCKED',
+                baselines={key:{k:entry.get(k) for k in ('identity','probe','baseline_verified','baseline_status','baseline_reason','baseline_evidence','original_settings','instrumentation_before','instrumentation_after','auxiliary_probe_completed','probe_status','probe_exit','locale_change_attempted','language_change_observed','restoration')} for key,entry in ledger['devices'].items()},
                 expected_primary_executions=36, expected_methods_per_cell=3,
                 verified_primary_executions=3*sum(v['junit']=='PASS' for v in verdicts.values()),
                 boundary='Selected UI matrix only; not offline/AAB/physical/coverage acceptance')
 
 
+def capture_baseline(coordinator, directory, ledger, identity):
+    key=str(identity['api']);probe='probe-'+uuid.uuid4().hex
+    entry=dict(identity=identity,probe=probe,baseline_verified=False,baseline_status='BLOCKED',
+               auxiliary_probe_completed=False,locale_change_attempted=False,
+               baseline_evidence=locale_evidence({},None),
+               language_change_observed=None,restoration='NOT REQUIRED: no locale modification attempted')
+    ledger['devices'][key]=entry
+    atomic(directory/'matrix.json',ledger)
+    try:
+        entry['original_settings']=coordinator.settings(identity['serial'])
+        entry['baseline_evidence']=locale_evidence(entry['original_settings'],None)
+        atomic(directory/'matrix.json',ledger)
+        result=coordinator.stage(identity,{LOCALE},['en-US'],'probe',directory/probe)
+        probe_log=directory/probe/'instrumentation.txt'
+        if probe_log.is_file():
+            try:
+                completed=ev.parse_android(probe_log.read_text(),{LOCALE})
+                entry['auxiliary_probe_completed']=len(completed)==1
+            except ev.IncompleteInstrumentation:pass
+        entry['probe_status']=result.get('status','BLOCKED')
+        entry['probe_exit']=result.get('exit')
+        before=read_json(directory/probe/'before.json').get('systemLocales')
+        after_path=directory/probe/'library-visible.json'
+        after=read_json(after_path).get('systemLocales') if after_path.exists() else None
+        entry['instrumentation_before']=before;entry['instrumentation_after']=after
+        if before is not None and after is not None:
+            entry['language_change_observed']=before!=after
+        entry['baseline_evidence']=locale_evidence(entry['original_settings'],before)
+        if not entry['auxiliary_probe_completed']:raise runner.Blocked('Auxiliary probe has no complete single-method output')
+        if result.get('status')!='PASS':raise runner.Blocked('Original-state probe incomplete: '+str(result.get('blocker')))
+        if after is None or ordered_locales(before)!=ordered_locales(after):
+            raise runner.Blocked('Probe endpoints do not establish unchanged ordered languages')
+        if entry['baseline_evidence']['status']!='VERIFIED':raise runner.Blocked(entry['baseline_evidence']['reason'])
+        entry.update(original_locales=ordered_locales(before),baseline_verified=True,baseline_status='VERIFIED')
+        return entry
+    except (runner.Blocked,OSError,ValueError,KeyError,KeyboardInterrupt) as error:
+        entry['baseline_reason']=str(error) or 'Original-state probe interrupted; locale modification not attempted'
+        raise runner.Blocked(entry['baseline_reason']) from error
+    finally:
+        atomic(directory/'matrix.json',ledger)
+
+
 def restore_device(coordinator, directory, entry):
+    if not entry.get('locale_change_attempted',True):
+        entry['restoration']='NOT REQUIRED: no locale modification attempted'
+        return entry['restoration']
     tags = entry['original_locales']
     folder = 'restore-' + uuid.uuid4().hex
     result = coordinator.stage(entry['identity'], {LOCALE}, tags, 'restore', directory/folder)
     entry['restoration_path'] = folder
     entry['restoration'] = result['status']
     if result['status']=='PASS':
+        try: result=validate_stage(directory/folder,{LOCALE})
+        except (OSError,ValueError,KeyError) as error:
+            entry.update(restoration='BLOCKED',restoration_error=str(error))
+            return entry['restoration']
         if any(result['settings_after'][k] != entry['original_settings'][k] for k in ('wifi','airplane','mobile')):
             entry['restoration']='BLOCKED'
     return entry['restoration']
@@ -352,19 +498,13 @@ def workflow(coordinator, directory, resume=False):
         identity = devices[api];key=str(api)
         entry=ledger['devices'].get(key)
         if entry and entry['identity'] != identity: raise runner.Blocked('Resume device/boot identity changed')
-        if entry and entry.get('restoration') != 'PASS':
+        if entry and not entry.get('baseline_verified',True):raise runner.Blocked('Prior baseline unverified; preserve it and start a new run')
+        if entry and entry.get('restoration') != 'PASS' and entry.get('locale_change_attempted',True):
             if restore_device(coordinator,directory,entry)!='PASS':
                 atomic(directory/'matrix.json',ledger);raise runner.Blocked('Restore previous interrupted device before proceeding')
         coordinator.install(identity,apks,directory/('install-'+uuid.uuid4().hex+'.json'))
         if not entry:
-            baseline=coordinator.settings(identity['serial'])
-            probe='probe-'+uuid.uuid4().hex
-            result=coordinator.stage(identity,{LOCALE},['en-US'],'probe',directory/probe)
-            if result['status']!='PASS': raise runner.Blocked('Cannot capture original ordered languages')
-            original=read_json(directory/probe/'before.json')['systemLocales']
-            if baseline['locales'].split(',')!=original:raise runner.Blocked('Original ordered language channels disagree')
-            entry=dict(identity=identity,original_settings=baseline,original_locales=original,probe=probe,restoration='PENDING')
-            ledger['devices'][key]=entry
+            entry=capture_baseline(coordinator,directory,ledger,identity)
         entry['restoration']='PENDING';atomic(directory/'matrix.json',ledger)
         try:
             for tag in TAGS:
@@ -385,6 +525,8 @@ def workflow(coordinator, directory, resume=False):
                 prefix=case+'-'+uuid.uuid4().hex
                 item=dict(status='BLOCKED',locale=prefix+'-locale',tests=prefix+'-tests')
                 ledger['configurations'][case]=item;atomic(directory/'matrix.json',ledger)
+                entry['locale_change_attempted']=True
+                atomic(directory/'matrix.json',ledger)
                 one=coordinator.stage(identity,{LOCALE},tags,'change',directory/item['locale'])
                 if one['status']!='PASS':
                     item['status']=one['status'];raise runner.FunctionalFailure('Locale assertion failed') if one['status']=='FAIL' else runner.Blocked('Locale change not verified')

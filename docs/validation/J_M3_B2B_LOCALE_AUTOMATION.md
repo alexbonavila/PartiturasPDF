@@ -1,3 +1,45 @@
+## Simplified manual acceptance (current workflow)
+
+The manual acceptance commands now use **primary-language precedence**, not exact matching
+of the entire Android language list. The first language is decisive for Spanish,
+Catalan and English: `es-ES,en-US`, `ca-ES,es-ES`, and `en-US,es-ES` are valid
+examples. The unsupported-language fallback case requires an explicitly observed
+`fr-FR,en-US` prefix in that order; further secondary languages are permitted.
+Both the ADB preflight and the independent instrumentation observation still verify
+the **complete actual ordered list**, and JUnit is passed that full list; no locale
+ordering is inferred or hidden.
+
+A manual run captures the complete **current** language list at its start, verifies it
+via ADB and baseline instrumentation, and never requires historical recovery before
+functional tests. A new `manual-pilot` requires **no** `--recovery-from` argument.
+The legacy automatic pilot, historic runs and their evidence are unchanged.
+
+The terminal requests the target primary language, accepts additional secondary
+languages, waits for Enter, and checks ADB before each JUnit stage. After tests, it
+asks the owner to restore exactly the entire initial list. Restoration is an
+**independently reported** status: a BLOCKED restoration must never alter a genuine
+completed functional JUnit PASS. A top-level complete acceptance PASS still requires
+verified restoration; `functional_status` and `restoration_status` report separately.
+If exact cleanup is not possible, the owner must reconcile the disposable emulator
+manually, without rewriting evidence.
+
+From the already synchronized Mac working tree after publishing:
+
+```bash
+cd "/Volumes/Intenso/Code/Prs/PartiturasPDF"
+git pull --ff-only origin test/mvp-stabilization-j
+pilot="build/j-m3-b2b/$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+python3 scripts/j_m3_b2b_locale_matrix.py manual-pilot --output "$pilot"
+python3 scripts/j_m3_b2b_locale_matrix.py report --output "$pilot"
+```
+
+Run `manual-run --output "$output"` in a new output directory only after reviewing
+API26. The old `run` / `pilot` workflows remain strict and automatic: do not
+conflate them with the simplified commands. Live Activity locale transitions,
+offline, AAB and physical acceptance are still NOT RUN.
+
+---
+
 # M3-B2-B sequential system-locale automation
 
 Implementation baseline: `1099f0c85c3fe1b0872693df5342fb926af7763c`, 2026-10-21.

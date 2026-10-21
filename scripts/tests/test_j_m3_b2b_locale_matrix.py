@@ -326,5 +326,105 @@ class LocaleCoordinatorTests(unittest.TestCase):
             summary=m.report(root)
             self.assertEqual('BLOCKED',summary['status']);self.assertEqual('null',summary['baselines']['26']['original_settings']['locales'])
 
+    def recovery_fixture(self, root):
+        folder=root/'probe';record=self.fixture_stage(folder)
+        record.update(source=dict(revision='old',branch='test/mvp-stabilization-j',tree='tree',source_digest='digest',build={},dirty=False), installed=dict(app='a',test='b'),action='probe')
+        record['command'][record['command'].index('jLocaleAction')+1]='probe'
+        record['settings_after']['locales']='en-US'
+        for name in ('before','library-visible','recreated-settings-visible'):
+            (folder/(name+'.json')).write_text(json.dumps(dict(systemLocales=['en-US'],pid=1)))
+        record['files']={p.name:m.digest(p) for p in folder.iterdir() if p.name!='execution.json'}
+        m.atomic(folder/'execution.json',record)
+        entry=dict(identity=record['device'],probe='probe',baseline_verified=True,original_locales=['en-US'],
+                   original_settings=dict(locales='null',config='config: en-rUS-ldltr-v26',wifi='1',airplane='0',mobile='1'))
+        ledger=dict(source=record['source'],apks=record['installed'],devices={'26':entry})
+        m.atomic(root/'matrix.json',ledger)
+        return ledger,record
+
+    def test_recovery_uses_hash_bound_original_not_current_extra_spanish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,record=self.recovery_fixture(root)
+            entry=m.recovery_entry(root,record['device'])
+            self.assertEqual(['en-US'],entry['original_locales'])
+            self.assertTrue(entry['locale_change_attempted'])
+            self.assertEqual('null',entry['original_settings']['locales'])
+            self.assertEqual(ledger,m.read_json(root/'matrix.json'))
+
+    def test_recovery_rejects_changed_boot_fabricated_original_and_bad_probe_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,record=self.recovery_fixture(root)
+            with self.assertRaises(m.runner.Blocked):m.recovery_entry(root,dict(record['device'],boot_id='new'))
+            ledger['devices']['26']['original_locales']=['en-US','es-ES'];m.atomic(root/'matrix.json',ledger)
+            with self.assertRaises(m.runner.Blocked):m.recovery_entry(root,record['device'])
+            ledger['devices']['26']['original_locales']=['en-US'];m.atomic(root/'matrix.json',ledger)
+            (root/'probe/before.json').write_text('{}')
+            with self.assertRaises(ValueError):m.recovery_entry(root,record['device'])
+
+    def test_restoration_metadata_pass_without_valid_evidence_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            self.assertEqual('BLOCKED',m.restoration_verdict(root,{},dict(restoration='PASS',restoration_path='missing')))
+            m.atomic(root/'matrix.json',dict(profile='api26-spanish-pilot',devices={},configurations={},recovery=dict(restoration='PASS')))
+            result=m.report(root)
+            self.assertEqual('BLOCKED',result['status']);self.assertEqual('BLOCKED',result['recovery_status'])
+            self.assertEqual(3,result['expected_primary_executions'])
+
+    def test_failed_restore_assertion_retains_fail_independently_of_blocked_matrix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);folder=root/'restore';folder.mkdir()
+            (folder/'instrumentation.txt').write_text(raw({m.LOCALE},failed=True))
+            m.atomic(folder/'execution.json',dict(exit=0))
+            recovery=dict(restoration='FAIL',restoration_path='restore')
+            m.atomic(root/'matrix.json',dict(profile='api26-spanish-pilot',devices={},configurations={},recovery=recovery))
+            result=m.report(root)
+            self.assertEqual('FAIL',result['recovery_status']);self.assertEqual('FAIL',result['status'])
+
+    def pilot_workflow(self, root, recovery_status, fail=False):
+        out=root/'build/j-m3-b2b/pilot'
+        for name in ('app/build/outputs/apk/debug/app-debug.apk','app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'):
+            f=root/name;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b'apk')
+        identity=dict(serial='emulator-5554',api='26',avd='Tablet2')
+        capture=dict(branch='test/mvp-stabilization-j',revision='new',tree='tree',source_digest='digest',build={},dirty=True)
+        c=m.Coordinator('adb');events=[]
+        def baseline(*args):
+            events.append('probe');entry=dict(identity=identity,original_locales=['en-US'],locale_change_attempted=False)
+            args[2]['devices']['26']=entry;return entry
+        def restore(c,d,entry):
+            events.append('restore');entry['restoration']=recovery_status;return recovery_status
+        def stage(device,expected,tags,action,directory):
+            events.append((action,expected,tags));return dict(status='FAIL' if fail else 'PASS')
+        with patch.object(m,'ROOT',root),patch.object(m,'source',return_value=capture), \
+             patch.object(m.runner,'execute',return_value=type('Result',(),dict(returncode=0,stdout='',stderr=''))()), \
+             patch.object(c,'discover',return_value={26:identity}),patch.object(c,'install'), \
+             patch.object(m,'recovery_entry',return_value=dict(identity=identity)), \
+             patch.object(m,'capture_baseline',side_effect=baseline),patch.object(m,'restore_device',side_effect=restore), \
+             patch.object(c,'stage',side_effect=stage),patch.object(m,'report',return_value={'status':'PASS'}):
+            try: result=m.workflow(c,out,pilot=True,recovery_from=root/'old')
+            except (m.runner.Blocked,m.runner.FunctionalFailure):result=None
+        return events,result
+
+    def test_pilot_recovers_before_probe_then_only_spanish_three_methods_and_restores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events,result=self.pilot_workflow(Path(tmp),'PASS')
+            self.assertEqual(['restore','probe',('change',{m.LOCALE},['es-ES']),
+                              ('observe',{m.READER,m.ev.SMOKE},['es-ES']),'restore'],events)
+            self.assertEqual('PASS',result['status'])
+
+    def test_pilot_failed_recovery_prevents_baseline_and_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events,result=self.pilot_workflow(Path(tmp),'BLOCKED')
+            self.assertEqual(['restore'],events);self.assertIsNone(result)
+
+    def test_pilot_functional_failure_is_single_attempt_and_still_restores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events,result=self.pilot_workflow(Path(tmp),'PASS',fail=True)
+            self.assertEqual(['restore','probe',('change',{m.LOCALE},['es-ES']),'restore'],events)
+            self.assertIsNone(result)
+
+    def test_interaction_capability_failures_never_pass_complete_junit(self):
+        for reason in ('Primary locale not applied: es-ES','Unsupported remove-language menu',
+                       'Missing language removal confirmation','Drag injection rejected'):
+            self.assertEqual('BLOCKED',m.classify(raw({m.LOCALE},failed=True,marker='J_LOCALE_BLOCKED: '+reason),{m.LOCALE},0)[0])
+
 
 if __name__=='__main__':unittest.main()

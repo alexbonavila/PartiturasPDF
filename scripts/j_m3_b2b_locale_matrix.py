@@ -373,6 +373,20 @@ def retained_failure(directory, expected):
     except (OSError,ValueError,KeyError):return False
 
 
+def restoration_verdict(directory, ledger, entry):
+    try:
+        path=confined(directory,entry['restoration_path'])
+        if retained_failure(path,{LOCALE}):return 'FAIL'
+        record=validate_stage(path,{LOCALE})
+        if (entry.get('restoration')!='PASS' or record['action']!='restore'
+                or not same_source(ledger['source'],record['source']) or record['installed']!=ledger['apks']
+                or record['tags']!=entry['original_locales'] or record['device']!=entry['identity']
+                or any(record['settings_after'][k]!=entry['original_settings'][k] for k in ('wifi','airplane','mobile'))):
+            return 'BLOCKED'
+        return 'PASS'
+    except (OSError,ValueError,KeyError):return 'BLOCKED'
+
+
 def report(directory):
     ledger = read_json(directory/'matrix.json')
     verdicts = {}
@@ -396,20 +410,22 @@ def report(directory):
             if any(retained_failure(confined(directory,item[k]),inventory) for k,inventory in [('locale',{LOCALE}),('tests',{READER,ev.SMOKE})] if k in item):
                 verdicts[key]['junit']='FAIL'
             elif verdicts[key]['junit'] == 'PASS': verdicts[key]['junit'] = 'BLOCKED'
-    restored = set(ledger['devices'])=={'26','27','36'}
-    for entry in ledger['devices'].values():
-        try:
-            restored_record=validate_stage(confined(directory,entry['restoration_path']),{LOCALE})
-            if not same_source(ledger['source'],restored_record['source']) or restored_record['installed']!=ledger['apks']:restored=False
-            if entry.get('restoration')!='PASS' or restored_record['tags']!=entry['original_locales'] or restored_record['device']!=entry['identity']:
-                restored=False
-            if any(restored_record['settings_after'][k]!=entry['original_settings'][k] for k in ('wifi','airplane','mobile')):restored=False
-        except (OSError,ValueError,KeyError): restored=False
-    complete = len(verdicts)==12 and all(v['junit']=='PASS' and v['visible']=='PASS' for v in verdicts.values()) and restored
-    return dict(status='PASS' if complete else 'FAIL' if any(v['junit']=='FAIL' for v in verdicts.values()) else 'BLOCKED',
-                configurations=verdicts, restoration_recorded=restored, contextual_errors='BLOCKED',
+    pilot = ledger.get('profile') == 'api26-spanish-pilot'
+    selected = {'26-es-ES'} if pilot else {f'{api}-{tag}' for api in DEVICES for tag in TAGS}
+    restored = set(ledger['devices']) == ({'26'} if pilot else {'26','27','36'})
+    restorations = {}
+    for key, entry in ledger['devices'].items():
+        restorations[key] = restoration_verdict(directory,ledger,entry)
+        restored = restored and restorations[key]=='PASS'
+    recovery = ledger.get('recovery')
+    recovery_status = restoration_verdict(directory,ledger,recovery) if recovery else 'NOT REQUESTED'
+    if pilot: restored = restored and recovery_status=='PASS'
+    complete = set(verdicts)==selected and all(v['junit']=='PASS' and v['visible']=='PASS' for v in verdicts.values()) and restored
+    return dict(status='PASS' if complete else 'FAIL' if any(v['junit']=='FAIL' for v in verdicts.values()) or 'FAIL' in restorations.values() or recovery_status=='FAIL' else 'BLOCKED',
+                configurations=verdicts, restoration_recorded=restored, restorations=restorations,
+                profile=ledger.get('profile','full-matrix'), recovery=ledger.get('recovery'), recovery_status=recovery_status, contextual_errors='BLOCKED',
                 baselines={key:{k:entry.get(k) for k in ('identity','probe','baseline_verified','baseline_status','baseline_reason','baseline_evidence','original_settings','instrumentation_before','instrumentation_after','auxiliary_probe_completed','probe_status','probe_exit','locale_change_attempted','language_change_observed','restoration')} for key,entry in ledger['devices'].items()},
-                expected_primary_executions=36, expected_methods_per_cell=3,
+                expected_primary_executions=3 if pilot else 36, expected_methods_per_cell=3,
                 verified_primary_executions=3*sum(v['junit']=='PASS' for v in verdicts.values()),
                 boundary='Selected UI matrix only; not offline/AAB/physical/coverage acceptance')
 
@@ -475,7 +491,28 @@ def restore_device(coordinator, directory, entry):
     return entry['restoration']
 
 
-def workflow(coordinator, directory, resume=False):
+def recovery_entry(previous, identity):
+    """Bind recovery to the old verified probe, not today's contaminated locale list."""
+    ledger=read_json(previous/'matrix.json')
+    entry=ledger['devices']['26']
+    probe=validate_stage(confined(previous,entry['probe']),{LOCALE})
+    if (entry['identity']!=identity or probe['device']!=identity or not entry.get('baseline_verified')
+            or entry['original_locales']!=['en-US'] or not same_source(probe['source'],ledger['source'])
+            or probe['installed']!=ledger['apks'] or probe['action']!='probe'):
+        raise runner.Blocked('Recovery original/device/probe attribution mismatch')
+    if 'before.json' not in probe['files']:raise runner.Blocked('Original probe endpoint is not hash-bound')
+    if ledger['source']['branch']!='test/mvp-stabilization-j' or ledger['source']['dirty']:
+        raise runner.Blocked('Original execution source was not the clean working branch')
+    observed=read_json(confined(previous,entry['probe'])/'before.json')['systemLocales']
+    require_locale_evidence(entry['original_settings'],observed,entry['original_locales'])
+    return dict(identity=identity,original_locales=entry['original_locales'],
+                original_settings=entry['original_settings'],locale_change_attempted=True,
+                provenance=dict(previous_run=previous.name,matrix_sha256=digest(previous/'matrix.json'),
+                                probe=entry['probe'],probe_execution_sha256=digest(confined(previous,entry['probe'])/'execution.json'),
+                                source=ledger['source']))
+
+
+def workflow(coordinator, directory, resume=False, pilot=False, recovery_from=None):
     capture = source()
     if capture['branch'] != 'test/mvp-stabilization-j': raise runner.Blocked('Wrong branch')
     apks = {k:ROOT/p for k,p in dict(app='app/build/outputs/apk/debug/app-debug.apk', test='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk').items()}
@@ -488,13 +525,16 @@ def workflow(coordinator, directory, resume=False):
     hashes = {k:digest(p) for k,p in apks.items()}
     if resume:
         ledger = read_json(directory/'matrix.json')
+        if ledger.get('profile')=='api26-spanish-pilot': raise runner.Blocked('Pilot is single attempt; no resume into full matrix')
         if not same_source(ledger['source'],capture) or ledger['apks'] != hashes: raise runner.Blocked('Cannot resume different source/APKs')
     else:
         ledger = dict(schema=1, started=now(), source=capture, apks=hashes, devices={},configurations={})
+        if pilot: ledger['profile']='api26-spanish-pilot'
     atomic(directory/'matrix.json',ledger)
     devices = coordinator.discover()
-    if set(devices) != set(DEVICES): raise runner.Blocked('All three named ARM64 emulators must be booted; none is started automatically')
-    for api in DEVICES:
+    selected_apis = (26,) if pilot else tuple(DEVICES)
+    if not set(selected_apis) <= set(devices): raise runner.Blocked(f'Required named ARM64 APIs {selected_apis} must already be booted; none is started automatically')
+    for api in selected_apis:
         identity = devices[api];key=str(api)
         entry=ledger['devices'].get(key)
         if entry and entry['identity'] != identity: raise runner.Blocked('Resume device/boot identity changed')
@@ -502,12 +542,24 @@ def workflow(coordinator, directory, resume=False):
         if entry and entry.get('restoration') != 'PASS' and entry.get('locale_change_attempted',True):
             if restore_device(coordinator,directory,entry)!='PASS':
                 atomic(directory/'matrix.json',ledger);raise runner.Blocked('Restore previous interrupted device before proceeding')
+        recovery=None
+        if pilot:
+            if recovery_from is None: raise runner.Blocked('Pilot requires retained original-state recovery evidence')
+            recovery=recovery_entry(recovery_from,identity)
         coordinator.install(identity,apks,directory/('install-'+uuid.uuid4().hex+'.json'))
+        if pilot:
+            ledger['recovery']=recovery
+            atomic(directory/'matrix.json',ledger)
+            try:
+                restore_device(coordinator,directory,recovery)
+            finally:
+                atomic(directory/'matrix.json',ledger)
+            if recovery.get('restoration')!='PASS':raise runner.Blocked('Pre-pilot exact recovery unverified; matrix not started')
         if not entry:
             entry=capture_baseline(coordinator,directory,ledger,identity)
         entry['restoration']='PENDING';atomic(directory/'matrix.json',ledger)
         try:
-            for tag in TAGS:
+            for tag in (('es-ES',) if pilot else TAGS):
                 case=f'{api}-{tag}';old=ledger['configurations'].get(case)
                 if old:
                     if old.get('status')=='FAIL' or any(retained_failure(confined(directory,old[k]),inventory) for k,inventory in [('locale',{LOCALE}),('tests',{READER,ev.SMOKE})] if k in old):
@@ -546,11 +598,12 @@ def main(argv=None):
     parser.add_argument('--adb',default='adb')
     sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('inspect')
-    for cmd in ('run','resume','restore','report'):
+    for cmd in ('run','resume','restore','report','pilot'):
         p=sub.add_parser(cmd);p.add_argument('--output',required=True,type=Path)
+        if cmd=='pilot':p.add_argument('--recovery-from',required=True,type=Path)
     args=parser.parse_args(argv);coordinator=Coordinator(args.adb)
     try:
-        if args.command in ('run','resume','restore') and (platform.system()!='Darwin' or runner.native_architecture()!='arm64'):
+        if args.command in ('run','resume','restore','pilot') and (platform.system()!='Darwin' or runner.native_architecture()!='arm64'):
             raise runner.Blocked('Device-changing workflow requires the approved native Apple Silicon macOS host')
         if args.command=='inspect':
             result=dict(status='INSPECTION ONLY',source=source(),host=dict(os=platform.system(),native_architecture=runner.native_architecture()),adb=coordinator.adb,devices=coordinator.discover(),
@@ -567,7 +620,14 @@ def main(argv=None):
                 ledger=read_json(directory/'matrix.json')
                 for entry in ledger['devices'].values(): restore_device(coordinator,directory,entry)
                 atomic(directory/'matrix.json',ledger);result=report(directory)
-            else: result=workflow(coordinator,directory,args.command=='resume')
+            else:
+                previous=None
+                if args.command=='pilot':
+                    previous=args.recovery_from.absolute()
+                    confined(ROOT,str(previous.relative_to(ROOT)))
+                    if previous.parent != ROOT/'build/j-m3-b2b' or previous==directory:
+                        raise ValueError('Recovery must reference a separate retained build/j-m3-b2b run')
+                result=workflow(coordinator,directory,args.command=='resume',args.command=='pilot',previous)
             atomic(directory/'summary.json',result)
         print(json.dumps(result,indent=2));return {'PASS':0,'FAIL':1}.get(result.get('status'),2 if args.command!='inspect' else 0)
     except (runner.Blocked,OSError,ValueError,KeyError) as error:

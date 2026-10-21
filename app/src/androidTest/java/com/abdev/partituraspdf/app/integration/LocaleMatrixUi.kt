@@ -3,10 +3,12 @@ package com.abdev.partituraspdf.app.integration
 import android.app.Instrumentation
 import android.content.Intent
 import android.content.res.Resources
-import android.graphics.Point
 import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.provider.Settings
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -112,7 +114,38 @@ internal object LocaleMatrixUi {
             ?: blocked("Unsupported locale row/dragHandle")
         if (handles.isEmpty()) blocked("No language ordering handles")
         val target = handles.first().visibleCenter
-        if (handle.visibleCenter != target) handle.drag(Point(target.x, target.y))
+        if (handle.visibleCenter != target) {
+            foregroundSettings()
+            val start = handle.visibleCenter
+            capture("before-promote-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag)
+                .put("fromX", start.x).put("fromY", start.y).put("toX", target.x).put("toY", target.y))
+            // Hold the actual handle before moving: a swipe need not activate drag-and-drop.
+            val down = SystemClock.uptimeMillis()
+            fun inject(action: Int, x: Float, y: Float) {
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                try {
+                    if (!instrumentation.uiAutomation.injectInputEvent(event, true)) blocked("Drag injection rejected")
+                } finally { event.recycle() }
+            }
+            var released = false
+            try {
+                inject(MotionEvent.ACTION_DOWN, start.x.toFloat(), start.y.toFloat())
+                SystemClock.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 150)
+                repeat(30) { step ->
+                    val fraction = (step + 1) / 30f
+                    inject(MotionEvent.ACTION_MOVE, start.x + (target.x - start.x) * fraction,
+                        start.y + (target.y - start.y) * fraction)
+                    SystemClock.sleep(16) // Gesture cadence, not an assertion retry.
+                }
+                inject(MotionEvent.ACTION_UP, target.x.toFloat(), target.y.toFloat())
+                released = true
+            } finally {
+                if (!released) runCatching { inject(MotionEvent.ACTION_CANCEL, start.x.toFloat(), start.y.toFloat()) }
+            }
+            foregroundSettings()
+            capture("after-promote-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
+        }
         awaitState("Primary locale not applied: $tag") { locales().firstOrNull() == tag }
     }
     private fun settingsAction(resource: String): UiObject2? {
@@ -128,26 +161,48 @@ internal object LocaleMatrixUi {
         val label = resources.getString(id)
         return device.findObject(By.text(label)) ?: device.findObject(By.desc(label))
     }
+    private fun awaitObject(reason: String, find: () -> UiObject2?): UiObject2 {
+        var found: UiObject2? = null
+        awaitState(reason) {
+            foregroundSettings()
+            found = find()?.takeIf { it.isEnabled && !it.visibleBounds.isEmpty }
+            found != null
+        }
+        return found ?: blocked(reason)
+    }
     private fun removeExtra(tag: String) {
         openSettings()
-        val overflow = settingsAction("locale_remove_menu")
-            ?: run {
-                // ActionBar overflow description comes from Android's own current localized resources.
-                val id = Resources.getSystem().getIdentifier("action_menu_overflow_description", "string", "android")
-                if (id == 0) blocked("No system overflow description")
-                device.findObject(By.desc(Resources.getSystem().getString(id)))?.also { it.click() }
-                device.waitForIdle(2000)
-                settingsAction("locale_remove_menu")
-            } ?: blocked("Unsupported remove-language menu")
-        overflow.click()
-        val extra = row(tag) ?: blocked("Missing extra locale $tag")
-        val checkbox = extra.findObject(By.clazz("android.widget.CheckBox"))
-            ?: blocked("Unsupported language removal checkbox")
-        checkbox.click()
-        (settingsAction("locale_remove_menu")
-            ?: blocked("Missing remove action")).click()
-        device.wait(Until.findObject(By.res("android", "button1")), 3000)?.click()
+        if (locales().size <= 1 || tag !in locales()) blocked("Unsafe extra-language removal: $tag")
+        capture("before-remove-menu-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
+        val remove = settingsAction("locale_remove_menu") ?: run {
+            val id = Resources.getSystem().getIdentifier("action_menu_overflow_description", "string", "android")
+            if (id == 0) blocked("No system overflow description")
+            awaitObject("Missing Settings overflow") {
+                device.findObject(By.pkg("com.android.settings").clazz("android.widget.ImageButton")
+                    .desc(Resources.getSystem().getString(id)).clickable(true))
+            }.click()
+            // Popup creation is asynchronous; wait for its actual resource-backed action.
+            awaitObject("Unsupported remove-language menu") { settingsAction("locale_remove_menu") }
+        }
+        capture("remove-menu-visible-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
+        remove.click()
+        val checkbox = awaitObject("Unsupported language removal checkbox") {
+            row(tag)?.findObject(By.clazz("android.widget.CheckBox"))
+        }
+        if (!checkbox.isChecked) checkbox.click()
+        awaitState("Extra language not selected: $tag") {
+            row(tag)?.findObject(By.clazz("android.widget.CheckBox"))?.isChecked == true
+        }
+        capture("remove-selection-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
+        awaitObject("Missing remove action") { settingsAction("locale_remove_menu") }.click()
+        // Do not silently skip an absent/late confirmation dialog.
+        val confirm = awaitObject("Missing language removal confirmation") {
+            device.findObject(By.pkg("com.android.settings").res("android", "button1"))
+        }
+        capture("remove-confirmation-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
+        confirm.click()
         awaitState("Extra locale not removed: $tag") { tag !in locales() }
+        capture("after-remove-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
     }
     fun changeWhileActivityRunning() {
         if (!enabled) return

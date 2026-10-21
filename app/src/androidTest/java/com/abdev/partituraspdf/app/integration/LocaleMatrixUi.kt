@@ -170,6 +170,16 @@ internal object LocaleMatrixUi {
         }
         return found ?: blocked(reason)
     }
+    private fun removalCheckbox(tag: String): LocaleRemovalCheckbox<UiObject2>? {
+        foregroundSettings()
+        val locale = Locale.forLanguageTag(tag)
+        val nodes = device.findObjects(By.res("com.android.settings", "checkbox")
+            .clazz("android.widget.CheckBox")).map { node ->
+            LocaleRemovalCheckbox(node, node.resourceName, node.className, node.text,
+                node.isEnabled, !node.visibleBounds.isEmpty, node.isChecked)
+        }
+        return selectLocaleRemovalCheckbox(nodes, locale.getDisplayName(locale))
+    }
     private fun removeExtra(tag: String) {
         openSettings()
         if (locales().size <= 1 || tag !in locales()) blocked("Unsafe extra-language removal: $tag")
@@ -187,11 +197,11 @@ internal object LocaleMatrixUi {
         capture("remove-menu-visible-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
         remove.click()
         val checkbox = awaitObject("Unsupported language removal checkbox") {
-            row(tag)?.findObject(By.clazz("android.widget.CheckBox"))
+            removalCheckbox(tag)?.target
         }
         if (!checkbox.isChecked) checkbox.click()
         awaitState("Extra language not selected: $tag") {
-            row(tag)?.findObject(By.clazz("android.widget.CheckBox"))?.isChecked == true
+            removalCheckbox(tag)?.checked == true
         }
         capture("remove-selection-${tag.lowercase(Locale.ROOT)}", JSONObject().put("tag", tag))
         awaitObject("Missing remove action") { settingsAction("locale_remove_menu") }.click()

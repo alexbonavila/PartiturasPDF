@@ -426,5 +426,23 @@ class LocaleCoordinatorTests(unittest.TestCase):
                        'Missing language removal confirmation','Drag injection rejected'):
             self.assertEqual('BLOCKED',m.classify(raw({m.LOCALE},failed=True,marker='J_LOCALE_BLOCKED: '+reason),{m.LOCALE},0)[0])
 
+    def test_exact_en_us_restoration_rejects_remaining_spanish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)/'restore';record=self.fixture_stage(folder)
+            record['action']='restore';record['tags']=['en-US']
+            record['command'][record['command'].index('jLocaleAction')+1]='restore'
+            record['command'][record['command'].index('jLocaleTags')+1]='en-US'
+            record['settings_after']['locales']='en-US'
+            for name in ('before','returned-to-existing-app','library-visible','recreated-settings-visible'):
+                (folder/(name+'.json')).write_text(json.dumps(dict(systemLocales=['en-US'],pid=1)))
+                record['files'][name+'.json']=m.digest(folder/(name+'.json'))
+            m.atomic(folder/'execution.json',record)
+            self.assertEqual('PASS',m.validate_stage(folder,{m.LOCALE})['status'])
+            for actual in (['en-US','es-ES'],['es-ES']):
+                (folder/'library-visible.json').write_text(json.dumps(dict(systemLocales=actual,pid=1)))
+                record['files']['library-visible.json']=m.digest(folder/'library-visible.json')
+                m.atomic(folder/'execution.json',record)
+                with self.assertRaises(ValueError):m.validate_stage(folder,{m.LOCALE})
+
 
 if __name__=='__main__':unittest.main()

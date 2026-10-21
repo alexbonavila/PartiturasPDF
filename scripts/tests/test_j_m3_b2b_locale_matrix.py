@@ -445,4 +445,162 @@ class LocaleCoordinatorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):m.validate_stage(folder,{m.LOCALE})
 
 
+
+class ManualLocaleTests(unittest.TestCase):
+    identity=dict(serial='emulator-5554',avd='Tablet2',api='26',abi='arm64-v8a',qemu='1',boot='1',boot_id='same-boot')
+    capture=dict(branch='test/mvp-stabilization-j',revision='current',tree='tree',source_digest='digest',build={},dirty=True)
+
+    def settings(self,tags):
+        return dict(locales='null',config='config: '+','.join(t.replace('-','-r') for t in tags)+'-ldltr-v26',wifi='1',airplane='0',mobile='1')
+
+    def ledger(self):
+        entry=dict(identity=self.identity,original_locales=['en-US'],original_settings=self.settings(['en-US']))
+        return dict(source=self.capture,devices={'26':entry},configurations={},apks=dict(app='a',test='b')),entry
+
+    def test_adb_gate_never_invents_instrumentation_or_secondary_language(self):
+        result=m.manual_configuration(self.settings(['en-US']),['en-US'])
+        self.assertEqual('VERIFIED',result['status']);self.assertEqual('NOT RUN',result['instrumentation'])
+        for actual in (['fr-FR'],['en-US','fr-FR']):
+            self.assertEqual('BLOCKED',m.manual_configuration(self.settings(actual),['fr-FR','en-US'])['status'])
+        self.assertEqual('VERIFIED',m.manual_configuration(self.settings(['fr-FR','en-US']),['fr-FR','en-US'])['status'])
+
+    def test_absent_malformed_and_contradictory_channels_block(self):
+        for settings in ({},dict(locales='en-US'),dict(locales='en_US',config=self.settings(['en-US'])['config']),
+                         dict(locales='es-ES',config=self.settings(['en-US'])['config'])):
+            self.assertEqual('BLOCKED',m.manual_configuration(settings,['en-US'])['status'])
+
+    def test_explicit_correction_requires_new_enter_and_preserves_failed_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,entry=self.ledger();c=m.Coordinator('adb')
+            with patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',side_effect=[self.settings(['en-US']),self.settings(['es-ES'])]),patch.object(m,'source',return_value=self.capture),patch.object(c,'stage') as stage:
+                answers=iter(['','r',''])
+                ref=m.manual_selection(c,root,ledger,entry,['es-ES'],1,3,'piloto',lambda prompt:next(answers))
+                stage.assert_not_called()
+            record=m.read_json(root/ref['path'])
+            self.assertEqual(['BLOCKED','VERIFIED'],[a['evidence']['status'] for a in record['attempts']])
+            self.assertTrue(all(a['owner_confirmation_at'] for a in record['attempts']))
+
+    def test_cancel_and_interruption_preserve_evidence_without_junit(self):
+        for response in ('q',KeyboardInterrupt(),EOFError()):
+            with tempfile.TemporaryDirectory() as tmp:
+                root=Path(tmp);ledger,entry=self.ledger();c=m.Coordinator('adb')
+                def ask(prompt):
+                    if isinstance(response,BaseException):raise response
+                    return response
+                with patch.object(c,'stage') as stage:
+                    with self.assertRaises(m.runner.Blocked):m.manual_selection(c,root,ledger,entry,['es-ES'],1,3,'piloto',ask)
+                    stage.assert_not_called()
+                self.assertEqual('BLOCKED',m.read_json(root/entry['selection_attempts'][0]['path'])['status'])
+
+    def test_wrong_selection_blocks_before_junit_and_apk_access(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger,entry=self.ledger();c=m.Coordinator('adb')
+            with patch.object(m,'source',return_value=self.capture),patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',return_value=self.settings(['en-US'])),patch.object(c,'installed') as apk,patch.object(c,'stage') as stage:
+                with self.assertRaises(m.runner.Blocked):m.manual_stage(c,Path(tmp),ledger,entry,['es-ES'],{m.LOCALE},'never')
+                stage.assert_not_called();apk.assert_not_called()
+
+    def test_manual_junit_evidence_requires_manual_observation_not_live_return(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'stage';record=LocaleCoordinatorTests().fixture_stage(root)
+            record['action']='manual';record['command'][record['command'].index('jLocaleAction')+1]='manual'
+            record['settings_before']['locales']='fr-FR,en-US'
+            for suffix in ('.json','.png','.xml'):
+                file=root/('manual-configuration'+suffix)
+                if suffix=='.json':file.write_text(json.dumps(dict(systemLocales=['fr-FR','en-US'],liveTransition='NOT RUN')))
+                elif suffix=='.png':file.write_bytes(b'\x89PNG\r\n\x1a\nsynthetic')
+                else:file.write_text('<hierarchy/>')
+                record['files'][file.name]=m.digest(file)
+            for name in ('returned-to-existing-app.json','before.json'):
+                (root/name).unlink();record['files'].pop(name)
+            m.atomic(root/'execution.json',record)
+            self.assertEqual('PASS',m.validate_stage(root,{m.LOCALE})['status'])
+            file=root/'manual-configuration.json';file.write_text(json.dumps(dict(systemLocales=['fr-FR','en-US'],liveTransition='PASS')))
+            record['files'][file.name]=m.digest(file);m.atomic(root/'execution.json',record)
+            with self.assertRaises(ValueError):m.validate_stage(root,{m.LOCALE})
+
+    def test_manual_correction_attempts_are_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,entry=self.ledger();c=m.Coordinator('adb');answers=iter(['','r','','r',''])
+            with patch.object(m,'source',return_value=self.capture),patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',return_value=self.settings(['en-US'])) as observed:
+                with self.assertRaises(m.runner.Blocked):m.manual_selection(c,root,ledger,entry,['es-ES'],1,3,'piloto',lambda prompt:next(answers))
+                self.assertEqual(3,observed.call_count)
+            record=m.read_json(root/entry['selection_attempts'][0]['path'])
+            self.assertEqual('BLOCKED',record['status']);self.assertEqual(3,len(record['attempts']))
+
+    def test_manual_selection_hash_and_attribution_cannot_be_bypassed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,entry=self.ledger();c=m.Coordinator('adb')
+            with patch.object(m,'source',return_value=self.capture),patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',return_value=self.settings(['es-ES'])):
+                ref=m.manual_selection(c,root,ledger,entry,['es-ES'],1,3,'piloto',lambda prompt:'')
+            ref['sha256']=m.digest(root/ref['path'])
+            self.assertEqual('VERIFIED',m.validate_manual_selection(root,ledger,entry,['es-ES'],ref)['status'])
+            record=m.read_json(root/ref['path']);record['attempts'][-1]['owner_confirmation_at']=None
+            m.atomic(root/ref['path'],record)
+            with self.assertRaises(ValueError):m.validate_manual_selection(root,ledger,entry,['es-ES'],ref)
+            ref['sha256']=m.digest(root/ref['path'])
+            with self.assertRaises(ValueError):m.validate_manual_selection(root,ledger,entry,['es-ES'],ref)
+
+    def test_manual_instrumentation_branch_returns_before_automatic_settings(self):
+        source=(m.ROOT/'app/src/androidTest/java/com/abdev/partituraspdf/app/integration/LocaleMatrixUi.kt').read_text()
+        branch=source.split('if (arguments.getString("jLocaleAction") == "manual") {',1)[1].split('        try {',1)[0]
+        self.assertIn('locales() != target',branch);self.assertIn('return',branch)
+        for forbidden in ('openSettings(','.click(','.drag(','promote(', 'removeExtra('):self.assertNotIn(forbidden,branch)
+
+    def manual_pilot_sequence(self, failure=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);out=root/'build/j-m3-b2b/manual';ledger,entry=self.ledger();c=m.Coordinator('adb');events=[]
+            current=['en-US','es-ES'];steps=iter([['en-US'],['es-ES'],['en-US']])
+            def ask(prompt):
+                current[:]=next(steps);events.append(('owner',list(current)));return ''
+            def stage(device,expected,tags,action,directory):
+                events.append((action,expected,list(tags)))
+                if tags==['es-ES'] and expected=={m.LOCALE}:
+                    if failure=='interrupt':raise KeyboardInterrupt
+                    if failure=='functional':return {'status':'FAIL'}
+                return {'status':'PASS'}
+            for name in ('app/build/outputs/apk/debug/app-debug.apk','app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'):
+                f=root/name;f.parent.mkdir(parents=True,exist_ok=True);f.write_bytes(b'apk')
+            (root/'old').mkdir();m.atomic(root/'old/matrix.json',dict(devices={'26':dict(identity=self.identity)}))
+            with patch.object(m,'ROOT',root),patch.object(m,'source',return_value=self.capture),patch.object(m.runner,'execute',return_value=type('Result',(),dict(returncode=0,stdout='',stderr=''))()),patch.object(c,'discover',return_value={26:self.identity}),patch.object(c,'install'),patch.object(m,'recovery_entry',return_value=entry),patch.object(c,'identity',return_value=self.identity),patch.object(c,'settings',side_effect=lambda serial:self.settings(current)),patch.object(c,'installed',return_value=dict(app=m.digest(root/'app/build/outputs/apk/debug/app-debug.apk'),test=m.digest(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'))),patch.object(c,'stage',side_effect=stage),patch.object(m,'validate_stage',side_effect=lambda folder,expected:dict(source=self.capture,installed=dict(app=m.digest(root/'app/build/outputs/apk/debug/app-debug.apk'),test=m.digest(root/'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')))),patch.object(m,'manual_report',return_value=dict(status='PASS',restorations={'26':'PASS'})):
+                if failure:
+                    with self.assertRaises(KeyboardInterrupt if failure=='interrupt' else m.runner.FunctionalFailure):
+                        m.manual_workflow(c,out,pilot=True,recovery_from=root/'old',ask=ask)
+                else:self.assertEqual('PASS',m.manual_workflow(c,out,pilot=True,recovery_from=root/'old',ask=ask)['status'])
+            return events
+
+    def test_manual_pilot_sequence_recovers_original_and_restores_without_auto_actions(self):
+        events=self.manual_pilot_sequence()
+        self.assertEqual([('owner',['en-US']),('manual',{m.LOCALE},['en-US']),('owner',['es-ES']),
+                              ('manual',{m.LOCALE},['es-ES']),('manual',{m.READER,m.ev.SMOKE},['es-ES']),
+                              ('owner',['en-US']),('manual',{m.LOCALE},['en-US'])],events)
+
+    def test_functional_failure_is_not_retried_but_final_manual_restoration_runs(self):
+        events=self.manual_pilot_sequence('functional')
+        self.assertEqual(1,events.count(('manual',{m.LOCALE},['es-ES'])))
+        self.assertNotIn(('manual',{m.READER,m.ev.SMOKE},['es-ES']),events)
+        self.assertEqual([('owner',['en-US']),('manual',{m.LOCALE},['en-US'])],events[-2:])
+
+    def test_interrupted_junit_retains_final_manual_restoration_opportunity(self):
+        events=self.manual_pilot_sequence('interrupt')
+        self.assertEqual([('owner',['en-US']),('manual',{m.LOCALE},['en-US'])],events[-2:])
+
+    def test_manual_restore_failure_keeps_fail_exit_even_when_operation_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);out=root/'build/j-m3-b2b/run';out.mkdir(parents=True)
+            m.atomic(out/'matrix.json',{})
+            for verdict,expected in [('FAIL',1),('BLOCKED',2)]:
+                with patch.object(m,'ROOT',root),patch.object(m.platform,'system',return_value='Darwin'),patch.object(m.runner,'native_architecture',return_value='arm64'),patch.object(m,'manual_workflow',side_effect=m.runner.Blocked('interrupted operation')),patch.object(m,'report',return_value=dict(status=verdict)):
+                    self.assertEqual(expected,m.main(['manual-run','--output',str(out)]))
+
+    def test_manual_report_keeps_localization_and_live_transition_separate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,entry=self.ledger();ledger['profile']='manual-api26-spanish-pilot'
+            entry.update(recovery_path='recovery',recovery_selection={},restoration_path='restore',restoration_selection={})
+            ledger['configurations']['26-es-ES']=dict(locale='locale',tests='tests',selection={})
+            record=dict(device=self.identity,tags=['es-ES'],installed=ledger['apks'],source=self.capture,action='manual')
+            with patch.object(m,'validate_manual_selection'),patch.object(m,'manual_verified_record',return_value=record),patch.object(m,'validate_stage',return_value=record):
+                result=m.manual_report(root,ledger)
+            self.assertEqual('PASS',result['status']);self.assertEqual('PASS',result['configurations']['26-es-ES']['localization'])
+            self.assertEqual('NOT RUN',result['live_transition']);self.assertEqual('NOT RUN',result['configurations']['26-es-ES']['live_transition'])
+
 if __name__=='__main__':unittest.main()

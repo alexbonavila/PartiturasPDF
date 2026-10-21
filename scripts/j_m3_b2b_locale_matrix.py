@@ -1,6 +1,7 @@
 """Opt-in sequential locale coordinator; reuses Phase J execution and evidence helpers.
 
 Only run/resume/restore write to the three owner-named disposable emulators.
+Manual modes prompt for owner Settings changes and never invoke automatic locale UI control.
 No provisioning, resets, shell locale setters, or network changes are implemented.
 """
 from __future__ import annotations
@@ -270,6 +271,9 @@ class Coordinator:
             if re.search(r'(?im)^.*(?:mActiveInstrumentation|mInstrumentation|mInstr=).*'+re.escape(ev.APP),processes):
                 raise runner.Blocked('Previous instrumentation may still be running; no concurrent recovery launch')
             metadata['settings_before'] = self.settings(serial)
+            if action=='manual':
+                gate=manual_configuration(metadata['settings_before'],tags)
+                if gate['status']!='VERIFIED':raise runner.Blocked(gate['reason'])
             command = [self.adb, '-s', serial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'class',
                        ','.join(m.rsplit('.', 1)[0] + '#' + m.rsplit('.', 1)[1] for m in sorted(expected)),
                        '-e', 'jLocaleRun', token, '-e', 'jLocaleTags', ','.join(tags), '-e', 'jLocaleAction', action, COMPONENT]
@@ -281,7 +285,7 @@ class Coordinator:
             metadata['status'], cases, blocker = classify(raw, expected, result.returncode)
             # Capability absence is BLOCKED even though the instrumentation uses an AssertionError.
             if 'J_LOCALE_BLOCKED:' in raw:
-                metadata['status'], blocker = 'BLOCKED', 'Unsupported/unverified real Settings UI; inspect live artifacts'
+                metadata['status'], blocker = 'BLOCKED', ('Unverified manual system configuration; inspect live artifacts' if action=='manual' else 'Unsupported/unverified real Settings UI; inspect live artifacts')
             if self.identity(serial, api) != device:
                 raise runner.Blocked('Android restart: no genuine existing-application transition proven')
             metadata['settings_after'] = self.settings(serial)
@@ -302,7 +306,7 @@ class Coordinator:
                     for suffix in ('.png','.xml'):
                         if not (directory / (name + suffix)).is_file() or not (directory / (name + suffix)).stat().st_size:
                             raise runner.Blocked('Missing live UI observation')
-                if action != 'probe' and expected == {LOCALE} and not (directory/'returned-to-existing-app.json').exists():
+                if action not in ('probe','manual') and expected == {LOCALE} and not (directory/'returned-to-existing-app.json').exists():
                     raise runner.Blocked('No genuine return observation')
         except (runner.Blocked, OSError, ValueError, KeyError, KeyboardInterrupt) as error:
             blocker = str(error) or 'Interrupted; process output may be incomplete'
@@ -357,7 +361,15 @@ def validate_stage(directory, expected):
         ET.parse(directory/(name+'.xml'))
         observation=read_json(directory/(name+'.json'))
         require_locale_evidence(record['settings_after'],observation.get('systemLocales'),None if record['action']=='probe' else record['tags'])
-    if record['action']!='probe' and expected=={LOCALE}:
+    if record['action']=='manual' and expected=={LOCALE}:
+        for suffix in ('.json','.png','.xml'):
+            if 'manual-configuration'+suffix not in record['files']:raise ValueError('Missing manual observation')
+        manual=read_json(directory/'manual-configuration.json')
+        if manual.get('liveTransition')!='NOT RUN':raise ValueError('Manual observation cannot certify a live transition')
+        require_locale_evidence(record['settings_before'],manual.get('systemLocales'),record['tags'])
+        if not (directory/'manual-configuration.png').read_bytes().startswith(b'\x89PNG\r\n\x1a\n'):raise ValueError('Invalid manual screenshot')
+        ET.parse(directory/'manual-configuration.xml')
+    if record['action'] not in ('probe','manual') and expected=={LOCALE}:
         if 'returned-to-existing-app.json' not in record['files']: raise ValueError('Missing existing-app return')
         if any(n not in record['files'] for n in ('before.json','returned-to-existing-app.json')):raise ValueError('Transition observation is not hash-bound')
         before=read_json(directory/'before.json');after=read_json(directory/'returned-to-existing-app.json')
@@ -389,6 +401,7 @@ def restoration_verdict(directory, ledger, entry):
 
 def report(directory):
     ledger = read_json(directory/'matrix.json')
+    if ledger.get('profile','').startswith('manual-'):return manual_report(directory,ledger)
     verdicts = {}
     for key, item in ledger['configurations'].items():
         try:
@@ -525,6 +538,7 @@ def workflow(coordinator, directory, resume=False, pilot=False, recovery_from=No
     hashes = {k:digest(p) for k,p in apks.items()}
     if resume:
         ledger = read_json(directory/'matrix.json')
+        if ledger.get('profile','').startswith('manual-'):raise runner.Blocked('Manual evidence cannot resume through automatic UI commands')
         if ledger.get('profile')=='api26-spanish-pilot': raise runner.Blocked('Pilot is single attempt; no resume into full matrix')
         if not same_source(ledger['source'],capture) or ledger['apks'] != hashes: raise runner.Blocked('Cannot resume different source/APKs')
     else:
@@ -593,17 +607,250 @@ def workflow(coordinator, directory, resume=False, pilot=False, recovery_from=No
     return report(directory)
 
 
+def manual_configuration(settings, expected=None):
+    """ADB preflight only; instrumentation is an independent later observation, never invented."""
+    channels=dict(database=database_locales(settings.get('locales')),
+                  effective_configuration=effective_locales(settings.get('config')))
+    result=dict(status='BLOCKED',channels=channels,instrumentation='NOT RUN')
+    try:
+        effective=channels['effective_configuration']
+        if effective['state']!='EXPLICIT':raise ValueError('Configuración efectiva ausente o malformada')
+        actual=effective['locales']
+        database=channels['database']
+        if database['state']=='MALFORMED':raise ValueError('Base de datos de idiomas malformada')
+        if database['state']=='EXPLICIT' and database['locales']!=actual:
+            raise ValueError('Los canales Android contienen listas contradictorias')
+        if expected is not None and actual!=ordered_locales(expected):
+            raise ValueError(f'Orden observado {actual}; requerido {expected}')
+        result.update(status='VERIFIED',locales=actual,reason=None)
+    except ValueError as error:result['reason']=str(error)
+    return result
+
+
+def manual_selection(coordinator, directory, ledger, entry, tags, step, total, purpose, ask=None):
+    ask=input if ask is None else ask
+    device=entry['identity'];name='manual-selection-'+uuid.uuid4().hex+'.json'
+    record=dict(device=device,source=ledger['source'],requested=tags,purpose=purpose,
+                live_transition='NOT RUN',status='BLOCKED',attempts=[])
+    path=directory/name
+    attempt_ref=dict(path=name,sha256=None)
+    entry.setdefault('selection_attempts',[]).append(attempt_ref)
+    atomic(directory/'matrix.json',ledger)
+    try:
+        for attempt in range(3):
+            print(f"\nPaso {step}/{total} — {device['avd']} API{device['api']} ({device['serial']}) — {purpose}")
+            print(f'Orden COMPLETO requerido: {tags}. Cambie los idiomas manualmente en Ajustes de Android.')
+            print('No cambie la conectividad. Enter solicita verificación; no confirma un resultado.')
+            answer=ask('Pulse Enter para verificar o q para cancelar: ').strip().lower()
+            if answer=='q':raise runner.Blocked('Cancelado por el propietario; restauración manual pendiente si hubo cambios')
+            if answer:raise runner.Blocked('Respuesta no reconocida; no se ejecutarán pruebas')
+            observation=dict(owner_confirmation_at=now())
+            record['attempts'].append(observation);atomic(path,record)
+            if coordinator.identity(device['serial'],int(device['api']))!=device:
+                raise runner.Blocked('Identidad/arranque distinto; se requiere reconciliación explícita')
+            observation['settings']=coordinator.settings(device['serial'])
+            observation['evidence']=manual_configuration(observation['settings'],tags)
+            if any(observation['settings'][k]!=entry['original_settings'][k] for k in ('wifi','airplane','mobile')):
+                raise runner.Blocked('Cambió la conectividad; restaure manualmente la configuración original')
+            if not same_source(source(),ledger['source']):raise runner.Blocked('Cambió el árbol fuente')
+            if observation['evidence']['status']=='VERIFIED':
+                record.update(status='VERIFIED',verified_at=now())
+                print('VERIFICADO por ADB: orden exacto. La comprobación independiente de instrumentación sigue pendiente.')
+                break
+            print('BLOCKED: '+observation['evidence']['reason'])
+            atomic(path,record)
+            if attempt==2 or ask('Corrija manualmente y pulse r para otra verificación; q para cancelar: ').strip().lower()!='r':
+                raise runner.Blocked('Selección no verificada; no se ejecutarán pruebas')
+        return dict(path=name,sha256=None)
+    except (runner.Blocked,KeyboardInterrupt,EOFError,OSError,ValueError,KeyError) as error:
+        record['reason']=str(error) or 'Interrumpido; restaure manualmente los idiomas originales'
+        raise runner.Blocked(record['reason']) from error
+    finally:
+        atomic(path,record)
+        attempt_ref['sha256']=digest(path)
+        atomic(directory/'matrix.json',ledger)
+
+
+def manual_stage(coordinator, directory, ledger, entry, tags, expected, path):
+    device=entry['identity']
+    if not same_source(source(),ledger['source']):raise runner.Blocked('Source changed before JUnit')
+    if coordinator.identity(device['serial'],int(device['api']))!=device:raise runner.Blocked('Device changed before JUnit')
+    current=coordinator.settings(device['serial'])
+    if any(current[k]!=entry['original_settings'][k] for k in ('wifi','airplane','mobile')):raise runner.Blocked('Network changed before JUnit')
+    evidence=manual_configuration(current,tags)
+    if evidence['status']!='VERIFIED':raise runner.Blocked(evidence['reason'])
+    if coordinator.installed(device['serial'])!=ledger['apks']:raise runner.Blocked('APK changed before JUnit')
+    result=coordinator.stage(device,expected,tags,'manual',directory/path)
+    if result['status']=='FAIL':raise runner.FunctionalFailure('Fallo funcional; no se repetirá automáticamente')
+    if result['status']!='PASS':raise runner.Blocked('Instrumentación incompleta; consulte los artefactos')
+    checked=validate_stage(directory/path,expected)
+    if not same_source(checked['source'],ledger['source']) or checked['installed']!=ledger['apks']:
+        raise runner.Blocked('Source/APK attribution changed')
+    return result
+
+
+def validate_manual_selection(directory, ledger, entry, tags, selection):
+    path=confined(directory,selection['path'])
+    if digest(path)!=selection['sha256']:raise ValueError('Manual selection hash mismatch')
+    record=read_json(path)
+    if record['status']!='VERIFIED' or record['device']!=entry['identity'] or record['requested']!=tags or not same_source(record['source'],ledger['source']):
+        raise ValueError('Manual selection attribution mismatch')
+    final=record['attempts'][-1]
+    if not final.get('owner_confirmation_at') or manual_configuration(final['settings'],tags)['status']!='VERIFIED':
+        raise ValueError('No verified owner-confirmed selection')
+    if any(final['settings'][k]!=entry['original_settings'][k] for k in ('wifi','airplane','mobile')):raise ValueError('Network changed')
+    return record
+
+
+def manual_verified_record(directory, ledger, entry, tags, stage_name, selection):
+    validate_manual_selection(directory,ledger,entry,tags,selection)
+    stage=validate_stage(confined(directory,stage_name),{LOCALE})
+    if (stage['action']!='manual' or stage['tags']!=tags or stage['device']!=entry['identity']
+            or stage['installed']!=ledger['apks'] or not same_source(stage['source'],ledger['source'])):
+        raise ValueError('Manual JUnit attribution mismatch')
+    if any(stage[point][k]!=entry['original_settings'][k] for point in ('settings_before','settings_after') for k in ('wifi','airplane','mobile')):
+        raise ValueError('JUnit network state differs from original')
+    return stage
+
+
+def manual_report(directory, ledger):
+    if ledger['profile'] not in ('manual-api26-spanish-pilot','manual-full-matrix'):raise ValueError('Unknown manual profile')
+    pilot=ledger['profile']=='manual-api26-spanish-pilot'
+    wanted={26:('es-ES',)} if pilot else {api:TAGS for api in DEVICES}
+    outcomes={};restorations={};recoveries={};baselines={}
+    for api,entry in ledger['devices'].items():
+        if not pilot:
+            try:
+                baseline=validate_stage(confined(directory,entry['baseline_path']),{LOCALE})
+                if (baseline['action']!='manual' or baseline['device']!=entry['identity']
+                        or baseline['tags']!=entry['original_locales'] or baseline['installed']!=ledger['apks']
+                        or not same_source(baseline['source'],ledger['source'])):raise ValueError('Baseline attribution changed')
+                require_locale_evidence(entry['original_settings'],read_json(confined(directory,entry['baseline_path'])/'library-visible.json')['systemLocales'],entry['original_locales'])
+                baselines[api]='PASS'
+            except (OSError,ValueError,KeyError):
+                baselines[api]='FAIL' if 'baseline_path' in entry and retained_failure(confined(directory,entry['baseline_path']),{LOCALE}) else 'BLOCKED'
+        for label in ('recovery','restoration'):
+            verdict='BLOCKED' if entry.get(label+'_status') or entry.get(label+'_error') else 'NOT RUN'
+            if label+'_path' in entry:
+                try:
+                    manual_verified_record(directory,ledger,entry,entry['original_locales'],entry[label+'_path'],entry[label+'_selection'])
+                    verdict='PASS'
+                except (OSError,ValueError,KeyError):
+                    verdict='FAIL' if retained_failure(confined(directory,entry[label+'_path']),{LOCALE}) else 'BLOCKED'
+            (recoveries if label=='recovery' else restorations)[api]=verdict
+    for key,item in ledger['configurations'].items():
+        outcome=dict(configuration='BLOCKED',localization='BLOCKED',junit='BLOCKED',live_transition='NOT RUN')
+        try:
+            api,tag=key.split('-',1);entry=ledger['devices'][api]
+            if tag not in wanted[int(api)]:raise ValueError('Unexpected manual cell')
+            tags=[tag] if tag!='fr-FR' else ['fr-FR','en-US']
+            validate_manual_selection(directory,ledger,entry,tags,item['selection'])
+            outcome['configuration']='PASS'
+            one=manual_verified_record(directory,ledger,entry,tags,item['locale'],item['selection'])
+            two=validate_stage(confined(directory,item['tests']),{READER,ev.SMOKE})
+            if any(two[k]!=one[k] for k in ('device','tags','installed','source','action')):raise ValueError('Manual stage mismatch')
+            outcome.update(configuration='PASS',localization='PASS',junit='PASS')
+        except (OSError,ValueError,KeyError) as error:
+            outcome['reason']=str(error)
+            if any(retained_failure(confined(directory,item[k]),expected) for k,expected in [('locale',{LOCALE}),('tests',{READER,ev.SMOKE})] if k in item):outcome['junit']='FAIL'
+        outcomes[key]=outcome
+    selected={f'{api}-{tag}' for api,tags in wanted.items() for tag in tags}
+    complete=(set(outcomes)==selected and all(v['junit']=='PASS' for v in outcomes.values())
+              and set(ledger['devices'])=={str(api) for api in wanted}
+              and all(v=='PASS' for v in restorations.values())
+              and (recoveries.get('26')=='PASS' if pilot else all(v=='PASS' for v in baselines.values())))
+    failed=any(v['junit']=='FAIL' for v in outcomes.values()) or 'FAIL' in restorations.values() or 'FAIL' in recoveries.values() or 'FAIL' in baselines.values()
+    return dict(status='PASS' if complete else 'FAIL' if failed else 'BLOCKED',profile=ledger['profile'],
+                configurations=outcomes,restorations=restorations,recoveries=recoveries,baselines=baselines,live_transition='NOT RUN',
+                expected_primary_executions=len(selected)*3,
+                verified_primary_executions=sum(v['junit']=='PASS' for v in outcomes.values())*3,
+                boundary='Manual configuration and selected UI/JUnit only; not live transition, offline, AAB or physical acceptance')
+
+
+def manual_workflow(coordinator, directory, pilot=False, recovery_from=None, ask=None):
+    capture=source()
+    if capture['branch']!='test/mvp-stabilization-j':raise runner.Blocked('Wrong branch')
+    directory.mkdir(parents=True,exist_ok=False)
+    ledger=dict(schema=1,profile='manual-api26-spanish-pilot' if pilot else 'manual-full-matrix',
+                source=capture,started=now(),devices={},configurations={})
+    atomic(directory/'matrix.json',ledger)
+    build=runner.execute(['bash','./gradlew',':app:assembleDebug',':app:assembleDebugAndroidTest','--max-workers=4','--console=plain'],timeout=900)
+    (directory/'build.txt').write_text(build.stdout+'\n'+build.stderr)
+    if build.returncode or not same_source(capture,source()):raise runner.Blocked('Matching APK build/source failed')
+    apks={k:ROOT/p for k,p in dict(app='app/build/outputs/apk/debug/app-debug.apk',test='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk').items()}
+    ledger['apks']={k:digest(p) for k,p in apks.items()};atomic(directory/'matrix.json',ledger)
+    devices=coordinator.discover();apis=(26,) if pilot else tuple(DEVICES)
+    if not set(apis)<=set(devices):raise runner.Blocked('Faltan emuladores autorizados; no se iniciarán automáticamente')
+    total=len(apis)*(3 if pilot else 5);step=0
+    for api in apis:
+        identity=devices[api]
+        if pilot:
+            if recovery_from is None:raise runner.Blocked('Falta evidencia original de recuperación')
+            prior=read_json(recovery_from/'matrix.json')['devices']['26']['identity']
+            if prior!=identity:raise runner.Blocked('Identidad o arranque histórico distinto; requiere reconciliación explícita del propietario')
+            entry=recovery_entry(recovery_from,identity)
+        else:
+            original=coordinator.settings(identity['serial']);verified=manual_configuration(original)
+            if verified['status']!='VERIFIED':raise runner.Blocked(verified['reason'])
+            entry=dict(identity=identity,original_settings=original,original_locales=verified['locales'])
+        ledger['devices'][str(api)]=entry;atomic(directory/'matrix.json',ledger)
+        coordinator.install(identity,apks,directory/('install-'+uuid.uuid4().hex+'.json'))
+        def selection(tags,purpose):
+            nonlocal step
+            step+=1
+            ref=manual_selection(coordinator,directory,ledger,entry,tags,step,total,purpose,ask)
+            ref['sha256']=digest(directory/ref['path'])
+            return ref
+        try:
+            if pilot:
+                entry['recovery_status']='PENDING';atomic(directory/'matrix.json',ledger)
+                entry['recovery_selection']=selection(entry['original_locales'],'Restauración original antes del piloto')
+                entry['recovery_path']='manual-recovery-'+uuid.uuid4().hex
+                atomic(directory/'matrix.json',ledger)
+                manual_stage(coordinator,directory,ledger,entry,entry['original_locales'],{LOCALE},entry['recovery_path'])
+            else:
+                # Read-only instrumentation verifies the independently observed baseline before manual changes.
+                entry['baseline_path']='manual-baseline-'+uuid.uuid4().hex
+                atomic(directory/'matrix.json',ledger)
+                manual_stage(coordinator,directory,ledger,entry,entry['original_locales'],{LOCALE},entry['baseline_path'])
+            for tag in (('es-ES',) if pilot else TAGS):
+                tags=[tag] if tag!='fr-FR' else ['fr-FR','en-US']
+                item=dict(status='BLOCKED');ledger['configurations'][f'{api}-{tag}']=item
+                atomic(directory/'matrix.json',ledger)
+                item['selection']=selection(tags,'Selección de idioma para pruebas')
+                prefix=f'manual-{api}-{tag}-'+uuid.uuid4().hex
+                item.update(locale=prefix+'-locale',tests=prefix+'-tests')
+                atomic(directory/'matrix.json',ledger)
+                manual_stage(coordinator,directory,ledger,entry,tags,{LOCALE},item['locale'])
+                manual_stage(coordinator,directory,ledger,entry,tags,{READER,ev.SMOKE},item['tests'])
+                item['status']='PASS';atomic(directory/'matrix.json',ledger)
+        finally:
+            print(f"Restauración MANUAL requerida en {identity['avd']}: {entry['original_locales']}")
+            try:
+                entry['restoration_status']='PENDING';atomic(directory/'matrix.json',ledger)
+                entry['restoration_selection']=selection(entry['original_locales'],'Restauración final exacta')
+                entry['restoration_path']='manual-restoration-'+uuid.uuid4().hex
+                atomic(directory/'matrix.json',ledger)
+                manual_stage(coordinator,directory,ledger,entry,entry['original_locales'],{LOCALE},entry['restoration_path'])
+            except (runner.Blocked,runner.FunctionalFailure,KeyboardInterrupt,EOFError,OSError,ValueError,KeyError) as error:
+                entry['restoration_error']=str(error) or 'Interrumpido; restaure manualmente la configuración original'
+                print('BLOCKED: '+entry['restoration_error'])
+            finally:atomic(directory/'matrix.json',ledger)
+        if manual_report(directory,ledger)['restorations'].get(str(api))!='PASS':raise runner.Blocked('Restauración manual exacta no verificada')
+    return manual_report(directory,ledger)
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--adb',default='adb')
     sub=parser.add_subparsers(dest='command',required=True)
     sub.add_parser('inspect')
-    for cmd in ('run','resume','restore','report','pilot'):
+    for cmd in ('run','resume','restore','report','pilot','manual-pilot','manual-run'):
         p=sub.add_parser(cmd);p.add_argument('--output',required=True,type=Path)
-        if cmd=='pilot':p.add_argument('--recovery-from',required=True,type=Path)
+        if cmd in ('pilot','manual-pilot'):p.add_argument('--recovery-from',required=True,type=Path)
     args=parser.parse_args(argv);coordinator=Coordinator(args.adb)
     try:
-        if args.command in ('run','resume','restore','pilot') and (platform.system()!='Darwin' or runner.native_architecture()!='arm64'):
+        if args.command in ('run','resume','restore','pilot','manual-pilot','manual-run') and (platform.system()!='Darwin' or runner.native_architecture()!='arm64'):
             raise runner.Blocked('Device-changing workflow requires the approved native Apple Silicon macOS host')
         if args.command=='inspect':
             result=dict(status='INSPECTION ONLY',source=source(),host=dict(os=platform.system(),native_architecture=runner.native_architecture()),adb=coordinator.adb,devices=coordinator.discover(),
@@ -618,24 +865,32 @@ def main(argv=None):
             if args.command=='report': result=report(directory)
             elif args.command=='restore':
                 ledger=read_json(directory/'matrix.json')
+                if ledger.get('profile','').startswith('manual-'):raise runner.Blocked('Restore manually through Settings; do not use automatic restore for manual runs')
                 for entry in ledger['devices'].values(): restore_device(coordinator,directory,entry)
                 atomic(directory/'matrix.json',ledger);result=report(directory)
             else:
                 previous=None
-                if args.command=='pilot':
+                if args.command in ('pilot','manual-pilot'):
                     previous=args.recovery_from.absolute()
                     confined(ROOT,str(previous.relative_to(ROOT)))
+                    if args.command=='manual-pilot' and previous.name!='a76283a483e94fe9be1fd5d19c51a316':
+                        raise ValueError('Manual pilot requires the retained original run a76283a483e94fe9be1fd5d19c51a316')
                     if previous.parent != ROOT/'build/j-m3-b2b' or previous==directory:
                         raise ValueError('Recovery must reference a separate retained build/j-m3-b2b run')
-                result=workflow(coordinator,directory,args.command=='resume',args.command=='pilot',previous)
+                if args.command in ('manual-pilot','manual-run'):
+                    result=manual_workflow(coordinator,directory,args.command=='manual-pilot',previous)
+                else:result=workflow(coordinator,directory,args.command=='resume',args.command=='pilot',previous)
             atomic(directory/'summary.json',result)
         print(json.dumps(result,indent=2));return {'PASS':0,'FAIL':1}.get(result.get('status'),2 if args.command!='inspect' else 0)
-    except (runner.Blocked,OSError,ValueError,KeyError) as error:
+    except (runner.Blocked,OSError,ValueError,KeyError,KeyboardInterrupt,EOFError) as error:
+        result=None
         if hasattr(args,'output') and (args.output/'matrix.json').is_file():
             try:
                 result=report(args.output);result['operation_error']=str(error);result['status']='BLOCKED' if result['status']!='FAIL' else 'FAIL';atomic(args.output/'summary.json',result)
             except (OSError,ValueError,KeyError): pass
-        print('BLOCKED:',error);return 2
+        if args.command in ('manual-pilot','manual-run') and result and result['status']=='FAIL':
+            print('FAIL:',error);return 1
+        print('BLOCKED:',str(error) or 'Interrumpido; consulte la configuración original y restaure manualmente');return 2
     except runner.FunctionalFailure as error:
         if hasattr(args,'output') and (args.output/'matrix.json').is_file():
             result=report(args.output);result.update(status='FAIL',operation_error=str(error));atomic(args.output/'summary.json',result)

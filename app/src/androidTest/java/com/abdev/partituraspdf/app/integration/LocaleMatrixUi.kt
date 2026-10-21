@@ -221,6 +221,12 @@ internal object LocaleMatrixUi {
         if (arguments.getString("jLocaleAction") == "probe") return
         val target = arguments.getString("jLocaleTags")?.split(',') ?: blocked("No target tags")
         if (target.isEmpty() || target.distinct().size != target.size || target.any { !it.matches(Regex("[a-z]{2}-[A-Z]{2}")) }) blocked("Invalid target locale list")
+        if (arguments.getString("jLocaleAction") == "manual") {
+            // Owner-selected system configuration only. Never enter Settings or claim a live transition.
+            if (locales() != target) blocked("Manual exact ordered locales do not match request")
+            capture("manual-configuration", JSONObject().put("liveTransition", "NOT RUN"))
+            return
+        }
         try {
             // Promote in reverse order to establish exact priority without relying on translated labels.
             target.asReversed().forEach(::promote)

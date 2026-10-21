@@ -255,3 +255,121 @@ JUnit results and final exact restoration have been reviewed.
 API27/36 interaction compatibility remains NOT RUN. French **[fr-FR,en-US]** ordering
 remains mandatory in the full matrix; the Spanish-only pilot supplies no French,
 Catalan, offline, AAB, genuine SAF, physical-device or contextual-error acceptance.
+
+## Current workflow: interactive manual selection (2026-10-21)
+
+Use **manual-pilot** and **manual-run** for new acceptance work. The automatic commands
+and earlier sections above are retained for historical evidence compatibility, not as
+an instruction to continue developing or using automated Settings gestures. No old
+archive, result, run classification or source attribution is changed by this addition.
+
+The owner changes Android languages through Settings. The coordinator does not open
+Settings, drag, click, remove languages, use privileged setters or override app locales
+in either manual mode. It prompts in Spanish, records Enter's timestamp, and then
+reads the actual effective configuration (`am get-config`) plus `system_locales`.
+Enter is **not** evidence. An exact explicit effective ordered list is mandatory;
+an absent database key is recorded as unavailable, not fabricated. An explicit database
+value must agree; malformed or contradictory evidence blocks. In particular, French
+alone never establishes **[fr-FR,en-US]**. The existing instrumentation subsequently
+reads Resources.getSystem independently and must agree with the host observations.
+No system-language inference or manual app-language selector is introduced.
+
+The app is launched for the already selected system configuration. The existing
+production Activity, localized Library/Settings, retained-host recreation, native
+Reader journey and smoke methods remain the selected inventory. The new explicit
+`jLocaleAction=manual` validates the exact system list, captures live PNG/XML/JSON,
+and returns **before** automatic Settings control. Activity recreation remains tested;
+**live Activity system-language transition acceptance remains NOT RUN**. Startup in
+a selected locale does not prove survival of an existing Activity across a language change.
+
+### macOS commands (after review, on the matching source tree)
+
+Use the owner's existing native Apple Silicon SDK/JDK25 setup and unlocked dedicated
+ARM64 AVDs. No tool installs packages in the SDK, starts AVDs, resets data, changes
+networking or operates a physical tablet. The runner installs matching debug/test APKs
+with `-r` after identity checks. Retain the original failed run directory in this
+checkout, unchanged. Do not start with the contaminated [en-US,es-ES] list as a new original.
+
+Read-only discovery first:
+
+```bash
+python3 scripts/j_m3_b2b_locale_matrix.py inspect
+```
+
+API26-only pilot, using the known **original** recovery record, with no placeholders:
+
+```bash
+pilot="build/j-m3-b2b/$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+python3 scripts/j_m3_b2b_locale_matrix.py manual-pilot \
+  --recovery-from build/j-m3-b2b/a76283a483e94fe9be1fd5d19c51a316 \
+  --output "$pilot"
+pilot_exit=$?
+printf 'Pilot exit: %s\n' "$pilot_exit"
+python3 scripts/j_m3_b2b_locale_matrix.py report --output "$pilot"
+```
+
+This command requires the retained original probe, its hashes, original [en-US]
+ordering and the **same AVD/serial/API/ABI/boot identity**. It first asks for exact
+manual recovery to [en-US], verifies ADB ordering and independently runs the existing
+locale method. Only then does it ask for [es-ES], execute the locale method followed
+by native Reader plus smoke, and finally ask for [en-US] restoration and verify it.
+Nominally three primary JUnit executions plus two auxiliary executions (recovery and
+final restoration). No automatic locale interaction occurs. If boot identity differs,
+execution is BLOCKED: retain both identities and obtain explicit owner reconciliation;
+never rewrite the historical boot or original list to bypass this check.
+
+After the pilot and exact restoration have been reviewed, the full manual matrix is:
+
+```bash
+matrix="build/j-m3-b2b/$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+python3 scripts/j_m3_b2b_locale_matrix.py manual-run --output "$matrix"
+matrix_exit=$?
+printf 'Matrix exit: %s\n' "$matrix_exit"
+python3 scripts/j_m3_b2b_locale_matrix.py report --output "$matrix"
+```
+
+This requires already running Tablet2/API26, Tablet_27_Edited/API27 and Tablet_36/API36.
+For each it records the independently verified original order, runs one read-only
+baseline locale method, then prompts for es-ES, ca-ES, en-US and [fr-FR,en-US]. Finally
+it requests and verifies exact restoration of that device's original order. There are
+15 owner selection/restoration steps, 36 primary and six baseline/restoration JUnit
+executions in a complete run. Raw attempt counts are authoritative when interrupted.
+
+Example terminal interaction:
+
+```text
+Paso 2/3 — Tablet2 API26 (emulator-5554) — Selección de idioma para pruebas
+Orden COMPLETO requerido: ['es-ES']. Cambie los idiomas manualmente en Ajustes de Android.
+No cambie la conectividad. Enter solicita verificación; no confirma un resultado.
+Pulse Enter para verificar o q para cancelar:
+VERIFICADO por ADB: orden exacto. La comprobación independiente de instrumentación sigue pendiente.
+```
+
+The serial is discovered and verified, not assumed from this example. A wrong language
+prints the observed/required lists. The owner may explicitly choose `r`, correct
+Settings and press Enter again, for at most three verification attempts. All attempts
+are preserved. This never retries a failed functional JUnit assertion. `q`, EOF or
+Ctrl-C blocks progression. Finally cleanup offers manual restoration; if cancelled or
+interrupted again, the report retains the pending original list and blocker. Restore
+that exact saved list manually before further testing. Do not run legacy `restore`
+or `resume` against manual ledgers; they reject manual profiles and never fall through
+to automatic Settings UI. Keep incomplete evidence; start a fresh run after review.
+
+### Evidence and acceptance boundaries
+
+Manual profiles (`manual-api26-spanish-pilot`, `manual-full-matrix`) are separate from
+automatic histories. `manual-selection-*.json` retains raw channels, exact requested
+order, identity, source, owner confirmation timestamps, unsuccessful attempts and final
+verification. Each successful selection is hash-bound from matrix.json. Every JUnit
+stage rechecks source/device/APK/configuration before execution and retains the existing
+raw log, exact inventory, XML, live screenshots/hierarchy, hashes and network endpoint
+checks. Final report generation reparses retained evidence without device access.
+
+summary.json separates **configuration verification**, **visible localization**, **JUnit**,
+**recovery/baseline**, **exact restoration**, and **live_transition: NOT RUN**. A manual
+matrix PASS is scoped to the first five dimensions, never a live-transition PASS.
+A missing confirmation, cancelled restoration, truncated JUnit result or evidence mismatch
+cannot become PASS. Full French secondary ordering remains mandatory. No disconnected
+offline journey, AAB delivery, contextual-error screen, external SAF, physical-device,
+PDFium diagnostic, performance/endurance or M3-C acceptance is supplied by this workflow.
+All new manual Android execution remains **NOT RUN** until the owner actually runs it.

@@ -825,9 +825,12 @@ def manual_report_v2(directory, ledger):
             outcome['configuration']='PASS'
             one=manual_verified_record(directory,ledger,entry,required,item['locale'],item['selection'])
             two=validate_stage(confined(directory,item['tests']),{READER,ev.SMOKE})
-            if (two['tags']!=full or any(two[k]!=one[k] for k in ('device','installed','source','action'))
-                    or one['tags']!=full):
+            if one['tags']!=full or two['tags']!=full:
                 raise ValueError('Selected complete locale list changed during JUnit')
+            if (any(two[k]!=one[k] for k in ('device','installed','action'))
+                    or not same_source(two['source'],one['source'])
+                    or not same_source(two['source'],ledger['source'])):
+                raise ValueError('Manual JUnit device/APK/source attribution mismatch')
             outcome.update(configuration='PASS',localization='PASS',junit='PASS',observed_locales=full)
         except (OSError,ValueError,KeyError) as error:
             outcome['reason']=str(error)

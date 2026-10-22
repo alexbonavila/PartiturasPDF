@@ -52,6 +52,44 @@ class LocaleCoordinatorTests(unittest.TestCase):
         with patch.object(c,'command',side_effect=command):
             with self.assertRaises(m.runner.Blocked):c.identity('emulator-5554',26)
 
+    def test_manual_api_subset_is_explicit_and_deduplicated(self):
+        self.assertEqual((26,27,36),m.selected_manual_apis(None))
+        self.assertEqual((27,36),m.selected_manual_apis('27,36'))
+        self.assertEqual((27,36),m.selected_manual_apis('36,27'))
+        self.assertEqual((27,),m.selected_manual_apis('27'))
+        for value in ('', '26,26', '27,', '28', '27,28', 'all', '27;36'):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                m.selected_manual_apis(value)
+
+    def test_getprop_read_only_retry_recovers_transient_failure(self):
+        c=m.Coordinator('adb')
+        replies={'sys.boot_completed':0}
+        def fake_command(*args,**kwargs):
+            if args[-1]=='name':return 'Tablet_27_Edited\\nOK'
+            if args[-1]=='sys.boot_completed':
+                replies['sys.boot_completed']+=1
+                if replies['sys.boot_completed']==1:
+                    raise m.runner.Blocked('temporary ADB getprop disconnect')
+            return {'ro.build.version.sdk':'27','ro.product.cpu.abi':'arm64-v8a',
+                    'ro.kernel.qemu':'1','sys.boot_completed':'1',
+                    '/proc/sys/kernel/random/boot_id':'original-boot'}.get(args[-1], '')
+        with patch.object(c,'command',side_effect=fake_command),patch.object(m.time,'sleep') as pause:
+            self.assertEqual('original-boot',c.identity('emulator-5556',27)['boot_id'])
+            self.assertEqual(2,replies['sys.boot_completed'])
+            pause.assert_called_once()
+
+    def test_getprop_exhaustion_stays_blocked(self):
+        c=m.Coordinator('adb')
+        def fake_command(*args,**kwargs):
+            if args[-1]=='name':return 'Tablet_27_Edited\\nOK'
+            if args[-1]=='sys.boot_completed':raise m.runner.Blocked('ADB unavailable')
+            return {'ro.build.version.sdk':'27','ro.product.cpu.abi':'arm64-v8a',
+                    'ro.kernel.qemu':'1'}.get(args[-1],'')
+        with patch.object(c,'command',side_effect=fake_command),patch.object(m.time,'sleep') as pause:
+            with self.assertRaises(m.runner.Blocked):
+                c.identity('emulator-5556',27)
+            self.assertEqual(2,pause.call_count)
+
     def test_dynamic_discovery_ignores_foreign_and_physical(self):
         c=m.Coordinator('adb')
         def command(*args,**kw):
@@ -604,6 +642,16 @@ class ManualLocaleTests(unittest.TestCase):
             for verdict,expected in [('FAIL',1),('BLOCKED',2)]:
                 with patch.object(m,'ROOT',root),patch.object(m.platform,'system',return_value='Darwin'),patch.object(m.runner,'native_architecture',return_value='arm64'),patch.object(m,'manual_workflow',side_effect=m.runner.Blocked('interrupted operation')),patch.object(m,'report',return_value=dict(status=verdict)):
                     self.assertEqual(expected,m.main(['manual-run','--output',str(out)]))
+
+    def test_v2_report_respects_selected_api_subset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,entry=self.ledger()
+            ledger.update(profile='manual-full-matrix',manual_policy='primary-prefix-v2',
+                          selected_apis=[27,36],devices={},configurations={})
+            result=m.manual_report(root,ledger)
+            self.assertEqual([27,36],result['selected_apis'])
+            self.assertEqual(24,result['expected_primary_executions'])
+            self.assertEqual('BLOCKED',result['status'])
 
     def test_v2_report_preserves_functional_pass_when_cleanup_is_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:

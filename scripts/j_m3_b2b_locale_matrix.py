@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import platform
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 import xml.etree.ElementTree as ET
@@ -46,6 +47,18 @@ def confined(root, relative):
 
 def read_json(path):
     return json.loads(path.read_text())
+
+
+def selected_manual_apis(value):
+    """Return only requested approved emulator APIs; never silently run another device."""
+    if value is None:
+        return tuple(DEVICES)
+    if not isinstance(value, str) or not re.fullmatch(r'(26|27|36)(,(26|27|36))*', value):
+        raise ValueError('Use --apis 26,27,36 or a nonempty subset, e.g. --apis 27,36')
+    requested=tuple(int(part) for part in value.split(','))
+    if len(requested)!=len(set(requested)):
+        raise ValueError('Duplicate emulator API selection')
+    return tuple(api for api in DEVICES if api in requested)
 
 
 def ordered_locales(raw):
@@ -199,7 +212,15 @@ class Coordinator:
         if not re.fullmatch(r'emulator-\d+', serial) or api not in DEVICES:
             raise runner.Blocked('Invalid selected emulator')
         def prop(key):
-            return self.command('-s', serial, 'shell', 'getprop', key)
+            # Retry only a transient, read-only getprop failure. Never replay JUnit,
+            # installation, Settings changes, or other mutating ADB operations.
+            for attempt in range(3):
+                try:
+                    return self.command('-s', serial, 'shell', 'getprop', key)
+                except runner.Blocked:
+                    if attempt==2: raise
+                    time.sleep(0.3)
+            raise runner.Blocked('Unreachable getprop retry state')
         name = self.command('-s', serial, 'emu', 'avd', 'name').replace('\r', '').splitlines()[0]
         result = dict(serial=serial, avd=name, api=prop('ro.build.version.sdk'),
                       abi=prop('ro.product.cpu.abi'), qemu=prop('ro.kernel.qemu'),
@@ -782,7 +803,13 @@ def manual_report_v2(directory, ledger):
     The aggregate status remains BLOCKED until restoration is independently verified.
     """
     pilot=ledger['profile']=='manual-api26-spanish-pilot'
-    wanted={26:('es-ES',)} if pilot else {api:TAGS for api in DEVICES}
+    target_apis=tuple(ledger.get('selected_apis', [26] if pilot else list(DEVICES)))
+    if not target_apis or len(target_apis)!=len(set(target_apis)) or any(
+            type(api)!=int or api not in DEVICES for api in target_apis):
+        raise ValueError('Invalid recorded manual API scope')
+    if pilot and target_apis!=(26,):
+        raise ValueError('Manual pilot scope cannot change')
+    wanted={26:('es-ES',)} if pilot else {api:TAGS for api in target_apis}
     outcomes={};restorations={};baselines={}
     for api,entry in ledger['devices'].items():
         try:
@@ -850,6 +877,7 @@ def manual_report_v2(directory, ledger):
     return dict(status=status,functional_status=functional_status,
                 restoration_status='PASS' if restoration_ok else 'BLOCKED',
                 profile=ledger['profile'],manual_policy=ledger['manual_policy'],
+                selected_apis=list(target_apis),
                 configurations=outcomes,restorations=restorations,baselines=baselines,
                 initial_locales={api:entry['original_locales'] for api,entry in ledger['devices'].items()},
                 live_transition='NOT RUN',expected_primary_executions=len(selected)*3,
@@ -863,22 +891,24 @@ def manual_report(directory, ledger):
     return legacy_manual_report(directory,ledger)
 
 
-def manual_workflow(coordinator, directory, pilot=False, recovery_from=None, ask=None):
+def manual_workflow(coordinator, directory, pilot=False, recovery_from=None, ask=None, apis=None):
+    selected_apis=(26,) if pilot else selected_manual_apis(apis)
     capture=source()
     if capture['branch']!='test/mvp-stabilization-j':raise runner.Blocked('Wrong branch')
     directory.mkdir(parents=True,exist_ok=False)
     ledger=dict(schema=1,profile='manual-api26-spanish-pilot' if pilot else 'manual-full-matrix',
-                manual_policy='primary-prefix-v2',source=capture,started=now(),devices={},configurations={})
+                manual_policy='primary-prefix-v2',selected_apis=list(selected_apis),
+                source=capture,started=now(),devices={},configurations={})
     atomic(directory/'matrix.json',ledger)
     build=runner.execute(['bash','./gradlew',':app:assembleDebug',':app:assembleDebugAndroidTest','--max-workers=4','--console=plain'],timeout=900)
     (directory/'build.txt').write_text(build.stdout+'\n'+build.stderr)
     if build.returncode or not same_source(capture,source()):raise runner.Blocked('Matching APK build/source failed')
     apks={k:ROOT/p for k,p in dict(app='app/build/outputs/apk/debug/app-debug.apk',test='app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk').items()}
     ledger['apks']={k:digest(p) for k,p in apks.items()};atomic(directory/'matrix.json',ledger)
-    devices=coordinator.discover();apis=(26,) if pilot else tuple(DEVICES)
-    if not set(apis)<=set(devices):raise runner.Blocked('Faltan emuladores autorizados; no se iniciarán automáticamente')
-    total=len(apis)*(2 if pilot else 5);step=0
-    for api in apis:
+    devices=coordinator.discover()
+    if not set(selected_apis)<=set(devices):raise runner.Blocked('Faltan emuladores seleccionados; no se iniciarán automáticamente')
+    total=len(selected_apis)*(2 if pilot else 5);step=0
+    for api in selected_apis:
         identity=devices[api]
         # Baseline is the current verified device configuration, never a historical snapshot.
         original=coordinator.settings(identity['serial']);verified=manual_configuration(original)
@@ -937,6 +967,7 @@ def main(argv=None):
     for cmd in ('run','resume','restore','report','pilot','manual-pilot','manual-run'):
         p=sub.add_parser(cmd);p.add_argument('--output',required=True,type=Path)
         if cmd in ('pilot','manual-pilot'):p.add_argument('--recovery-from',required=(cmd=='pilot'),type=Path)
+        if cmd=='manual-run':p.add_argument('--apis',help='Approved APIs to run, e.g. 27,36; default: 26,27,36')
     args=parser.parse_args(argv);coordinator=Coordinator(args.adb)
     try:
         if args.command in ('run','resume','restore','pilot','manual-pilot','manual-run') and (platform.system()!='Darwin' or runner.native_architecture()!='arm64'):
@@ -965,7 +996,8 @@ def main(argv=None):
                     if previous.parent != ROOT/'build/j-m3-b2b' or previous==directory:
                         raise ValueError('Recovery must reference a separate retained build/j-m3-b2b run')
                 if args.command in ('manual-pilot','manual-run'):
-                    result=manual_workflow(coordinator,directory,args.command=='manual-pilot',previous)
+                    result=manual_workflow(coordinator,directory,args.command=='manual-pilot',previous,
+                                           apis=getattr(args,'apis',None))
                 else:result=workflow(coordinator,directory,args.command=='resume',args.command=='pilot',previous)
             atomic(directory/'summary.json',result)
         print(json.dumps(result,indent=2));return {'PASS':0,'FAIL':1}.get(result.get('status'),2 if args.command!='inspect' else 0)

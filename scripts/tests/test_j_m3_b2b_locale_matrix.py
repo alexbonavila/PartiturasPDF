@@ -65,7 +65,7 @@ class LocaleCoordinatorTests(unittest.TestCase):
         c=m.Coordinator('adb')
         replies={'sys.boot_completed':0}
         def fake_command(*args,**kwargs):
-            if args[-1]=='name':return 'Tablet_27_Edited\\nOK'
+            if args[-1]=='name':return 'Tablet_27_Edited\nOK'
             if args[-1]=='sys.boot_completed':
                 replies['sys.boot_completed']+=1
                 if replies['sys.boot_completed']==1:
@@ -81,7 +81,7 @@ class LocaleCoordinatorTests(unittest.TestCase):
     def test_getprop_exhaustion_stays_blocked(self):
         c=m.Coordinator('adb')
         def fake_command(*args,**kwargs):
-            if args[-1]=='name':return 'Tablet_27_Edited\\nOK'
+            if args[-1]=='name':return 'Tablet_27_Edited\nOK'
             if args[-1]=='sys.boot_completed':raise m.runner.Blocked('ADB unavailable')
             return {'ro.build.version.sdk':'27','ro.product.cpu.abi':'arm64-v8a',
                     'ro.kernel.qemu':'1'}.get(args[-1],'')

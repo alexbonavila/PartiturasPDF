@@ -151,3 +151,15 @@ configuration or offline networking. Earlier NOT RUN text retains its planning
 context; catalogue and historical host reports are unchanged. Actual language
 changes, visible translations, disconnected networking, AAB delivery and changed
 settings restoration remain unresolved. M3-B2-B/C and M3-C are not started.
+
+## M3-B2-B selected manual locale progress — 2026-10-22
+
+[Manual locale evidence closeout](J_M3_B2B_ANDROID_EVIDENCE.md) records owner-reported
+12/12 configurations and 36/36 primary selected JUnit executions PASS across three
+separate API26/API27/API36 records, with baseline and exact restoration PASS per API.
+The original global API26 record remains BLOCKED; it is not one three-device PASS run.
+Raw artifacts are unavailable for independent review here. This dated update preserves
+the original mapping and NOT RUN planning context above. Live Activity transitions,
+genuine disconnected offline journeys, AAB language delivery, comprehensive linguistic
+review and physical acceptance remain outside the achieved scope. No new execution,
+M3-C completion or formal Phase J acceptance is implied; J08 stays deferred to Phase R.

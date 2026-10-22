@@ -444,3 +444,39 @@ cannot become PASS. Full French secondary ordering remains mandatory. No disconn
 offline journey, AAB delivery, contextual-error screen, external SAF, physical-device,
 PDFium diagnostic, performance/endurance or M3-C acceptance is supplied by this workflow.
 All new manual Android execution remains **NOT RUN** until the owner actually runs it.
+
+## M3-B2-B execution closeout — 2026-10-22
+
+[Manual Android locale evidence](J_M3_B2B_ANDROID_EVIDENCE.md) consolidates the owner's
+local `primary-prefix-v2` report results: **12/12 configurations and 36/36 primary
+selected JUnit method executions PASS**, with baseline and exact restoration PASS
+per API26/API27/API36. Raw directories are unavailable in this review checkout;
+these are owner-reported outcomes, not an independent raw-artifact verification.
+
+The three original records remain separate:
+
+- API26: `22ffdb4262dc4a12a77bdcf6b570ac0f`, revision
+  `fe79cf269e6efbe30bd98a030cc945eb010bc180`. Its global aggregate remains **BLOCKED**
+  after the later API27 ADB interruption; API26's completed four cells and restoration
+  are reported PASS independently.
+- API27: `a328d39d16814b1497dba051d04e7408`, revision
+  `6b2294b715abbfd8787c0878caf8d95116fa4e35`, selected `[27]`, original aggregate PASS.
+- API36: `ee42080c88c44a76910f734558e7ef63`, same revision, selected `[36]`, original
+  aggregate PASS. The earlier extra-French restoration check was BLOCKED; final
+  verification passed after the owner corrected the list. That history is preserved.
+
+`manual-run --apis` selects only the approved APIs explicitly requested (unique values
+among 26,27,36); omitted `--apis` selects all three. Separate subset results may be
+summarized together without modifying their historical reports or claiming one global
+PASS. Baseline/restoration instrumentation is auxiliary and excluded from the 36.
+
+The earlier exact-list/recovery examples and NOT RUN statements retain their dated
+implementation/planning context. The simplified primary-priority workflow above
+supersedes those examples for these executions: secondary languages may remain after
+the required prefix, while restoration must recover the complete recorded original
+list. No historical text or raw evidence is relabeled.
+
+Live Activity locale transition remains **NOT RUN**. Offline guest operation, AAB
+delivery, comprehensive linguistic/error-screen review, genuine SAF, physical tablet,
+TalkBack, M3-C and later Phase J acceptance remain outstanding. M3-B2-C offline/AAB
+planning requires separate scope and authorization; this closeout starts no execution.

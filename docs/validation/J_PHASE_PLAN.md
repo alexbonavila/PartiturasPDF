@@ -123,3 +123,34 @@ configuration or offline networking. Earlier NOT RUN text retains its planning
 context; catalogue and historical host reports are unchanged. Actual language
 changes, visible translations, disconnected networking, AAB delivery and changed
 settings restoration remain unresolved. M3-B2-B/C and M3-C are not started.
+
+## M3-B2-B manual locale selected-scope closeout — 2026-10-22
+
+[Manual Android locale evidence](J_M3_B2B_ANDROID_EVIDENCE.md) records owner-verified
+local outcomes across API26/API27/API36: four configurations and 12 primary selected
+JUnit executions per API, **12/12 configurations and 36/36 primary executions PASS**
+in total, with baseline and exact original-order restoration PASS for each API.
+Raw evidence is unavailable in this review checkout; the report explicitly attributes
+results to the owner and does not claim an independent artifact audit.
+
+This is accumulated per-API evidence from three separate runs, not a single successful
+uninterrupted global matrix. API26 run `22ffdb4262dc4a12a77bdcf6b570ac0f` at
+`fe79cf269e6efbe30bd98a030cc945eb010bc180` remains globally **BLOCKED** after an API27
+ADB interruption. API27 run `a328d39d16814b1497dba051d04e7408` and API36 run
+`ee42080c88c44a76910f734558e7ef63`, both at
+`6b2294b715abbfd8787c0878caf8d95116fa4e35`, are independent subset PASS records.
+The API36 extra-language restoration blocker and subsequent successful correction
+remain part of the reported history. Auxiliary invocations are excluded from the 36.
+
+M3-B2-B may be treated as complete for planning in its selected configuration,
+localization, JUnit, baseline and restoration dimensions, subject to provenance review
+and owner formal acceptance. Earlier dated NOT RUN statements, catalogue projections
+and M2/M3-A/M3-B2-A evidence retain their original classifications. Live Activity locale
+transition is still NOT RUN; these results establish behavior under selected configurations.
+
+Proposed next work is M3-B2-C genuine offline validation and separately scoped AAB
+language-delivery acceptance (earlier plans also call AAB work M3-B2-D). Neither is
+PASS or started here. M3-C coverage attribution, open M2 SAF/recovery/diagnostic gaps,
+physical Android 8.1, accessibility, linguistic review and performance/memory/endurance
+remain outstanding. M4–M7 and J14/J15 final consolidation are not completed by this
+report. **J08 remains DEFERRED TO PHASE R.** No broader M3-B or Phase J acceptance is granted.

@@ -154,3 +154,26 @@ PASS or started here. M3-C coverage attribution, open M2 SAF/recovery/diagnostic
 physical Android 8.1, accessibility, linguistic review and performance/memory/endurance
 remain outstanding. M4–M7 and J14/J15 final consolidation are not completed by this
 report. **J08 remains DEFERRED TO PHASE R.** No broader M3-B or Phase J acceptance is granted.
+
+## M3-B2-C selected functional offline closeout — 2026-10-22
+
+[Android offline evidence](J_M3_B2C_ANDROID_OFFLINE_EVIDENCE.md) records **15/15 primary
+selected JUnit executions PASS** (five methods per API26/API27/API36), passing recorded
+before/after offline checks and 5/5/12 passing during-test monitoring samples. These
+are owner-reported results from the supplied final post-run restoration projection;
+original raw evidence is unavailable for independent inspection in this checkout.
+Monitoring was sampled, not continuous packet-level isolation.
+
+Execution `build/j-m3-b2c/offline-three-e7b58701943e415f9fb9d219c11dd24a` at
+`6b2294b715abbfd8787c0878caf8d95116fa4e35` remains originally **BLOCKED**. API26/API27
+initial radio restoration was BLOCKED; API36 initial restoration was PASS. The separate
+projection confirms later restoration PASS on all three APIs to original airplane=0,
+Wi-Fi=1, with matching device/API/boot flags. It does not rewrite the original summary.
+
+M3-B2-C selected functional offline scope may be treated as completed on this
+owner-reported basis, subject to formal owner acceptance and the documented provenance
+limits. Earlier dated NOT RUN planning and M3-B2-B histories remain unchanged. This
+closes neither all of M3-B nor Phase J. Proposed next work is **AAB language-delivery
+validation**, not started here. Genuine external SAF, physical tablet, accessibility,
+linguistic/live-transition, unstated recovery/performance/endurance, M3-C and remaining
+Phase J acceptance remain open. **J08 remains DEFERRED TO PHASE R.**

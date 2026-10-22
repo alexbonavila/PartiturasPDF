@@ -163,3 +163,20 @@ the original mapping and NOT RUN planning context above. Live Activity transitio
 genuine disconnected offline journeys, AAB language delivery, comprehensive linguistic
 review and physical acceptance remain outside the achieved scope. No new execution,
 M3-C completion or formal Phase J acceptance is implied; J08 stays deferred to Phase R.
+
+## M3-B2-C selected offline execution update — 2026-10-22
+
+[Offline evidence closeout](J_M3_B2C_ANDROID_OFFLINE_EVIDENCE.md) attributes 5/5 selected
+JUnit PASS to each API26/API27/API36 (15 primary executions), passing before/after
+offline checks and 5/5/12 passing during-test samples to the owner's final projection.
+The original run remains BLOCKED: API26/API27 initial restoration was BLOCKED, while
+API36's was PASS. Later original-radio-settings restoration is separately reported
+PASS for all APIs with matching identity flags. Raw artifacts are unavailable here;
+these are owner-reported results, not an independent raw-JUnit or live-device audit.
+
+Selected functional offline scope is completed on that basis; sampled networking is
+not continuous packet-level isolation or an exhaustive locale/offline cross-product.
+AAB language delivery is the next proposed workstream and remains unexecuted. Genuine
+external SAF, physical-device, linguistic/accessibility, live-transition, M3-C and other
+Phase J acceptance remain open. Earlier mappings and historical statuses are preserved;
+J08 remains deferred to Phase R. No new Android execution is introduced by this update.

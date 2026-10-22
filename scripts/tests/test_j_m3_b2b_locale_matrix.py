@@ -567,7 +567,7 @@ class ManualLocaleTests(unittest.TestCase):
                 current[:]=next(steps);events.append(('owner',list(current)));return ''
             def stage(device,expected,tags,action,directory):
                 events.append((action,expected,list(tags)))
-                if tags==['es-ES'] and expected=={m.LOCALE}:
+                if tags and tags[0]=='es-ES' and expected=={m.LOCALE}:
                     if failure=='interrupt':raise KeyboardInterrupt
                     if failure=='functional':return {'status':'FAIL'}
                 return {'status':'PASS'}

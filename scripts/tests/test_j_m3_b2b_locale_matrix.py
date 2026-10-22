@@ -612,11 +612,12 @@ class ManualLocaleTests(unittest.TestCase):
             entry.update(baseline_path='baseline',restoration_status='PENDING')
             ledger['configurations']['26-es-ES']=dict(locale='locale',tests='tests',selection={'path':'selection','sha256':'x'})
             stage=dict(action='manual',device=self.identity,installed=ledger['apks'],
-                       source=self.capture,tags=['es-ES','en-US'])
+                       source=dict(self.capture,run='a'*32,started='stage-one'),tags=['es-ES','en-US'])
+            reader=dict(stage,source=dict(self.capture,run='b'*32,started='stage-two'))
             baseline=dict(stage,tags=['en-US'],action='manual')
             select=dict(attempts=[dict(evidence=dict(locales=['es-ES','en-US']))])
             def validated(folder,expected):
-                return baseline if folder.name=='baseline' else stage
+                return baseline if folder.name=='baseline' else reader
             with patch.object(m,'validate_stage',side_effect=validated), \
                  patch.object(m,'read_json',return_value={'systemLocales':['en-US']}), \
                  patch.object(m,'require_locale_evidence'), \
@@ -627,6 +628,29 @@ class ManualLocaleTests(unittest.TestCase):
             self.assertEqual('BLOCKED',report['restoration_status'])
             self.assertEqual('BLOCKED',report['status'])
             self.assertEqual(3,report['verified_primary_executions'])
+
+    def test_v2_report_blocks_mismatched_reader_source_even_when_junit_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);ledger,entry=self.ledger()
+            ledger.update(profile='manual-api26-spanish-pilot',manual_policy='primary-prefix-v2')
+            entry.update(baseline_path='baseline',restoration_status='PENDING')
+            ledger['configurations']['26-es-ES']=dict(locale='locale',tests='tests',selection={'path':'selection','sha256':'x'})
+            locale=dict(action='manual',device=self.identity,installed=ledger['apks'],
+                        source=dict(self.capture,run='a'*32),tags=['es-ES','en-US'])
+            tampered=dict(locale,source=dict(self.capture,run='b'*32,source_digest='different'))
+            baseline=dict(locale,tags=['en-US'])
+            select=dict(attempts=[dict(evidence=dict(locales=['es-ES','en-US']))])
+            def validated(folder,expected):
+                return baseline if folder.name=='baseline' else tampered
+            with patch.object(m,'validate_stage',side_effect=validated), \
+                 patch.object(m,'read_json',return_value={'systemLocales':['en-US']}), \
+                 patch.object(m,'require_locale_evidence'), \
+                 patch.object(m,'validate_manual_selection',return_value=select), \
+                 patch.object(m,'manual_verified_record',return_value=locale):
+                report=m.manual_report(root,ledger)
+            self.assertEqual('BLOCKED',report['functional_status'])
+            self.assertEqual('BLOCKED',report['configurations']['26-es-ES']['junit'])
+            self.assertEqual(0,report['verified_primary_executions'])
 
     def test_manual_report_keeps_localization_and_live_transition_separate(self):
         with tempfile.TemporaryDirectory() as tmp:

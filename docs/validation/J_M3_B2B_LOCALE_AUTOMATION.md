@@ -1,3 +1,32 @@
+## Continued manual validation on API27 and API36
+
+After the separately recorded API26 pilot, run only the remaining emulators in a
+**new** evidence directory. This does not mutate or claim to resume the earlier
+15-step run, which remains an archived BLOCKED result. Each selected emulator
+gets its own current baseline, all four locale scenarios and an exact restoration.
+The CLI does not silently include API26:
+
+```bash
+cd "/Volumes/Intenso/Code/Prs/PartiturasPDF"
+git pull --ff-only origin test/mvp-stabilization-j
+TMPDIR=/private/tmp python3 -m unittest discover -s scripts/tests -p 'test_j_m3_b2b_locale_matrix.py' -q
+matrix="build/j-m3-b2b/$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+python3 scripts/j_m3_b2b_locale_matrix.py manual-run --apis 27,36 --output "$matrix"
+python3 scripts/j_m3_b2b_locale_matrix.py report --output "$matrix"
+```
+
+`--apis` accepts unique comma-separated API values among `26,27,36`; the
+default remains all three. Reports declare `selected_apis` and require complete
+coverage only for that explicit selection. Do not merge evidence runs together or
+claim that a subset alone proves the three-device matrix.
+
+Read-only `getprop` calls used in emulator identity validation receive at most
+three attempts after ADB transport failure. No retries are applied to Android
+instrumentation, APK installation, language edits, or assertions. Identity
+checks remain required and any persistent failure is BLOCKED.
+
+---
+
 ## Simplified manual acceptance (current workflow)
 
 The manual acceptance commands now use **primary-language precedence**, not exact matching

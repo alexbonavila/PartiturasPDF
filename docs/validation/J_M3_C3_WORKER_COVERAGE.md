@@ -199,3 +199,32 @@ were rerun for these corrections: **63 coverage-runner, 14 persistence-policy an
 Read-only artifact review reconfirmed all 13 void signatures, release isolation and
 the unchanged 658-line/452-branch compiled B5 model. No Android runtime execution
 was performed.
+
+## Post-execution result — 2026-10-23
+
+The owner reports the new API26/arm64-v8a campaign at
+`b2cff985ee3d9204c3d46728636afdb329d1cc22` completed **PASS / exit 0**:
+**631/631 JVM and 431/431 standard Android tests PASS** (1,062 tests),
+**17 isolated-worker snapshots VALIDATED**, coverage VERIFIED, zero failures/blockers
+and cleanup PASS. The fourteen fresh-process diagnostics remain excluded and NOT RUN
+in this campaign; snapshots are not additional tests.
+
+Reported scoped gates: A1 230/231 lines (99.57%), 222/224 branches (99.11%);
+**B5 623/658 lines (94.68%), 375/452 branches (82.96%)**; C05 metadata 207/210
+(98.57%), 167/177 (94.35%); preferences 35/35 and 12/12 (both 100%). All existing
+90% line / 80% branch gates passed. B5's 658/452 denominator, including the worker,
+is unchanged. No full source coverage or post-retirement probes are claimed.
+
+Original directory:
+`build/local-e2e/reports/20261023T112313Z-ebebb92a62a248afa70d6f412f03c464/`.
+Archive: `20261023T112313Z-ebebb92a62a248afa70d6f412f03c464.zip`.
+Supplied SHA-256: `612458cb1166a347782d7ed7dc4082b965ce1fe74a215481d09143e80ca8b47b`.
+The archive/run directory is unavailable here. These are **owner-provided verified
+findings**, not newly parsed or rehashed artifacts; this task performed no test rerun.
+Recorded worker provenance retains the limitations above and is not cryptographic
+OS or installed-binary attestation.
+
+The preceding NOT RUN/pending statements preserve implementation-time history.
+The [M3 technical closeout](J_M3_CLOSEOUT.md) records the subsequent selected-scope
+completion and remaining limitations. Formal owner acceptance, Phase J integration
+and M4–M7 remain separate; M4 is planned only. **J08 stays DEFERRED TO PHASE R.**

@@ -6,6 +6,18 @@ PR [#24](https://github.com/alexbonavila/PartiturasPDF/pull/24) integrated Phase
 
 `docs/mvp-release-closeout` prepares the documentation-only milestone. After owner review and merge, a proposed annotated `v1.0.0-mvp` tag may be created on the resulting `main` commit. No tag exists yet. Future editing, annotation and Google Drive development requires separate authorization. See [MVP release record](releases/MVP_RELEASE.md).
 
+## Phase J branch progress — 2026-10-23
+
+[M3 technical closeout](validation/J_M3_CLOSEOUT.md) records selected compatibility,
+locale/offline/local-delivery and A1/B5/C05 coverage completion at
+`b2cff985ee3d9204c3d46728636afdb329d1cc22` on **unmerged**
+`test/mvp-stabilization-j`. The final API26 campaign is recorded from supplied verified
+owner findings; raw artifacts are unavailable here. Scoped evidence and remaining
+manual/restoration/provenance limits are preserved, not waived. This is not a main
+integration, release or formal Phase J acceptance. M4 — memory and performance is
+next planned, subject to separate authorization; M4–M7 remain outstanding.
+**J08 remains DEFERRED TO PHASE R.**
+
 **The following sections are archived snapshots from before PR #24; their 'not merged' and 'unimplemented I' statements are no longer current.**
 
 ## Historical phase I snapshot before merge (2026-10-20)

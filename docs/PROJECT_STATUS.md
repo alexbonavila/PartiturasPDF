@@ -1,5 +1,27 @@
 # Current project status — PartiturasPDF
 
+## Phase J / M3 technical verification — 2026-10-23 (unmerged branch)
+
+M3's selected compatibility, locale/offline/local AAB delivery and scoped coverage
+work is technically completed on `test/mvp-stabilization-j`, at implementation and
+coverage execution revision `b2cff985ee3d9204c3d46728636afdb329d1cc22`.
+**This Phase J work is not merged into `main`.** See the
+[M3 closeout](validation/J_M3_CLOSEOUT.md) for revision-specific evidence and limits.
+
+The owner-provided verified API26/arm64-v8a campaign reports PASS/0: 631 JVM + 431
+standard Android tests PASS, 17 validated isolated-worker captures, coverage VERIFIED
+and cleanup PASS. A1/B5/C05 gates passed; B5 measured 623/658 lines (94.68%) and
+375/452 branches (82.96%), with unchanged 90%/80% gates and denominator. The archive
+is unavailable in this checkout; no independent raw-artifact review or new CI result
+is claimed here. Fourteen diagnostics were excluded, not executed PASS.
+
+Earlier API26/27/36 compatibility and selected manual locale/offline/AAB results
+retain their original sources, owner-reported limits, restoration gaps and historical
+blockers. Formal owner acceptance remains pending. M4–M7 and final Phase J acceptance
+are outstanding; **M4 — memory and performance** is planned next, not started or
+authorized by this update. **J08 remains DEFERRED TO PHASE R.** Main/MVP release
+records below remain unchanged; this is neither a merge nor a release declaration.
+
 ## Current MVP state — 2026-10-20
 
 **Implementation merged:** [PR #24](https://github.com/alexbonavila/PartiturasPDF/pull/24) merged Phase I into `main` by squash commit `f06197a75a2e420fb87153c0e64e3fe2a28841ea` on 2026-10-20. The final feature commit `aebddfd8adf0bab2954af9918140d668269d0a1f` has an **identical Git tree** to merged `main`: no Phase I files were omitted.

@@ -228,3 +228,28 @@ emulator; no automatic API27/36 rerun or worker bridge is proposed. Preserve all
 source/class identity checks and historical artifacts. M3-C2 execution, M3-C3 closeout,
 M4 and formal Phase J acceptance remain unexecuted/unaccepted by this audit.
 **J08 remains DEFERRED TO PHASE R.** No next milestone starts automatically.
+
+## M3 technical closeout — 2026-10-23
+
+[M3 closeout and evidence provenance](J_M3_CLOSEOUT.md) records technical completion
+of the selected M3-A/M3-B/M3-C scopes on the **unmerged** Phase J branch, final
+implementation/execution revision `b2cff985ee3d9204c3d46728636afdb329d1cc22`.
+M3-A retains independently reviewed 18/18 per API26/27/36; M3-B retains its scoped
+J09, owner-reported manual locale/offline and local bundletool delivery outcomes,
+with original global blockers and AAB restoration/attestation limitations unchanged.
+
+The new owner-operated API26 coverage campaign reports **PASS/0**, 631 JVM + 431
+standard Android = **1,062 tests PASS**, 17 worker captures VALIDATED, coverage
+VERIFIED and cleanup PASS, with no failures/blockers. Reported A1/B5/C05 gates pass;
+B5 is **623/658 lines (94.68%), 375/452 branches (82.96%)** with unchanged denominator
+and thresholds. The archive is unavailable here: these final campaign findings are
+supplied verified owner evidence, not an independent raw-artifact audit in this task.
+Fourteen diagnostics remain excluded/NOT RUN for that campaign. Historical C1/C2
+BLOCKED/NOT MEASURED, C3 implementation NOT RUN and host-only reports are preserved.
+
+**M3 technical completion is not final owner acceptance or Phase J completion.**
+Physical/manual/accessibility, live-transition, external-provider, backup/D2D, delivery
+and restoration limitations remain as detailed in the closeout. No new hosted CI or
+merge is claimed. Next planned milestone: **M4 — memory and performance (J03/J04)**;
+its existing scope is unchanged and no execution is authorized or started here.
+M4–M7 and J14/J15 remain outstanding. **J08 remains DEFERRED TO PHASE R.**

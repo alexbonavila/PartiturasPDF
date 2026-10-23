@@ -177,3 +177,29 @@ closes neither all of M3-B nor Phase J. Proposed next work is **AAB language-del
 validation**, not started here. Genuine external SAF, physical tablet, accessibility,
 linguistic/live-transition, unstated recovery/performance/endurance, M3-C and remaining
 Phase J acceptance remain open. **J08 remains DEFERRED TO PHASE R.**
+
+## M3-B2-D AAB language-delivery selected closeout — 2026-10-23
+
+[AAB language-delivery evidence](J_M3_B2D_AAB_LANGUAGE_DELIVERY_EVIDENCE.md) records
+owner-reported successful debug AAB generation from
+`6b2294b715abbfd8787c0878caf8d95116fa4e35`, disabled language splitting, device-specific
+APK generation/installation on API26/API27/API36, and owner-observed offline Spanish,
+Catalan and English Library UI on API26. The app subtree is unchanged at the newer
+documentation baseline; the AAB is not reattributed to a documentation commit.
+
+The owner-local run `build/j-m3-b2d/aab-20261023T073014` and screenshots are unavailable
+here. Screenshot filenames were overwritten during capture; their final language
+correspondence and hashes remain unverified. A separately inspected local AAB supports
+only its own configuration, with no verified identity link to the owner artifact.
+API26 original airplane=0/Wi-Fi=1 and manual final restoration are owner-reported;
+no session-specific final radio output or original/final language ordering verifies
+exact restoration. That limitation is not converted to restoration PASS.
+
+Selected local bundletool delivery/API26 offline language availability may be treated
+as complete for planning, subject to provenance limits and owner acceptance. Earlier
+M3-B2-B and M3-B2-C results retain their dated scope and classifications. Real Play
+delivery, AAB offline language changes on API27/36, all-screen linguistic/accessibility,
+SAF, physical, live-transition, performance/endurance and exact restoration evidence
+remain outside this selected completion. M3-C coverage-attribution readiness is the
+next proposed planning topic, not started here; M4–M7 and formal Phase J acceptance
+remain outstanding. **J08 remains DEFERRED TO PHASE R.**

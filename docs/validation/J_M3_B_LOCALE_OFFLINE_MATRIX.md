@@ -180,3 +180,21 @@ AAB language delivery is the next proposed workstream and remains unexecuted. Ge
 external SAF, physical-device, linguistic/accessibility, live-transition, M3-C and other
 Phase J acceptance remain open. Earlier mappings and historical statuses are preserved;
 J08 remains deferred to Phase R. No new Android execution is introduced by this update.
+
+## M3-B2-D local AAB delivery progress — 2026-10-23
+
+[AAB delivery evidence](J_M3_B2D_AAB_LANGUAGE_DELIVERY_EVIDENCE.md) adds owner-reported
+successful debug AAB/device-specific APK generation and installation on API26/27/36,
+with no language splits, plus owner-observed offline es/ca/en Library UI on API26.
+M3-B2-B locale checks, M3-B2-C selected functional offline checks and this selected
+M3-B2-D local delivery scope are distinct planning completions with their own provenance;
+none constitutes full M3-B acceptance or changes earlier historical statuses.
+
+The AAB remains attributed to `6b2294b715abbfd8787c0878caf8d95116fa4e35`.
+Owner artifacts/images are unavailable here; overwritten screenshot filenames do not
+independently identify their language. Final API26 restoration is owner-reported only,
+without session-specific ADB radio verification or verified original/final locale lists.
+Real Google Play delivery, AAB offline switching on API27/36, all-screen linguistic,
+accessibility, external SAF, physical-tablet, live-transition, performance/endurance,
+M3-C and broader Phase J acceptance remain outstanding. M3-C readiness is proposed only;
+J08 remains deferred to Phase R. No Android campaign or next milestone begins here.

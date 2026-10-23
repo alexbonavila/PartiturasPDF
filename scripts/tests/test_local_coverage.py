@@ -93,6 +93,8 @@ class CoverageRunnerTests(unittest.TestCase):
         self.assertEqual(['adb', '-s', 'emulator-5580', 'shell', 'am', 'instrument', '-w', '-r'], command[:8])
         self.assertIn('coverage', command); self.assertIn('true', command)
         self.assertIn('coverageFile', command)
+        self.assertEqual(1, command.count('notAnnotation'))
+        self.assertEqual(coverage.diagnostics.ANNOTATION, command[command.index('notAnnotation') + 1])
         self.assertEqual(coverage.evidence.APP + '.test/' + coverage.evidence.NORMAL_RUNNER, command[-1])
         self.assertNotIn('class', command)
         self.assertEqual(['adb', '-s', 'emulator-5580', 'exec-out', 'run-as'], self.runtime['execute'].call_args.args[0][:5])
@@ -452,6 +454,97 @@ class CoverageResultPrecedenceTests(unittest.TestCase):
         self.assertEqual('FAIL', self.c.result['status'])
         self.assertIn('later report could not be authenticated', self.c.result['blockers'])
         self.assertIsNotNone(ET.parse(self.c.directory / 'junit.xml').getroot().find('testcase/failure'))
+
+
+class CoverageSelectionTests(unittest.TestCase):
+    def test_current_source_partition_preserves_standard_isolation_and_diagnostic_plan(self):
+        root = Path(__file__).resolve().parents[2]
+        selection = coverage.android_selection(root)
+        complete = coverage.evidence.android_inventory(root / 'app/src/androidTest')
+        standard, assigned = set(selection['standard']), set(selection['diagnostics'])
+        self.assertFalse(standard & assigned)
+        self.assertEqual(complete, standard | assigned)
+        self.assertEqual(sorted(complete), selection['all'])
+        self.assertIn(coverage.evidence.SMOKE, standard)
+        for cls, count in coverage.diagnostics.ISOLATED.items():
+            self.assertEqual(count, sum(name.startswith(cls + '.') for name in standard))
+        self.assertEqual(coverage.diagnostics.invocation_plan(coverage.SCENARIOS),
+                         selection['diagnostic_invocations'])
+        self.assertEqual('NOT RUN', selection['diagnostic_status'])
+        # Capture retains all APK methods, not merely the selected standard subset.
+        source = (root / 'scripts/local_coverage.py').read_text()
+        self.assertIn("'normal', self.android_all", source)
+        self.assertIn('android_inventory=sorted(self.android_all)', source)
+        self.assertIn('android_selection=self.android_selection', source)
+
+    def test_partition_rejects_missing_overlap_duplicate_and_unexpected_source(self):
+        good = dict(standard=['A#a'], assigned=['A#b'], total=2)
+        variants = [dict(good, standard=[]), dict(good, standard=['A#a', 'A#b']),
+                    dict(good, standard=['A#a', 'A#a']), dict(good, assigned=['A#z']),
+                    dict(good, total=3)]
+        for inventory in variants:
+            with self.subTest(inventory=inventory), \
+                    patch.object(coverage.evidence, 'android_inventory', return_value={'A.a', 'A.b'}), \
+                    patch.object(coverage.diagnostics, 'test_inventory', return_value=inventory):
+                with self.assertRaisesRegex(ValueError, 'partition'):
+                    coverage.android_selection(Path('.'))
+
+    def test_existing_annotation_audit_failure_is_not_suppressed(self):
+        with patch.object(coverage.evidence, 'android_inventory', return_value={'A.a'}), \
+                patch.object(coverage.diagnostics, 'test_inventory', side_effect=ValueError('unassigned annotation')):
+            with self.assertRaisesRegex(ValueError, 'unassigned annotation'):
+                coverage.android_selection(Path('.'))
+
+    def test_filter_guard_rejects_absent_wrong_duplicate_or_extra_selection(self):
+        path = '/data/data/app/files/local-coverage-id/coverage.ec'
+        command = ['adb', '-s', 'emulator-5580', 'shell', 'am', 'instrument', '-w', '-r',
+                   '-e', 'coverage', 'true', '-e', 'coverageFile', path,
+                   '-e', 'notAnnotation', coverage.diagnostics.ANNOTATION,
+                   coverage.evidence.APP + '.test/' + coverage.evidence.NORMAL_RUNNER]
+        coverage.validate_android_selection(command, path)
+        wrong = command.copy(); wrong[16] = 'wrong.Annotation'
+        for modified in [command[:14] + command[17:], wrong,
+                         command[:-1] + command[14:17] + command[-1:],
+                         command[:-1] + ['-e', 'class', 'A#a'] + command[-1:]]:
+            with self.subTest(command=modified), self.assertRaisesRegex(ValueError, 'filter'):
+                coverage.validate_android_selection(modified, path)
+
+
+class CoverageSelectionExecutionTests(unittest.TestCase):
+    setUp = CoverageRunnerTests.setUp
+    protocol = CoverageRunnerTests.protocol
+    command = CoverageRunnerTests.command
+    android = CoverageRunnerTests.android
+
+    def test_unexpected_diagnostic_missing_duplicate_and_skipped_results_block(self):
+        diagnostic = coverage.diagnostics.CLEAN[0].replace('#', '.')
+        for records in [[], [(diagnostic, 0)], [(coverage.evidence.SMOKE, 0), (diagnostic, 0)],
+                        [(coverage.evidence.SMOKE, 0), (coverage.evidence.SMOKE, 0)],
+                        [(coverage.evidence.SMOKE, -3)]]:
+            with self.subTest(records=records), self.assertRaises(e2e.Blocked):
+                self.android(android_protocol(records))
+            self.runtime['execute'].assert_not_called()
+
+    def test_inventory_drift_is_checked_before_installation(self):
+        self.c.unchanged = Mock(side_effect=e2e.Blocked('Android test source inventory changed'))
+        with self.assertRaisesRegex(e2e.Blocked, 'source inventory changed'):
+            self.c.android()
+        self.r.adb_command.assert_not_called()
+
+    def test_partition_drift_rejected_even_when_complete_inventory_is_unchanged(self):
+        self.c.unchanged = coverage.CoverageRun.unchanged.__get__(self.c)
+        self.c.frozen = {}; self.c.fingerprint = Mock(return_value={}); self.c.apks = {}
+        self.c.android_selection = dict(all=['A.a', 'A.b'], standard=['A.a'], diagnostics=['A.b'])
+        changed = dict(self.c.android_selection, standard=['A.b'], diagnostics=['A.a'])
+        with patch.object(coverage, 'android_selection', return_value=changed):
+            with self.assertRaisesRegex(e2e.Blocked, 'source inventory changed'):
+                self.c.unchanged()
+
+    def test_changed_source_after_execution_cannot_be_accepted(self):
+        self.c.unchanged = Mock(side_effect=[None, e2e.Blocked('source inventory changed')])
+        with self.assertRaisesRegex(e2e.Blocked, 'source inventory changed'):
+            self.android()
+        self.runtime['execute'].assert_not_called()
 
 
 if __name__ == "__main__":

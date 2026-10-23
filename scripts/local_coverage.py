@@ -14,6 +14,36 @@ import xml.etree.ElementTree as ET
 import local_test_evidence as evidence
 import persistence_coverage as pc
 
+# Reuse the controlled diagnostic policy, including its annotation/assignment audit.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] /
+    'app/src/androidTest/java/com/abdev/partituraspdf/reader'))
+import pdfium_diagnostic_evidence as diagnostics
+from run_pdfium_process_experiments import SCENARIOS
+
+
+def android_selection(root):
+    complete = evidence.android_inventory(root / 'app/src/androidTest')
+    inventory = diagnostics.test_inventory(root, SCENARIOS)
+    standard = {name.replace('#', '.') for name in inventory['standard']}
+    assigned = {name.replace('#', '.') for name in inventory['assigned']}
+    if (len(standard) != len(inventory['standard']) or
+            len(assigned) != len(inventory['assigned']) or standard & assigned or
+            standard | assigned != complete or inventory['total'] != len(complete)):
+        raise ValueError('Android source/standard/diagnostic inventory partition mismatch')
+    return dict(all=sorted(complete), standard=sorted(standard), diagnostics=sorted(assigned),
+                notAnnotation=diagnostics.ANNOTATION,
+                diagnostic_invocations=diagnostics.invocation_plan(SCENARIOS),
+                diagnostic_status='NOT RUN')
+
+
+def validate_android_selection(command, coverage_path):
+    # Fail closed if filtering or coverage arguments drift; never infer execution from exclusion.
+    expected = ['-e', 'coverage', 'true', '-e', 'coverageFile', coverage_path,
+                '-e', 'notAnnotation', diagnostics.ANNOTATION,
+                evidence.APP + '.test/' + evidence.NORMAL_RUNNER]
+    if command[8:] != expected or command[3:8] != ['shell', 'am', 'instrument', '-w', '-r']:
+        raise ValueError('Incorrect Android coverage selection/filter arguments')
+
 
 def file_inventory(directory):
     return {p.relative_to(directory).as_posix(): pc.digest(p) for p in sorted(directory.rglob('*')) if p.is_file()}
@@ -129,7 +159,7 @@ class CoverageRun:
         for path, sha in self.apks.items():
             if pc.digest(Path(path)) != sha:
                 raise self.Blocked('Coverage APK changed during capture')
-        if evidence.android_inventory(self.root / 'app/src/androidTest') != self.android_expected:
+        if android_selection(self.root) != self.android_selection:
             raise self.Blocked('Android test source inventory changed during capture')
 
     def retain_classes(self):
@@ -164,7 +194,9 @@ class CoverageRun:
         if (not self.directory.resolve().is_relative_to(self.root.resolve()) or
                 any(path.is_symlink() for path in [self.directory, *self.directory.parents])):
             raise self.Blocked('Coverage reports require a non-symlink home within this checkout; no AVD was touched')
-        self.android_expected = evidence.android_inventory(self.root / 'app/src/androidTest')
+        self.android_selection = android_selection(self.root)
+        self.android_all = set(self.android_selection['all'])
+        self.android_expected = set(self.android_selection['standard'])
         smoke = evidence.APP + '.ExampleUnitTest.addition_isCorrect'
         self.jvm_expected = evidence.android_inventory(self.root / 'app/src/test', smoke)
         # Debug JVM test helpers are intentionally part of the existing actual JVM suite.
@@ -191,7 +223,7 @@ class CoverageRun:
             self.apks[str(source)] = pc.digest(source)
             self.apks[str(target)] = pc.digest(target)
         self.result['android_instrumentation'] = evidence.inspect_coverage_apk(self.directory / 'app-debug.apk')
-        self.result['apk_mode'] = self.r.verify_apk_mode(self.directory / 'app-debug-androidTest.apk', 'normal', self.android_expected)
+        self.result['apk_mode'] = self.r.verify_apk_mode(self.directory / 'app-debug-androidTest.apk', 'normal', self.android_all)
         self.frozen = self.fingerprint()
         pc.write_json(self.directory / 'classes.json', self.frozen)
         self.retain_classes()
@@ -202,7 +234,8 @@ class CoverageRun:
         capture = dict(run=self.r.run_id, commit=self.r.summary.get('commit'),
             working_tree=self.r.summary.get('working_tree'), host=host, device=self.r.summary['device'],
             versions=versions, apks=self.apks, jvm_inventory=sorted(self.jvm_expected),
-            android_inventory=sorted(self.android_expected))
+            android_inventory=sorted(self.android_all),
+            android_selection=self.android_selection)
         pc.write_json(self.directory / 'capture.json', capture)
         # Existing C05 prepare is invoked only AFTER full ownership, boot and build checks.
         self.gradle('prepare.log', [':app:preparePersistenceCoverageRun'])
@@ -270,6 +303,7 @@ class CoverageRun:
 
     def android(self):
         self.result['android_status'] = 'BLOCKED'
+        self.unchanged()
         for name in ('app-debug.apk', 'app-debug-androidTest.apk'):
             self.r.adb_command('install', '-r', str(self.directory / name), timeout=120)
         component = evidence.APP + '.test/' + evidence.NORMAL_RUNNER
@@ -287,13 +321,16 @@ class CoverageRun:
         coverage_path = '/data/data/' + evidence.APP + '/' + self.remote + '/coverage.ec'
         self.r.identify(boot=True)
         command = [self.r.adb, '-s', self.r.serial, 'shell', 'am', 'instrument', '-w', '-r',
-                   '-e', 'coverage', 'true', '-e', 'coverageFile', coverage_path, component]
+                   '-e', 'coverage', 'true', '-e', 'coverageFile', coverage_path,
+                   '-e', 'notAnnotation', diagnostics.ANNOTATION, component]
+        validate_android_selection(command, coverage_path)
         cases, blocker = [], None
         directory = self.directory / 'android-junit'
         directory.mkdir(exist_ok=True)
         try:
             self.instrumentation_started = True
             process = self.r.command('coverage/instrumentation.log', command, timeout=1200)
+            self.unchanged()
             cases = evidence.parse_android(process.stdout + '\n' + process.stderr, self.android_expected)
             self.instrumentation_completed = True
             self.result['android_tests'] = len(cases)

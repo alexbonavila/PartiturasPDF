@@ -385,7 +385,8 @@ class LocalFreshnessAndFinalizationTests(unittest.TestCase):
             source = root / 'app/src/main/java/example.kt'; source.parent.mkdir(parents=True)
             source.write_text('before')
             args = Namespace(local_output=output, gradle_version='9', agp_version='9', jdk_version='25', jacoco_version='0.8.14')
-            with patch.object(pc, 'ROOT', root), patch.object(pc.subprocess, 'check_output', return_value='same status'):
+            with patch.object(pc, 'ROOT', root), patch.object(pc.subprocess, 'check_output', return_value='same status'), \
+                    patch.object(pc, 'java', return_value={}):
                 before = pc.current_build(args)
                 source.write_text('after')
                 after = pc.current_build(args)

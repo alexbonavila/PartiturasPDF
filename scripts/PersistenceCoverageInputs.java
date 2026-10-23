@@ -67,6 +67,37 @@ public class PersistenceCoverageInputs {
         if (required && result.isEmpty()) throw new IOException("No persistence classes found");
         return result;
     }
+    /** Supplemental identities only: never merge javac/AIDL into Kotlin report denominators. */
+    static Map<String, Object> generatedInventory(Path classesDirectory) throws Exception {
+        String sourceProperty = System.getProperty("local.coverage.sources");
+        if (sourceProperty == null) return Map.of(); // Existing C05 package-only behavior.
+        Path aidl = Path.of(sourceProperty).resolveSibling("aidl");
+        if (!Files.isDirectory(aidl)) return Map.of();
+        Set<String> declarations = new TreeSet<>();
+        try (var paths = Files.walk(aidl)) {
+            for (Path path : paths.filter(p -> p.toString().endsWith(".aidl")).toList()) {
+                String name = aidl.relativize(path).toString().replace(File.separatorChar, '/');
+                declarations.add(name.substring(0, name.length() - 5));
+            }
+        }
+        if (declarations.isEmpty()) return Map.of();
+        Path intermediates = classesDirectory.getParent().getParent().getParent().getParent();
+        Path javac = intermediates.resolve("javac/debug/compileDebugJavaWithJavac/classes");
+        if (!Files.isDirectory(javac)) throw new IOException("Missing original generated AIDL javac bytecode");
+        Map<String, Object> result = new TreeMap<>();
+        for (var item : inventory(javac, false).entrySet()) {
+            String name = item.getKey(), outer = name.split("\\$", 2)[0];
+            @SuppressWarnings("unchecked") var entry = (Map<String, Object>) item.getValue();
+            String source = outer.substring(outer.lastIndexOf('/') + 1) + ".java";
+            if (declarations.contains(outer) && source.equals(entry.get("source")))
+                result.put(name, entry);
+        }
+        for (String name : declarations)
+            if (scoped(name) && !result.containsKey(name))
+                throw new IOException("Missing original generated AIDL class: " + name);
+        return result;
+    }
+
     static Map<String, Object> testInventory(Path classesDirectory) throws Exception {
         Path intermediates = classesDirectory.getParent().getParent().getParent().getParent();
         Map<String, Object> tests = new TreeMap<>();
@@ -89,6 +120,13 @@ public class PersistenceCoverageInputs {
         return readInputs(classes, Map.of(), files);
     }
     static List<Object> readInputs(Map<String, Object> classes, Map<String, Object> tests, String[] files) throws Exception {
+        return readInputs(classes, tests, Map.of(), files);
+    }
+    static List<Object> readInputs(Map<String, Object> classes, Map<String, Object> tests,
+                                  Map<String, Object> generated, String[] files) throws Exception {
+        if (!Collections.disjoint(classes.keySet(), generated.keySet()) ||
+                !Collections.disjoint(tests.keySet(), generated.keySet()))
+            throw new IOException("Generated AIDL class-name collision");
         Map<String, ExecutionData> identities = new HashMap<>();
         Map<Long, String> idNames = new HashMap<>();
         List<Object> results = new ArrayList<>();
@@ -96,6 +134,7 @@ public class PersistenceCoverageInputs {
             List<Object> sessions = new ArrayList<>();
             Map<String, Object> records = new TreeMap<>();
             Map<String, Object> testRecords = new TreeMap<>();
+            Map<String, Object> generatedRecords = new TreeMap<>();
             Map<String, boolean[]> mergedProbes = new HashMap<>();
             try (InputStream stream = new BufferedInputStream(Files.newInputStream(Path.of(file)))) {
                 stream.mark(5);
@@ -110,9 +149,10 @@ public class PersistenceCoverageInputs {
                     String oldName = idNames.putIfAbsent(e.getId(), e.getName());
                     if (oldName != null && !oldName.equals(e.getName())) throw new IllegalStateException("One class ID has multiple names");
                     if (!scoped(e.getName())) return; // Dependencies/test classes are not report denominators.
+                    boolean isGenerated = generated.containsKey(e.getName());
                     boolean isTest = !classes.containsKey(e.getName()) && tests.containsKey(e.getName());
                     @SuppressWarnings("unchecked") Map<String, Object> c = (Map<String, Object>)
-                        (isTest ? tests : classes).get(e.getName());
+                        (isGenerated ? generated : isTest ? tests : classes).get(e.getName());
                     if (c == null) throw new IllegalStateException("Unexpected persistence execution class: " + e.getName());
                     if (!c.get("id").equals(Long.toUnsignedString(e.getId(), 16))) throw new IllegalStateException("Class ID mismatch: " + e.getName());
                     if (((Number)c.get("probes")).intValue() != e.getProbes().length) throw new IllegalStateException("Probe count mismatch: " + e.getName());
@@ -122,12 +162,13 @@ public class PersistenceCoverageInputs {
                         merged[i] |= e.getProbes()[i];
                         if (merged[i]) covered++;
                     }
-                    (isTest ? testRecords : records).put(e.getName(), Map.of("id", c.get("id"), "probes", e.getProbes().length, "coveredProbes", covered));
+                    (isGenerated ? generatedRecords : isTest ? testRecords : records).put(e.getName(), Map.of("id", c.get("id"), "probes", e.getProbes().length, "coveredProbes", covered));
                 });
                 while (reader.read()) { }
             }
             if (sessions.isEmpty() || records.isEmpty()) throw new IOException("Missing sessions or persistence records: " + file);
-            results.add(Map.of("path", file, "sessions", sessions, "records", records, "testRecords", testRecords));
+            results.add(Map.of("path", file, "sessions", sessions, "records", records, "testRecords", testRecords,
+                "generatedRecords", generatedRecords));
         }
         return results;
     }
@@ -156,8 +197,12 @@ public class PersistenceCoverageInputs {
         Map<String, Object> classes = inventory(Path.of(args[1]));
         if (args[0].equals("inventory")) System.out.println(json(classes));
         else if (args[0].equals("test-inventory")) System.out.println(json(testInventory(Path.of(args[1]))));
-        else if (args[0].equals("validate") && args.length > 2)
-            System.out.println(json(Map.of("classes", classes, "inputs", readInputs(classes, testInventory(Path.of(args[1])), Arrays.copyOfRange(args, 2, args.length)))));
+        else if (args[0].equals("generated-inventory")) System.out.println(json(generatedInventory(Path.of(args[1]))));
+        else if (args[0].equals("validate") && args.length > 2) {
+            Map<String, Object> generated = generatedInventory(Path.of(args[1]));
+            System.out.println(json(Map.of("classes", classes, "generatedClasses", generated,
+                "inputs", readInputs(classes, testInventory(Path.of(args[1])), generated, Arrays.copyOfRange(args, 2, args.length)))));
+        }
         else throw new IllegalArgumentException("Unknown mode or missing execution inputs");
     }
 }

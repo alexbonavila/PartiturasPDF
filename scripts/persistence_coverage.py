@@ -63,6 +63,8 @@ def current_build(args) -> dict:
             "ci": {name: os.environ.get(name) for name in
                    ["GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB", "GITHUB_SHA"]}}
     if getattr(args, "local_output", None):
+        # Supplemental AIDL bytecode is authenticated, never a handwritten report scope.
+        metadata["generatedClasses"] = java(args, "generated-inventory")
         metadata["sourceHashes"] = {str(p.relative_to(ROOT)): digest(p) for p in sorted((ROOT / "app/src").rglob("*")) if p.is_file()}
         metadata["buildFiles"] = {name: digest(ROOT / name) for name in [
             "app/build.gradle.kts", "build.gradle.kts", "gradle.properties", "gradle/libs.versions.toml",

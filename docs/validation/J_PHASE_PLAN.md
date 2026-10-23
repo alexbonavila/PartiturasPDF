@@ -203,3 +203,28 @@ SAF, physical, live-transition, performance/endurance and exact restoration evid
 remain outside this selected completion. M3-C coverage-attribution readiness is the
 next proposed planning topic, not started here; M4–M7 and formal Phase J acceptance
 remain outstanding. **J08 remains DEFERRED TO PHASE R.**
+
+## M3-C1 coverage/evidence audit — 2026-10-23
+
+[Coverage audit](J_M3_C1_COVERAGE_AUDIT.md) inspects existing A1/B5/C05/local-production
+infrastructure and retained evidence without tests, Gradle, collection or device work.
+No current source-attributed coverage percentage is independently VERIFIED. The JVM
+binary passes existing class-ID/probe validation, but its complete producer chain is
+missing; A1 XML/JVM evidence remains AVAILABLE_UNVERIFIED. The retained Android `.ec`
+is an error message, not JaCoCo data. C05 run/provenance and a current combined report
+are absent. Historical F/G/H XML counters agree with their register but hashes do not;
+partial class matches cannot establish current coverage. Earlier results are preserved.
+
+Authentic isolated worker coverage remains **BLOCKED / NOT MEASURED**, not zero:
+app runner data cannot attribute another isolated PID/UID without a separately approved
+export design. Native/functional PASS evidence does not close that gap.
+
+The current local collector also includes all 432 Android methods, whereas existing
+CI separates 418 standard methods from 14 fresh-process diagnostics (29 invocations).
+Before any new capture, retrieve reusable producer artifacts or separately approve a
+minimal inventory compatibility correction in the existing collector/host tests.
+Then, if still needed, approve one frozen JVM/API26 capture on a verified runner-owned
+emulator; no automatic API27/36 rerun or worker bridge is proposed. Preserve all gates,
+source/class identity checks and historical artifacts. M3-C2 execution, M3-C3 closeout,
+M4 and formal Phase J acceptance remain unexecuted/unaccepted by this audit.
+**J08 remains DEFERRED TO PHASE R.** No next milestone starts automatically.

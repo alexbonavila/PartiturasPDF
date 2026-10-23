@@ -86,7 +86,7 @@ class ReaderHostNativeIntegrationTest {
     private val injectedNightMode = mutableStateOf<Boolean?>(null)
     private lateinit var factory: ViewModelProvider.Factory
 
-    private inner class Session(val fixture: JSONObject, persistent: Boolean = false, reuse: Session? = null) : AppHostSession {
+    private inner class Session(val fixture: JSONObject, persistent: Boolean = false, reuse: Session? = null, benchmark: Boolean = false) : AppHostSession {
         val directory: File = reuse?.directory ?: File(context.cacheDir, "i05-${UUID.randomUUID()}").apply { check(mkdir()) }
         val source = File(directory, "score.pdf")
         val preferencesName: String = reuse?.preferencesName ?: "i05-positions-${UUID.randomUUID()}"
@@ -103,16 +103,23 @@ class ReaderHostNativeIntegrationTest {
         val metadata = RoomDocumentMetadataRepository(db)
         val root = FolderRef("fixture", "root")
         val storage = StorageDocumentRef("fixture", "test-owned-score")
-        val ceiling = RenderLimits(512, 512L * 512)
+        val ceiling = if (benchmark) com.abdev.partituraspdf.app.di.AppRuntimeLimits.provisional().render else RenderLimits(512, 512L * 512)
+        val descriptorOpens = AtomicInteger()
+        val descriptorCloses = AtomicInteger()
         val engine = IsolatedPdfReadEngine(context, ceiling)
         var afterRender: (suspend (RenderedPage) -> Unit)? = null
         var accessError: AppError? = null
         var nativeOpens = 0
+        var benchmarkOpenBeginNs = 0L
+        var benchmarkOpenEndNs = 0L
         lateinit var preferencesRepository: PreferencesRepository
         val observedEngine = object : PdfReadEngine {
             override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> {
                 nativeOpens++
-                return when (val result = engine.open(source)) {
+                if (benchmark) benchmarkOpenBeginNs = android.os.SystemClock.elapsedRealtimeNanos()
+                val opened = engine.open(source)
+                if (benchmark) benchmarkOpenEndNs = android.os.SystemClock.elapsedRealtimeNanos()
+                return when (val result = opened) {
                 is Outcome.Failure -> result
                 is Outcome.Success -> Outcome.Success(object : PdfReadSession by result.value {
                     override suspend fun render(request: RenderRequest): Outcome<RenderedPage> {
@@ -155,8 +162,8 @@ class ReaderHostNativeIntegrationTest {
                             check(document == storage)
                             accessError?.let { return@withContext Outcome.Failure(it) }
                             Outcome.Success(ReadHandle(object : ReadResource {
-                                override val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY)
-                                override fun close() { descriptor.close() }
+                                override val descriptor = ParcelFileDescriptor.open(source, ParcelFileDescriptor.MODE_READ_ONLY).also { descriptorOpens.incrementAndGet() }
+                                override fun close() { descriptor.close(); descriptorCloses.incrementAndGet() }
                             }, ReadProvenance.Provider(document), true).also { acquired = it })
                         }
                     } catch (failure: Throwable) {
@@ -193,10 +200,10 @@ class ReaderHostNativeIntegrationTest {
         override fun stop() { features.library.close(); features.settings.close() }
         override fun close() { db.close() }
     }
-    private fun mount(id: String, persistent: Boolean = false) {
+    private fun mount(id: String, persistent: Boolean = false, benchmark: Boolean = false) {
         val entries = InstrumentationRegistry.getInstrumentation().context.assets.open("manifest.json").bufferedReader().use { JSONObject(it.readText()).getJSONArray("files") }
         val row = (0 until entries.length()).map(entries::getJSONObject).single { it.getString("id") == id }
-        val session = Session(row, persistent).also { this.session = it }
+        val session = Session(row, persistent, benchmark = benchmark).also { this.session = it }
         factory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
@@ -353,6 +360,109 @@ class ReaderHostNativeIntegrationTest {
         session?.let { context.deleteSharedPreferences(it.preferencesName); check(it.directory.deleteRecursively()) }
         assertTrue("Unexpected owned host failures: $failures", failures.isEmpty())
     }
+    /** M4 adapter reuses these fixture/route/pixel/cleanup helpers; no normal test invokes it.
+     * Timing observations include harness/PixelCopy overhead, not an uninstrumented release metric.
+     */
+    internal fun benchmarkIteration(launchNanos: Long, result: JSONObject) {
+        fun now() = android.os.SystemClock.elapsedRealtimeNanos()
+        fun stamp(name: String) { result.put(name, now()) }
+        val production = ViewModelProvider(compose.activity)[AppHostViewModel::class.java]
+        compose.waitUntil(15_000) { production.state.value is AppHostState.Ready }
+        compose.onNodeWithTag("app_shell").assertIsDisplayed()
+        compose.onNodeWithTag("library_list").assertIsDisplayed()
+        // Wait for a real window copy after the Library semantics, not am-start completion.
+        val windowCopy = Bitmap.createBitmap(compose.activity.window.decorView.width,
+            compose.activity.window.decorView.height, Bitmap.Config.ARGB_8888)
+        val windowDone = CountDownLatch(1); var windowStatus = -1
+        try {
+            PixelCopy.request(compose.activity.window, windowCopy, { windowStatus = it; windowDone.countDown() }, Handler(Looper.getMainLooper()))
+            assertTrue(windowDone.await(20, TimeUnit.SECONDS)); assertEquals(PixelCopy.SUCCESS, windowStatus)
+            stamp("library_visible_ns")
+        } finally { windowCopy.recycle() }
+        compose.waitUntil(15_000) {
+            val features = (production.state.value as? AppHostState.Ready)?.features
+            val library = features?.library?.state?.value
+            features != null && library != null &&
+                (library.location is LibraryLocation.NoRoot ||
+                    (library.location is LibraryLocation.Available && library.content is LibraryContent.Ready)) &&
+                library.rootSelection !is LibraryOperation.Pending && library.navigation !is LibraryOperation.Pending &&
+                features.settings.state.value.preferences is Observation.Ready
+        }
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_select_folder_description))
+            .assertIsDisplayed().assertIsEnabled().assertHasClickAction()
+        compose.onNodeWithTag("app_settings").assertIsDisplayed().assertIsEnabled().assertHasClickAction().performClick()
+        compose.onNodeWithTag("settings_content").assertIsDisplayed()
+        compose.onNodeWithTag("app_back").performClick()
+        compose.onNodeWithTag("library_list").assertIsDisplayed()
+        stamp("library_ready_ns")
+        result.put("launch_ns", launchNanos)
+        result.put("process_start_ns", android.os.Process.getStartElapsedRealtime() * 1_000_000)
+        // One bounded, real PSS checkpoint at idle. Host separately samples the live process.
+        stamp("idle_memory_begin_ns")
+        val idle = android.os.Debug.MemoryInfo(); android.os.Debug.getMemoryInfo(idle)
+        result.put("idle_main_pss_kb", idle.totalPss)
+        stamp("idle_memory_end_ns")
+        runBlocking { withContext(Dispatchers.Main.immediate) { production.dispose() }.await() }
+        val journeys = org.json.JSONArray().also { result.put("journeys", it) }
+        for (id in listOf("02", "10")) {
+            mount(id, benchmark = true)
+            val owned = session!!
+            val bitmaps = CopyOnWriteArrayList<Bitmap>()
+            owned.afterRender = { bitmaps += it.bitmap }
+            val row = JSONObject().put("fixture", id).put("sha256", owned.fixture.getString("sha256"))
+                .put("open_begin_ns", now())
+            journeys.put(row)
+            open(); visible("m4-$id-first-presentation"); verifyPostedScorePixels()
+            row.put("first_presented_ns", now())
+                .put("native_open_begin_ns", owned.benchmarkOpenBeginNs).put("native_open_end_ns", owned.benchmarkOpenEndNs)
+            val worker = checkNotNull(owned.engine.lastWorker)
+            row.put("worker_pid", worker.pid).put("worker_started_ms", worker.started).put("worker_epoch", worker.epoch)
+            val stat = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("cat /proc/${worker.pid}/stat")
+            row.put("worker_stat", ParcelFileDescriptor.AutoCloseInputStream(stat).bufferedReader().use { it.readText() })
+            // Checkpoint is after verified visible pixels; outside the next-page latency interval.
+            row.put("presented_memory_begin_ns", now())
+            row.put("presented_main_pss_kb", android.os.Debug.MemoryInfo().also { android.os.Debug.getMemoryInfo(it) }.totalPss)
+            row.put("presented_worker_meminfo", benchmarkWorkerMemory(worker.pid))
+            row.put("presented_memory_end_ns", now())
+            val first = entry()
+            row.put("next_begin_ns", now())
+            compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performClick()
+            compose.waitUntil(20_000) { first.controller.state.value.presentedPage == PageIndex(1) }
+            visible("m4-$id-next-presentation"); verifyPostedScorePixels()
+            row.put("next_presented_ns", now())
+            row.put("next_memory_begin_ns", now())
+            val nextWorker = checkNotNull(owned.engine.lastWorker)
+            row.put("next_worker_pid", nextWorker.pid).put("next_worker_started_ms", nextWorker.started)
+                .put("next_worker_epoch", nextWorker.epoch)
+            val nextStat = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("cat /proc/${nextWorker.pid}/stat")
+            row.put("next_worker_stat", ParcelFileDescriptor.AutoCloseInputStream(nextStat).bufferedReader().use { it.readText() })
+            row.put("next_worker_meminfo", benchmarkWorkerMemory(nextWorker.pid))
+            row.put("next_memory_end_ns", now())
+            back()
+            compose.waitUntil(10_000) { routeClosed() && bitmaps.isNotEmpty() && bitmaps.all { it.isRecycled } }
+            assertEquals(ReaderPhase.RETIRED, first.controller.state.value.phase)
+            assertNull(first.controller.state.value.frame)
+            assertEquals(owned.descriptorOpens.get(), owned.descriptorCloses.get())
+            assertTrue(owned.descriptorOpens.get() > 0)
+            assertArrayEquals(instrumentationBytes(owned.fixture), owned.source.readBytes())
+            row.put("closed_ns", now()).put("bitmaps_recycled", true).put("descriptors_closed", true).put("source_unchanged", true)
+            row.put("closed_memory_begin_ns", now())
+            row.put("closed_main_pss_kb", android.os.Debug.MemoryInfo().also { android.os.Debug.getMemoryInfo(it) }.totalPss)
+            row.put("closed_memory_end_ns", now())
+            // Fully join the current test host/store before mounting another fixture.
+            cleanup()
+            session = null; host = null; composition = ReaderTestComposition(compose)
+            assertTrue(failures.isEmpty())
+        }
+    }
+    private fun benchmarkWorkerMemory(pid: Int): String {
+        require(pid > 0 && pid != android.os.Process.myPid())
+        val output = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("dumpsys -t 5 meminfo $pid")
+        return ParcelFileDescriptor.AutoCloseInputStream(output).bufferedReader().use { it.readText() }
+    }
+    private fun instrumentationBytes(fixture: JSONObject): ByteArray =
+        InstrumentationRegistry.getInstrumentation().context.assets.open(fixture.getString("path")).use { it.readBytes() }
+
     @Test fun transientCanonicalPdfDisplaysNavigatesChangesFitBackAndReopensWithoutRegistration() {
         mount("02"); open(); visible(); verifyPostedScorePixels()
         val first = entry(); assertTrue(first.intent.request is DocumentOpenRequest.Transient)

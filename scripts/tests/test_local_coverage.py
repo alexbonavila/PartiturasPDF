@@ -547,5 +547,35 @@ class CoverageSelectionExecutionTests(unittest.TestCase):
         self.runtime['execute'].assert_not_called()
 
 
+class CoverageAuxiliaryProgressTests(unittest.TestCase):
+    setUp = CoverageRunnerTests.setUp
+    protocol = CoverageRunnerTests.protocol
+    command = CoverageRunnerTests.command
+    android = CoverageRunnerTests.android
+
+    def stream(self, code=0, complete=True):
+        from test_local_regression import ISOLATED_TEST, with_auxiliary
+        self.c.android_expected = {ISOLATED_TEST}
+        return with_auxiliary(android_protocol([(ISOLATED_TEST, code)], complete=complete))
+
+    def test_coverage_explicitly_accepts_known_progress_and_preserves_raw_output(self):
+        from test_local_regression import with_auxiliary, ISOLATED_TEST
+        self.c.android_expected = {ISOLATED_TEST}
+        output = with_auxiliary(self.protocol().replace(coverage.evidence.SMOKE.rsplit('.', 1)[0],
+            ISOLATED_TEST.rsplit('.', 1)[0]).replace('test=useAppContext',
+            'test=' + ISOLATED_TEST.rsplit('.', 1)[1]))
+        self.android(output)
+        self.assertEqual(1, self.c.result['android_tests'])
+        self.assertEqual('PASS', self.c.result['android_status'])
+        self.assertEqual(output, (self.r.out / 'coverage/instrumentation.log').read_text())
+        self.assertIn('notAnnotation', self.calls[0])
+
+    def test_auxiliary_does_not_hide_assertion_failure_or_incomplete_run(self):
+        with self.assertRaises(e2e.FunctionalFailure):
+            self.android(self.stream(code=-2), exit=255)
+        with self.assertRaises(e2e.Blocked):
+            self.android(self.stream(complete=False), exit=255)
+
+
 if __name__ == "__main__":
     unittest.main()

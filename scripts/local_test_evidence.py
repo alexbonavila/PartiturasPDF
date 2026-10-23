@@ -77,8 +77,47 @@ class IncompleteInstrumentation(ValueError):
         self.cases = cases
 
 
-def parse_android(output, expected):
-    """Validate a complete unfiltered AndroidJUnitRunner run, retaining executed failure details."""
+# Only these existing ordinary tests emit the known sendStatus(2, ...) payload.
+ISOLATED_PDF_PROGRESS = {
+    APP + '.pdf.android.isolated.IsolatedPdfReadEngineTest.' + method: labels
+    for method, labels in {
+        'validCorruptedValidRecoversWithoutApplicationRestart': {'initial valid', 'invalid 15 retired', 'recovered valid'},
+        'validProtectedValidRecoversWithoutApplicationRestart': {'initial valid', 'invalid 14 retired', 'recovered valid'},
+        'validCorruptedProtectedValidReplacesEveryFailedWorker': {'initial valid', 'invalid 15 retired', 'invalid 14 retired', 'recovered valid'},
+        'validProtectedCorruptedValidReplacesEveryFailedWorker': {'initial valid', 'invalid 14 retired', 'invalid 15 retired', 'recovered valid'},
+        'canonicalVectorRasterAndScoreFixturesRenderThroughSameBoundedTransport': {
+            'benchmark fixture ' + fixture + ' two renders' for fixture in ('01', '05', '08', '09', '10', '11')},
+    }.items()
+}
+
+
+def isolated_pdf_progress(bundle, active):
+    if set(bundle) != {'isolatedPdfEvidence'} or len(active) != 1 or not active <= ISOLATED_PDF_PROGRESS.keys():
+        raise ValueError('Unexpected isolated PDF auxiliary event or active test')
+
+    def unique_fields(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('Duplicate isolated PDF payload field')
+            result[key] = value
+        return result
+
+    data = json.loads(bundle['isolatedPdfEvidence'], object_pairs_hook=unique_fields)
+    numeric = ('appPid', 'workerPid', 'workerStarted', 'elapsedMs', 'api')
+    if (not isinstance(data, dict) or set(data) != {'sequence', 'workerEpoch', *numeric} or
+            any(type(data[key]) is not int for key in numeric)):
+        raise ValueError('Malformed isolated PDF auxiliary payload')
+    if (not isinstance(data['sequence'], str) or
+            data['sequence'] not in ISOLATED_PDF_PROGRESS[next(iter(active))] or
+            not isinstance(data['workerEpoch'], str) or not data['workerEpoch'].strip() or
+            min(data['appPid'], data['workerPid'], data['workerStarted']) <= 0 or
+            data['appPid'] == data['workerPid'] or data['elapsedMs'] < 0 or data['api'] < 26):
+        raise ValueError('Invalid isolated PDF auxiliary payload values')
+
+
+def parse_android(output, expected, *, allow_isolated_pdf_progress=False):
+    """Validate an exact AndroidJUnitRunner selection, retaining executed failure details."""
     cases, starts, finished, bundle, stack_key = [], set(), set(), {}, False
     total = None
     try:
@@ -87,10 +126,18 @@ def parse_android(output, expected):
                 item = line.split(": ", 1)[1]
                 if "=" in item:
                     key, value = item.split("=", 1)
+                    if key in bundle:
+                        raise ValueError('Duplicate instrumentation status field')
                     bundle[key] = value
                     stack_key = key == "stack"
             elif line.startswith("INSTRUMENTATION_STATUS_CODE: "):
                 code = int(line.split(": ", 1)[1])
+                if code == 2:
+                    if not allow_isolated_pdf_progress:
+                        raise ValueError('Auxiliary instrumentation status is not enabled')
+                    isolated_pdf_progress(bundle, starts - finished)
+                    bundle, stack_key = {}, False
+                    continue
                 identity = bundle.get("class", "") + "." + bundle.get("test", "")
                 if "class" not in bundle or "test" not in bundle:
                     raise ValueError("Missing JUnit class/test identity")
@@ -101,7 +148,7 @@ def parse_android(output, expected):
                     raise ValueError("Inconsistent instrumentation test count")
                 total = declared
                 if code == 1:
-                    if identity in starts:
+                    if identity in starts or starts != finished:
                         raise ValueError("Duplicate JUnit start")
                     starts.add(identity)
                 else:
@@ -122,6 +169,8 @@ def parse_android(output, expected):
         completion = re.search(r"(?m)^INSTRUMENTATION_CODE: -1\s*$", output)
         if completion.start() < output.rfind("INSTRUMENTATION_STATUS_CODE:"):
             raise ValueError("Test result follows runner completion")
+        if bundle:
+            raise ValueError("Unterminated instrumentation status bundle")
         if not cases or starts != finished or finished != set(expected) or len(cases) != total:
             raise ValueError("Zero, missing or incomplete ordinary tests (including required smoke)")
         if "FAILURES!!!" in output and not any(c["status"] == "FAIL" for c in cases):

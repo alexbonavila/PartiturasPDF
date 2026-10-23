@@ -52,6 +52,90 @@ def test_apk(path, saf=False):
         archive.writestr('classes.dex', data)
 
 
+ISOLATED_TEST = next(iter(evidence.ISOLATED_PDF_PROGRESS))
+ISOLATED_PAYLOAD = dict(sequence='initial valid', appPid=101, workerPid=202,
+                        workerStarted=1, workerEpoch='synthetic-epoch', elapsedMs=0, api=26)
+
+
+def auxiliary(payload=None, fields=None):
+    if fields is None:
+        fields = {'isolatedPdfEvidence': json.dumps(ISOLATED_PAYLOAD) if payload is None else payload}
+    return ''.join(f'INSTRUMENTATION_STATUS: {key}={value}\n' for key, value in fields.items()) + \
+        'INSTRUMENTATION_STATUS_CODE: 2\n'
+
+
+def with_auxiliary(output, event=None):
+    marker = 'INSTRUMENTATION_STATUS_CODE: 1\n'
+    return output.replace(marker, marker + (auxiliary() if event is None else event), 1)
+
+
+class AuxiliaryInstrumentationTests(unittest.TestCase):
+    def parse(self, output, expected=None):
+        return evidence.parse_android(output, {ISOLATED_TEST} if expected is None else expected,
+                                      allow_isolated_pdf_progress=True)
+
+    def test_known_auxiliary_events_do_not_change_junit_count(self):
+        output = with_auxiliary(protocol([(ISOLATED_TEST, 0)]), auxiliary() * 2)
+        self.assertEqual([dict(name=ISOLATED_TEST, status='PASS', detail='')], self.parse(output))
+        with self.assertRaises(evidence.IncompleteInstrumentation):
+            evidence.parse_android(output, {ISOLATED_TEST})  # Strict default for other callers.
+
+    def test_auxiliary_requires_current_authorized_selected_test(self):
+        valid = protocol([(ISOLATED_TEST, 0)])
+        for output, expected in [(auxiliary() + valid, {ISOLATED_TEST}),
+                                 (valid.replace('INSTRUMENTATION_CODE: -1', auxiliary() + 'INSTRUMENTATION_CODE: -1'), {ISOLATED_TEST}),
+                                 (with_auxiliary(protocol([(SMOKE, 0)])), {SMOKE}),
+                                 (with_auxiliary(valid), {SMOKE})]:
+            with self.subTest(output=output), self.assertRaises(evidence.IncompleteInstrumentation):
+                self.parse(output, expected)
+
+    def test_unknown_fields_and_malformed_or_invalid_payloads_block(self):
+        payloads = ['not json', '[]', 'null', '{}', json.dumps(dict(ISOLATED_PAYLOAD, extra=1)),
+                    json.dumps(dict(ISOLATED_PAYLOAD, elapsedMs=True)),
+                    json.dumps(dict(ISOLATED_PAYLOAD, sequence='unknown')),
+                    json.dumps(dict(ISOLATED_PAYLOAD, workerEpoch='')),
+                    json.dumps(dict(ISOLATED_PAYLOAD, workerPid=101)),
+                    json.dumps(dict(ISOLATED_PAYLOAD, elapsedMs=-1)),
+                    json.dumps(dict(ISOLATED_PAYLOAD, api=25)),
+                    json.dumps(ISOLATED_PAYLOAD)[:-1] + ', "api": 26}']
+        events = [auxiliary(payload=value) for value in payloads] + [
+            auxiliary(fields={'unknown': '{}'}),
+            auxiliary(fields={'isolatedPdfEvidence': json.dumps(ISOLATED_PAYLOAD), 'class': 'unexpected'}),
+            'INSTRUMENTATION_STATUS: isolatedPdfEvidence={}\n' + auxiliary()]
+        for event in events:
+            with self.subTest(event=event), self.assertRaises(evidence.IncompleteInstrumentation):
+                self.parse(with_auxiliary(protocol([(ISOLATED_TEST, 0)]), event))
+
+    def test_ordinary_identity_codes_inventory_and_completion_remain_strict(self):
+        valid = with_auxiliary(protocol([(ISOLATED_TEST, 0)]))
+        for output in [valid.replace('INSTRUMENTATION_STATUS: test=', 'MISSING: test=', 1),
+                       valid.replace('INSTRUMENTATION_STATUS_CODE: 2', 'INSTRUMENTATION_STATUS_CODE: 3'),
+                       valid.replace('INSTRUMENTATION_STATUS_CODE: 2', 'INSTRUMENTATION_STATUS_CODE: -8'),
+                       with_auxiliary(protocol([(ISOLATED_TEST, -3)])),
+                       with_auxiliary(protocol([(ISOLATED_TEST, 0)], complete=False)),
+                       with_auxiliary(protocol([(ISOLATED_TEST, 0), (ISOLATED_TEST, 0)])),
+                       valid + 'INSTRUMENTATION_RESULT: shortMsg=crashed\n',
+                       valid + 'INSTRUMENTATION_STATUS: isolatedPdfEvidence={}\n']:
+            with self.subTest(output=output), self.assertRaises(evidence.IncompleteInstrumentation):
+                self.parse(output)
+        with self.assertRaises(evidence.IncompleteInstrumentation):
+            self.parse(valid, {ISOLATED_TEST, SMOKE})
+
+    def test_overlapping_starts_cannot_authorize_an_auxiliary_event(self):
+        cls, method = SMOKE.rsplit('.', 1)
+        start = f'INSTRUMENTATION_STATUS: class={cls}\nINSTRUMENTATION_STATUS: test={method}\nINSTRUMENTATION_STATUS: numtests=2\nINSTRUMENTATION_STATUS_CODE: 1\n'
+        valid = protocol([(ISOLATED_TEST, 0), (SMOKE, 0)])
+        with self.assertRaises(evidence.IncompleteInstrumentation):
+            self.parse(with_auxiliary(valid, start + auxiliary()), {ISOLATED_TEST, SMOKE})
+
+    def test_complete_failure_remains_failure_and_incomplete_failure_is_blocked(self):
+        cases = self.parse(with_auxiliary(protocol([(ISOLATED_TEST, -2)])))
+        self.assertEqual('FAIL', cases[0]['status'])
+        with self.assertRaises(evidence.IncompleteInstrumentation) as error:
+            self.parse(with_auxiliary(protocol([(ISOLATED_TEST, -2)], complete=False)))
+        self.assertEqual('FAIL', error.exception.cases[0]['status'])
+
+
 class EvidenceTests(unittest.TestCase):
     def test_all_expected_tests_and_smoke_execute(self):
         cases = evidence.parse_android(protocol(), {SMOKE, OTHER})

@@ -331,7 +331,8 @@ class CoverageRun:
             self.instrumentation_started = True
             process = self.r.command('coverage/instrumentation.log', command, timeout=1200)
             self.unchanged()
-            cases = evidence.parse_android(process.stdout + '\n' + process.stderr, self.android_expected)
+            cases = evidence.parse_android(process.stdout + '\n' + process.stderr, self.android_expected,
+                                           allow_isolated_pdf_progress=True)
             self.instrumentation_completed = True
             self.result['android_tests'] = len(cases)
             if any(c['status'] == 'FAIL' for c in cases):

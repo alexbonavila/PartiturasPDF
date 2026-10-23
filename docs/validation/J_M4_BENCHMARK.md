@@ -24,7 +24,10 @@ approved emulator hardware accelerated; host `-accel-check` establishes availabi
 not independent attestation of the running emulator's launch flags. No software
 emulation fallback is implemented or accepted as a measured hardware baseline.
 
-The owned AVD must explicitly contain one `hw.ramSize=2048` entry. `/proc/meminfo`
+The owned AVD must explicitly contain exactly one RAM entry, either
+`hw.ramSize=2048` or the equivalent `hw.ramSize=2G`. Both represent 2048 MiB;
+other representations and duplicate entries remain rejected. No AVD is edited.
+`/proc/meminfo`
 MemTotal must be 1536–2048 MiB (inclusive): a declared 0–25% reservation band for
 AOSP/kernel allocations. Wrong/missing/duplicate configuration or incompatible
 observed memory is BLOCKED. This corroborates a 2 GiB configuration; it does not

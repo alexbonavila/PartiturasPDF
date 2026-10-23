@@ -57,10 +57,26 @@ class M4Tests(unittest.TestCase):
         return dict(iteration=0,warmup=warmup,device=data,memory=samples)
 
     def test_ram_requires_configured_2gb_and_bounded_reservation(self):
-        self.assertEqual(2048,m4.ram('hw.ramSize=2048','MemTotal: 1900000 kB')['configured_mb'])
+        numeric=m4.ram('hw.ramSize=2048','MemTotal: 1900000 kB')
+        self.assertEqual(2048,numeric['configured_mb'])
+        self.assertEqual(numeric,m4.ram('hw.ramSize=2G','MemTotal: 1900000 kB'))
         for config,observed in [('hw.ramSize=1024','1900000'),('hw.ramSize=2048','900000'),('hw.ramSize=2048','4000000'),
                                 ('hw.ramSize=2048\nhw.ramSize=2048','1900000')]:
             with self.subTest(config=config,observed=observed),self.assertRaises(m4.e2e.Blocked): m4.ram(config,'MemTotal: '+observed+' kB')
+
+    def test_ram_rejects_missing_duplicate_and_unsupported_representations(self):
+        for config in ['', 'hw.ramSize=', 'hw.ramSize=2048\nhw.ramSize=2G',
+                       'hw.ramSize=2G\nhw.ramSize=2G', 'hw.ramSize=1G',
+                       'hw.ramSize=4G', 'hw.ramSize=2g', 'hw.ramSize=2GB',
+                       'hw.ramSize=2GiB', 'hw.ramSize=2048M', 'hw.ramSize=2.0G']:
+            with self.subTest(config=config),self.assertRaises(m4.e2e.Blocked):
+                m4.ram(config,'MemTotal: 1900000 kB')
+
+    def test_ram_2g_still_requires_valid_observed_memtotal(self):
+        for meminfo in ['', 'MemTotal: invalid kB', 'MemTotal: 900000 kB',
+                        'MemTotal: 4000000 kB', 'MemTotal: 1900000 kB\nMemTotal: 1900000 kB']:
+            with self.subTest(meminfo=meminfo),self.assertRaises(m4.e2e.Blocked):
+                m4.ram('hw.ramSize=2G',meminfo)
 
     def test_payload_requires_exact_junit_nonce_fixture_time_and_cleanup(self):
         self.assertEqual(99,self.payload()['pid'])

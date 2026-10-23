@@ -48,7 +48,8 @@ def positive(value, label):
 
 def ram(config, meminfo):
     values = [line.split('=', 1)[1].strip() for line in config.splitlines() if re.match(r'^hw\.ramSize\s*=', line)]
-    if values != ['2048']: raise e2e.Blocked('Owned AVD must explicitly configure hw.ramSize=2048; no AVD will be edited')
+    if len(values) != 1 or values[0] not in ('2048', '2G'):
+        raise e2e.Blocked('Owned AVD must explicitly configure hw.ramSize=2048 or hw.ramSize=2G; no AVD will be edited')
     matches = re.findall(r'(?m)^MemTotal:\s+(\d+) kB\s*$', meminfo)
     if len(matches) != 1: raise e2e.Blocked('Missing/ambiguous Android MemTotal')
     kb = int(matches[0])

@@ -24,6 +24,7 @@ class CoverageRunnerTests(unittest.TestCase):
         self.c = coverage.CoverageRun(self.r, self.runtime)
         self.c.android_expected = {coverage.evidence.SMOKE}
         self.c.unchanged = Mock()
+        self.c.retrieve_workers = Mock()  # Transport tests below exercise the real worker retrieval separately.
         self.r.identify = Mock()
         self.r.adb_command = Mock(return_value='instrumentation:' + coverage.evidence.APP + '.test/' +
                                      coverage.evidence.NORMAL_RUNNER + ' (target=' + coverage.evidence.APP + ')')
@@ -576,6 +577,147 @@ class CoverageAuxiliaryProgressTests(unittest.TestCase):
             self.android(self.stream(code=-2), exit=255)
         with self.assertRaises(e2e.Blocked):
             self.android(self.stream(complete=False), exit=255)
+
+
+class WorkerCoverageEvidenceTests(unittest.TestCase):
+    """Synthetic metadata exercises rejection policy, never establishes real worker coverage."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.nonce = 'a' * 32
+        self.cls = 'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerCoverageTest'
+        self.test = self.cls + '.wrongTokensAndPageBoundsDoNotPoisonHealthyWorker'
+        self.capture = dict(run=self.nonce, worker_coverage=dict(format=1, nonce=self.nonce, test_class=self.cls, expected_snapshots={self.test: 1}),
+                            android_selection=dict(standard=[self.test]))
+        self.path = self.directory / '12345678-1234-1234-1234-123456789abc.ec'
+        self.path.write_bytes(b'not-real-jacoco: parser-must-authenticate-before-this-policy')
+        self.meta = dict(nonce=self.nonce, file=self.path.name, test=self.test, pid=123, appPid=321, uid=99001,
+                         appUid=10001, epoch='12345678-1234-1234-1234-123456789def', started=456,
+                         isolated=True, version=1, bytes=self.path.stat().st_size, sha256=pc.digest(self.path))
+        self.session = f"worker:{self.nonce}:123:99001:{self.meta['epoch']}"
+        self.meta['jacocoSession'] = self.session
+        self.parsed = dict(inputs=[dict(path=str(self.path), sessions=[dict(id=self.session)], records={
+            'com/abdev/partituraspdf/pdf/android/isolated/PdfWorkerService': dict(coveredProbes=1),
+            'com/abdev/partituraspdf/coverage/PdfCoverageWorkerService': dict(coveredProbes=1)})])
+
+    def check(self):
+        self.path.with_suffix('.json').write_text(json.dumps(self.meta))
+        return pc.check_worker_inputs(self.capture, self.parsed, self.directory)
+
+    def test_process_session_test_and_binary_bound_together(self):
+        self.assertEqual('isolated-worker', self.check()['origin'])
+
+    def test_wrong_nonce_pid_uid_epoch_and_test_are_rejected(self):
+        for field, value in [('nonce', 'b' * 32), ('appPid', 123), ('pid', 0), ('uid', 10001), ('appUid', 99001), ('uid', -1001), ('appUid', -10001),
+                             ('epoch', 'wrong'), ('test', self.cls + '.missing'), ('isolated', False),
+                             ('started', 0), ('version', 2), ('file', '../coverage.ec')]:
+            with self.subTest(field=field), patch.dict(self.meta, {field: value}):
+                with self.assertRaises(ValueError): self.check()
+
+    def test_binary_hash_size_and_session_mismatch_are_rejected(self):
+        for field, value in [('sha256', '0'*64), ('bytes', 1), ('jacocoSession', 'app-process')]:
+            with self.subTest(field=field), patch.dict(self.meta, {field: value}):
+                with self.assertRaises(ValueError): self.check()
+        self.parsed['inputs'][0]['sessions'][0]['id'] = 'different'
+        with self.assertRaisesRegex(ValueError, 'session'): self.check()
+
+    def test_missing_service_probes_never_become_worker_coverage(self):
+        self.parsed['inputs'][0]['records'].clear()
+        with self.assertRaisesRegex(ValueError, 'actual worker'): self.check()
+
+    def test_missing_snapshot_or_metadata_and_extra_files_are_rejected(self):
+        self.capture['worker_coverage']['expected_snapshots'][self.test] = 2
+        with self.assertRaisesRegex(ValueError, 'Missing worker'): self.check()
+        self.capture['worker_coverage']['expected_snapshots'][self.test] = 1
+        self.capture['android_selection']['standard'].append(self.cls + '.another')
+        with self.assertRaisesRegex(ValueError, 'snapshot requirements'): self.check()
+        self.capture['android_selection']['standard'].pop()
+        (self.directory / 'extra.ec').write_bytes(b'extra')
+        with self.assertRaisesRegex(ValueError, 'inventory'): self.check()
+
+    def test_symlink_input_and_duplicate_process_identity_are_rejected(self):
+        self.check()
+        second = self.directory / '87654321-1234-1234-1234-123456789abc.ec'
+        second.symlink_to(self.path)
+        with self.assertRaisesRegex(ValueError, 'inventory'): self.check()
+        second.unlink(); second.write_bytes(self.path.read_bytes())
+        duplicate = dict(self.meta, file=second.name)
+        second.with_suffix('.json').write_text(json.dumps(duplicate))
+        self.parsed['inputs'].append(dict(self.parsed['inputs'][0], path=str(second)))
+        with self.assertRaisesRegex(ValueError, 'Duplicate'): self.check()
+
+    def test_explicit_worker_argument_is_not_accepted_by_historical_selection(self):
+        command = ['adb', '-s', 'emulator-5580', 'shell', 'am', 'instrument', '-w', '-r',
+                   '-e', 'coverage', 'true', '-e', 'coverageFile', '/owned/coverage.ec',
+                   '-e', 'notAnnotation', coverage.diagnostics.ANNOTATION,
+                   '-e', 'workerCoverageRun', self.nonce, coverage.evidence.APP+'.test/'+coverage.evidence.NORMAL_RUNNER]
+        coverage.validate_android_selection(command, '/owned/coverage.ec', worker_run=self.nonce)
+        with self.assertRaises(ValueError): coverage.validate_android_selection(command, '/owned/coverage.ec')
+        with self.assertRaises(ValueError): coverage.validate_android_selection(command, '/owned/coverage.ec', worker_run='../bad')
+
+    def test_worker_capture_is_required_before_analysis(self):
+        source = (coverage.pc.ROOT / 'scripts/local_coverage.py').read_text()
+        self.assertIn("worker_coverage=dict(format=1", source)
+        self.assertIn('self.retrieve_workers()', source)
+        self.assertIn("pc.check_worker_inputs(capture, parsed, target)", source)
+        self.assertIn("run[\"workerCapture\"] = check_worker_inputs", (coverage.pc.ROOT / 'scripts/persistence_coverage.py').read_text())
+
+    def test_new_tests_are_ordinary_and_debug_export_is_absent_from_release_source(self):
+        root = coverage.pc.ROOT
+        selection = coverage.android_selection(root)
+        worker = {n for n in selection['standard'] if n.startswith(self.cls + '.')}
+        self.assertEqual(6, len(worker))
+        self.assertEqual(worker, set(coverage.WORKER_SNAPSHOTS))
+        self.assertEqual(17, sum(coverage.WORKER_SNAPSHOTS.values()))
+        self.assertFalse(worker & set(selection['diagnostics']))
+        self.assertEqual(14, len(selection['diagnostics']))
+        manifest = ET.parse(root / 'app/src/debug/AndroidManifest.xml').getroot()
+        ns = '{http://schemas.android.com/apk/res/android}'
+        service = manifest.find('application/service')
+        self.assertEqual('false', service.get(ns + 'exported'))
+        self.assertEqual('true', service.get(ns + 'isolatedProcess'))
+        self.assertNotIn('PdfCoverageWorkerService', (root / 'app/src/main/AndroidManifest.xml').read_text())
+        debug = (root / 'app/src/debug/java/com/abdev/partituraspdf/coverage/PdfCoverageWorkerService.kt').read_text()
+        self.assertIn('Binder.getCallingUid() == applicationInfo.uid', debug)
+        self.assertIn('getExecutionData', debug)
+        self.assertIn('if (code != SNAPSHOT) return native.transact(code, data, reply, flags)', debug)
+
+    def collector(self, listing):
+        r = Mock()
+        r.summary = {}
+        r.adb, r.serial = 'adb', 'emulator-5580'
+        r.out = self.directory / 'reports'; r.out.mkdir()
+        r.adb_command.return_value = listing
+        runtime = dict(ROOT=self.directory, Blocked=e2e.Blocked, FunctionalFailure=e2e.FunctionalFailure,
+                       execute=Mock())
+        c = coverage.CoverageRun(r, runtime)
+        (c.directory / 'inputs/android').mkdir(parents=True)
+        c.remote = 'files/local-coverage-' + self.nonce
+        c.args = Mock()
+        (c.directory / 'capture.json').write_text(json.dumps(self.capture))
+        return c, r, runtime
+
+    def test_worker_retrieval_rejects_paths_and_unpaired_files_before_binary_reads(self):
+        c, r, runtime = self.collector('../foreign.ec')
+        for listing in ['../foreign.ec', self.path.name, self.path.name + ' ' + self.path.name,
+                        'not-a-uuid.ec not-a-uuid.json', '']:
+            r.adb_command.return_value = listing
+            with self.subTest(listing=listing), self.assertRaises(e2e.Blocked): c.retrieve_workers()
+        runtime['execute'].assert_not_called()
+        r.identify.assert_called_with(boot=True)
+
+    def test_worker_retrieval_retains_raw_files_and_requires_real_java_validation(self):
+        self.check()
+        c, r, runtime = self.collector(self.path.name + ' ' + self.path.with_suffix('.json').name)
+        runtime['execute'].side_effect = lambda command, **kwargs: subprocess.CompletedProcess(command, 0,
+            (self.directory / command[-1].rsplit('/', 1)[-1]).read_bytes(), b'')
+        with patch.object(pc, 'java', side_effect=ValueError('Class ID mismatch')) as reader:
+            with self.assertRaisesRegex(ValueError, 'Class ID mismatch'): c.retrieve_workers()
+        self.assertEqual(self.path.read_bytes(), (c.directory / 'inputs/android/workers' / self.path.name).read_bytes())
+        self.assertEqual('validate', reader.call_args.args[1])
+        self.assertTrue(all(call.kwargs['binary'] for call in runtime['execute'].call_args_list))
+        self.assertTrue(all(call.args[0][-1].startswith(c.remote + '/workers/') for call in runtime['execute'].call_args_list))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ Mocked policy tests cannot certify coverage. All real inputs must pass the Java 
 from __future__ import annotations
 import html
 import json
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -19,6 +20,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] /
     'app/src/androidTest/java/com/abdev/partituraspdf/reader'))
 import pdfium_diagnostic_evidence as diagnostics
 from run_pdfium_process_experiments import SCENARIOS
+
+
+# Exact per-test worker ownership: a missing dump must not silently shrink measured execution.
+WORKER_TEST_CLASS = 'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerCoverageTest'
+WORKER_SNAPSHOTS = {WORKER_TEST_CLASS + '.' + name: count for name, count in {
+    'wrongTokensAndPageBoundsDoNotPoisonHealthyWorker': 1,
+    'duplicateSessionIsProgrammingDefectAndQuarantinesWorker': 1,
+    'invalidOpenBoundsAreDefectsRatherThanInvalidDocuments': 6,
+    'invalidRenderParametersAreDefectsAndOversizeIsTypedRecoverableFailure': 6,
+    'invalidNativeOpenQuarantinesBeforeAnyLaterNativeCall': 1,
+    'brokenPipeIsTypedIoFailureAndNewWorkerRecovers': 2,
+}.items()}
 
 
 def android_selection(root):
@@ -36,11 +49,15 @@ def android_selection(root):
                 diagnostic_status='NOT RUN')
 
 
-def validate_android_selection(command, coverage_path):
+def validate_android_selection(command, coverage_path, *, worker_run=None):
     # Fail closed if filtering or coverage arguments drift; never infer execution from exclusion.
     expected = ['-e', 'coverage', 'true', '-e', 'coverageFile', coverage_path,
                 '-e', 'notAnnotation', diagnostics.ANNOTATION,
                 evidence.APP + '.test/' + evidence.NORMAL_RUNNER]
+    if worker_run is not None:
+        if not re.fullmatch(r'[a-f0-9]{32}', worker_run):
+            raise ValueError('Invalid worker coverage run nonce')
+        expected[-1:-1] = ['-e', 'workerCoverageRun', worker_run]
     if command[8:] != expected or command[3:8] != ['shell', 'am', 'instrument', '-w', '-r']:
         raise ValueError('Incorrect Android coverage selection/filter arguments')
 
@@ -132,6 +149,7 @@ class CoverageRun:
         self.remote_created = False
         self.remote_pending = False
         self.coverage_read_attempted = False
+        self.worker_read_attempted = False
         self.config = None
         self.instrumentation_started = False
         self.instrumentation_completed = False
@@ -235,7 +253,8 @@ class CoverageRun:
             working_tree=self.r.summary.get('working_tree'), host=host, device=self.r.summary['device'],
             versions=versions, apks=self.apks, jvm_inventory=sorted(self.jvm_expected),
             android_inventory=sorted(self.android_all),
-            android_selection=self.android_selection)
+            android_selection=self.android_selection, worker_coverage=dict(format=1, nonce=self.r.run_id,
+                test_class=WORKER_TEST_CLASS, expected_snapshots=WORKER_SNAPSHOTS))
         pc.write_json(self.directory / 'capture.json', capture)
         # Existing C05 prepare is invoked only AFTER full ownership, boot and build checks.
         self.gradle('prepare.log', [':app:preparePersistenceCoverageRun'])
@@ -322,8 +341,9 @@ class CoverageRun:
         self.r.identify(boot=True)
         command = [self.r.adb, '-s', self.r.serial, 'shell', 'am', 'instrument', '-w', '-r',
                    '-e', 'coverage', 'true', '-e', 'coverageFile', coverage_path,
-                   '-e', 'notAnnotation', diagnostics.ANNOTATION, component]
-        validate_android_selection(command, coverage_path)
+                   '-e', 'notAnnotation', diagnostics.ANNOTATION,
+                   '-e', 'workerCoverageRun', self.r.run_id, component]
+        validate_android_selection(command, coverage_path, worker_run=self.r.run_id)
         cases, blocker = [], None
         directory = self.directory / 'android-junit'
         directory.mkdir(exist_ok=True)
@@ -356,6 +376,7 @@ class CoverageRun:
         exact_junit(directory, self.android_expected)
         self.result['android_status'] = 'PASS'
         self.retrieve_android()
+        self.retrieve_workers()
         self.unchanged()
 
     def retrieve_android(self):
@@ -372,6 +393,32 @@ class CoverageRun:
             stderr=process.stderr.decode('utf-8', 'replace'))
         if process.returncode or not process.stdout:
             raise self.Blocked('Real Android coverage file missing or unreadable')
+
+    def retrieve_workers(self):
+        self.worker_read_attempted = True
+        # Only our newly created UUID tree. Never discover/adopt another run's files.
+        self.r.identify(boot=True)
+        listing = self.r.adb_command('shell', 'run-as', evidence.APP, 'ls', self.remote + '/workers')
+        names = listing.split()
+        pattern = r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.(?:ec|json)'
+        if (not names or len(names) != len(set(names)) or len(names) > 128 or
+                any(not re.fullmatch(pattern, name) for name in names) or
+                {n[:-3] for n in names if n.endswith('.ec')} !=
+                {n[:-5] for n in names if n.endswith('.json')}):
+            raise self.Blocked('Missing/ambiguous worker snapshot inventory')
+        target = self.directory / 'inputs/android/workers'
+        target.mkdir(exist_ok=False)
+        for name in names:
+            process = self.runtime['execute']([self.r.adb, '-s', self.r.serial, 'exec-out', 'run-as',
+                evidence.APP, 'cat', self.remote + '/workers/' + name], binary=True, timeout=60)
+            path = target / name
+            path.write_bytes(process.stdout)  # Preserve even invalid evidence for diagnosis.
+            limit = 4 * 1024 * 1024 if name.endswith('.ec') else 8192
+            if process.returncode or not 0 < len(process.stdout) <= limit:
+                raise self.Blocked('Unreadable/oversized worker snapshot: ' + name)
+        parsed = pc.java(self.args, 'validate', *sorted(target.glob('*.ec')))
+        capture = json.loads((self.directory / 'capture.json').read_text())
+        self.result['worker_capture'] = pc.check_worker_inputs(capture, parsed, target)
 
     def analyze(self):
         # C05's real binary validator, same-build inventories, session and JUnit policy run first.
@@ -443,6 +490,11 @@ class CoverageRun:
                     self.retrieve_android()  # Preserve a completed failed test's real dump too; never replay capture.
                 except Exception as error:
                     self.result['blockers'].append('Android coverage retention: ' + str(error))
+            if self.instrumentation_completed and not self.worker_read_attempted:
+                try:
+                    self.retrieve_workers()  # Retain completed failed runs too, without rerunning tests.
+                except Exception as error:
+                    self.result['blockers'].append('Worker coverage retention: ' + str(error))
             if self.remote_pending:
                 self.r.summary['cleanup'].append(dict(name='owned coverage directory creation', status='BLOCKED',
                     detail='Creation reply uncertain; refusing to adopt, retry or delete the UUID directory'))

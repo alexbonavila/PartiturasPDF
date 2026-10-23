@@ -2,9 +2,11 @@
 """Fail-closed persistence coverage preparation, provenance and independent source-group gates."""
 from __future__ import annotations
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -140,6 +142,75 @@ def check_inputs(run: dict, evidence: dict, jvm: Path, android: list[Path], now:
         raise ValueError("Missing actual Android execution of required persistence adapters")
 
 
+def check_worker_inputs(capture: dict, parsed: dict, directory: Path) -> dict:
+    """Process attestation is separate from (and additional to) JaCoCo bytecode/probe validation.
+
+    Metadata is produced by the source/APK-authenticated test and debug worker, not a claim of
+    cryptographic OS attestation. No app-process probe is classified as isolated execution.
+    """
+    policy = capture.get('worker_coverage', {})
+    nonce = policy.get('nonce', '')
+    cls = 'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerCoverageTest'
+    if (policy.get('format') != 1 or policy.get('test_class') != cls or
+            nonce != capture.get('run') or not re.fullmatch(r'[a-f0-9]{32}', nonce)):
+        raise ValueError('Missing worker capture policy/nonce')
+    expected = {n for n in capture['android_selection']['standard'] if n.startswith(cls + '.')}
+    if not expected:
+        raise ValueError('Empty worker test inventory')
+    counts = policy.get('expected_snapshots', {})
+    if set(counts) != expected or any(type(n) is not int or not 1 <= n <= 16 for n in counts.values()):
+        raise ValueError('Invalid worker snapshot requirements')
+    worker_entries = [e for e in parsed['inputs'] if Path(e['path']).parent == directory]
+    entries = {Path(e['path']).name: e for e in worker_entries}
+    if len(entries) != len(worker_entries):
+        raise ValueError('Duplicate worker input inventory')
+    files = list(directory.iterdir())
+    if (directory.is_symlink() or any(p.is_symlink() or not p.is_file() for p in files) or
+            {p.name for p in files} != set(entries) | {n[:-3] + '.json' for n in entries}):
+        raise ValueError('Unexpected worker evidence inventory')
+    records, tests, identities, apps = [], Counter(), set(), set()
+    for name, entry in sorted(entries.items()):
+        if not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\.ec', name):
+            raise ValueError('Unsafe worker snapshot name')
+        path = directory / name
+        meta_path = directory / (name[:-3] + '.json')
+        if meta_path.stat().st_size > 8192:
+            raise ValueError('Oversized worker metadata')
+        meta = json.loads(meta_path.read_text())
+        pid, uid, app_uid = meta.get('pid'), meta.get('uid'), meta.get('appUid')
+        app_pid = meta.get('appPid')
+        epoch = meta.get('epoch', '')
+        if (meta.get('nonce') != nonce or meta.get('file') != name or meta.get('test') not in expected or
+                type(pid) is not int or pid <= 0 or type(app_pid) is not int or app_pid <= 0 or app_pid == pid or type(uid) is not int or uid <= 0 or uid % 100000 not in range(99000, 100000) or
+                type(app_uid) is not int or app_uid <= 0 or app_uid % 100000 not in range(10000, 99000) or uid == app_uid or uid // 100000 != app_uid // 100000 or
+                meta.get('isolated') is not True or type(meta.get('version')) is not int or meta['version'] != 1 or
+                type(meta.get('started')) is not int or meta['started'] <= 0 or
+                not re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', epoch)):
+            raise ValueError('Invalid worker process/test identity')
+        identity = (pid, meta['started'], epoch)
+        if identity in identities:
+            raise ValueError('Duplicate worker snapshot identity')
+        identities.add(identity)
+        apps.add((app_pid, app_uid))
+        if len(apps) != 1:
+            raise ValueError('Worker snapshots have inconsistent application identity')
+        session = f'worker:{nonce}:{pid}:{uid}:{epoch}'
+        if (meta.get('jacocoSession') != session or len(entry.get('sessions', [])) != 1 or
+                entry['sessions'][0].get('id') != session or
+                not 0 < path.stat().st_size <= 4 * 1024 * 1024 or meta.get('bytes') != path.stat().st_size or
+                meta.get('sha256') != digest(path)):
+            raise ValueError('Worker session/binary identity mismatch')
+        native = 'com/abdev/partituraspdf/pdf/android/isolated/PdfWorkerService'
+        debug = 'com/abdev/partituraspdf/coverage/PdfCoverageWorkerService'
+        if any(entry.get('records', {}).get(name, {}).get('coveredProbes', 0) <= 0 for name in (native, debug)):
+            raise ValueError('No actual worker service probes')
+        tests[meta['test']] += 1
+        records.append(dict(metadata=meta, metadata_sha256=digest(meta_path), binary=name))
+    if dict(tests) != counts:
+        raise ValueError('Missing worker test snapshots')
+    return dict(status='VALIDATED', origin='isolated-worker', snapshots=records)
+
+
 def test_evidence(directory: Path, smoke: str, minimum: int, started: int) -> dict:
     count = verify_junit(directory, smoke)
     if count < minimum:
@@ -171,6 +242,10 @@ def validate(args) -> None:
                     for name, record in entry["records"].items() if record["coveredProbes"] > 0}
         if not native.issubset(executed):
             raise ValueError("Missing actual Android execution of native PDF classes")
+    if getattr(args, "local_output", None):
+        capture = run["build"]["localCapture"]
+        if "worker_coverage" in capture:
+            run["workerCapture"] = check_worker_inputs(capture, evidence, Path(args.local_output) / "inputs/android/workers")
     run["tests"] = {
         "jvm": test_evidence(JVM_XML, "com.abdev.partituraspdf.ExampleUnitTest.addition_isCorrect", 128, run["started"]),
         "android": test_evidence(ANDROID_XML, "com.abdev.partituraspdf.ExampleInstrumentedTest.useAppContext", 203, run["started"])}

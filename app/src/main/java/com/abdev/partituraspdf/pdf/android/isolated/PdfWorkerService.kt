@@ -19,7 +19,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 
 /** No graph, storage resolver, credentials or UI. The isolated UID receives capabilities only. */
-class PdfWorkerService : Service() {
+open class PdfWorkerService : Service() {
     private val epoch = UUID.randomUUID().toString()
     private val quarantined = AtomicBoolean()
     private val dispatcher = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "pdf-native") }.asCoroutineDispatcher()

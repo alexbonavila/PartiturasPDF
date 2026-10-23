@@ -116,6 +116,19 @@ class Probe(e2e.Runner):
         self.scratch.cleanup()  # Never device cleanup, AVD shutdown or shared home deletion.
 
 
+def require_no_instrumentation(output):
+    # Android 8.0 ActivityManagerService.dumpProcessesLocked: the active section
+    # precedes this later dumpAll marker. A header alone may be truncated output.
+    header = 'ACTIVITY MANAGER RUNNING PROCESSES (dumpsys activity processes)'
+    if (output.splitlines().count(header) != 1 or
+            not output.lstrip().startswith(header+'\n') or
+            len(re.findall(r'(?m)^  Total persistent processes: \d+\s*$', output)) != 1 or
+            re.search(r'(?i)unknown command|permission denial|exception|dump timed out', output)):
+        raise e2e.Blocked('Unrecognized/incomplete ActivityManager processes dump; instrumentation inactivity unverified')
+    if re.search(r'(?i)active[ \t]*instrumentation\b|\bInstrumentation\s*#|\b(?:ActiveInstrumentation|InstrumentationRecord)\s*\{', output):
+        raise e2e.Blocked('Concurrent Android instrumentation; retain the shared runner lock')
+
+
 def preflight(home, sdk, serial=None):
     host = e2e.doctor(home, sdk)
     if host['status'] != 'PASS': raise e2e.Blocked('; '.join(host['blockers']))
@@ -127,9 +140,7 @@ def preflight(home, sdk, serial=None):
     adb = e2e.sdk_tool(sdk, 'platform-tools/adb')
     def read(*args): return e2e.checked([adb,'-s',actual,*args],timeout=20)
     memory = ram(config.read_text(), read('shell','cat','/proc/meminfo'))
-    active=read('shell','dumpsys','activity','instrumentation')
-    if 'ACTIVITY MANAGER INSTRUMENTATION' not in active or re.search(r'ActiveInstrumentation\{|InstrumentationRecord\{',active):
-        raise e2e.Blocked('Concurrent or unverifiable Android instrumentation; retain the shared runner lock')
+    require_no_instrumentation(read('shell','dumpsys','activity','processes'))
     boot = read('shell','cat','/proc/sys/kernel/random/boot_id')
     if not re.fullmatch(r'[a-f0-9-]{36}',boot): raise e2e.Blocked('Invalid boot identity')
     apks={name:(sha(ROOT/'app/build/outputs/apk'/relative) if (ROOT/'app/build/outputs/apk'/relative).is_file() else 'NOT BUILT')

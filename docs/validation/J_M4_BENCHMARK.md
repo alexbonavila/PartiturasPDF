@@ -35,8 +35,17 @@ independently prove the exact reservation split or detect every small command-li
 RAM override inside that band. The AVD configuration hash and stable boot identity
 are checked during execution. No RAM value is silently corrected.
 
-The shared home lock is held through cleanup. Read-only ActivityManager instrumentation
-inspection must identify no active campaign; unknown dump formats BLOCK. Other
+The shared home lock is held through cleanup. Read-only
+`dumpsys activity processes` inspection requires the exact API26
+`ACTIVITY MANAGER RUNNING PROCESSES (dumpsys activity processes)` header and a later
+`Total persistent processes:` marker from the full dump. The unsupported API26
+`dumpsys activity instrumentation` command is not used. An `Active instrumentation:`
+section, `Instrumentation #` record or instrumentation record object blocks execution,
+even if incomplete. Missing/duplicate headers, truncated/unrecognized output and
+reported dump errors BLOCK; an empty grep result never establishes inactivity.
+These structures were checked against Android 8.0 AOSP
+[`ActivityManagerService.dumpProcessesLocked`](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-8.0.0_r1/services/core/java/com/android/server/am/ActivityManagerService.java).
+This remains a point-in-time check, not a guarantee against a later external start. Other
 manual tools using different locks cannot be coordinated perfectly: the owner must
 ensure there is no competing build/device campaign. A pre-existing `:pdf` worker
 blocks instead of being adopted or killed. Identity is rechecked before mutations.

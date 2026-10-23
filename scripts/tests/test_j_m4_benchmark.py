@@ -21,6 +21,14 @@ def mem(pid,name,pss=123):
     return f'** MEMINFO in pid {pid} [{name}] **\n TOTAL {pss} 10 20 30 40 50\n'
 
 
+def processes_dump(active=''):
+    # Minimal synthetic structure from Android 8.0 dumpProcessesLocked, not device evidence.
+    return ('ACTIVITY MANAGER RUNNING PROCESSES (dumpsys activity processes)\n'
+            '  All known processes:\n  *PERS* UID 1000 ProcessRecord{abc 123:system/1000}\n'
+            + active + '  Total persistent processes: 1\n'
+            '  mProcessesReady=true mSystemReady=true mBooted=true mFactoryTest=0\n')
+
+
 class M4Tests(unittest.TestCase):
     def setUp(self):
         self.nonce='a'*32
@@ -174,10 +182,32 @@ class M4Tests(unittest.TestCase):
             stack.enter_context(patch.object(m4.e2e,'host_image',return_value=selection))
             stack.enter_context(patch.object(m4.e2e,'load_device',return_value=dict(port=5580,name='owned')))
             stack.enter_context(patch.object(m4.e2e,'sdk_tool',return_value=Path('adb')))
-            checked=stack.enter_context(patch.object(m4.e2e,'checked',side_effect=['MemTotal: 1900000 kB','ACTIVITY MANAGER INSTRUMENTATION\n ActiveInstrumentation{fake}']))
+            checked=stack.enter_context(patch.object(m4.e2e,'checked',side_effect=['MemTotal: 1900000 kB',processes_dump('  Active instrumentation:\n    Instrumentation #0: ActiveInstrumentation{fake}\n')]))
             with self.assertRaisesRegex(m4.e2e.Blocked,'serial'):m4.preflight(root,root,'emulator-5554')
             checked.assert_not_called()
             with self.assertRaisesRegex(m4.e2e.Blocked,'Concurrent'):m4.preflight(root,root,'emulator-5580')
+            self.assertEqual(['shell','dumpsys','activity','processes'],checked.call_args.args[0][-4:])
+
+    def test_api26_process_dump_without_active_instrumentation_is_accepted(self):
+        self.assertIsNone(m4.require_no_instrumentation(processes_dump()))
+
+    def test_api26_active_section_or_orphan_record_blocks(self):
+        for active in ['  Active instrumentation:\n',
+                       '    Instrumentation #0: ActiveInstrumentation{abc}\n',
+                       '    InstrumentationRecord{abc}\n']:
+            with self.subTest(active=active),self.assertRaisesRegex(m4.e2e.Blocked,'Concurrent'):
+                m4.require_no_instrumentation(processes_dump(active))
+
+    def test_unknown_malformed_or_truncated_process_dump_blocks(self):
+        valid=processes_dump()
+        for output in ['', 'Unknown command: instrumentation',
+                       'ACTIVITY MANAGER INSTRUMENTATION\n',
+                       valid.split('  Total persistent processes:')[0],
+                       valid.replace('RUNNING PROCESSES','UNKNOWN FORMAT'),
+                       valid+valid, valid+'Permission Denial\n',
+                       valid+'DUMP TIMEOUT: dump timed out\n']:
+            with self.subTest(output=output),self.assertRaises(m4.e2e.Blocked):
+                m4.require_no_instrumentation(output)
 
     def test_worker_replacement_preserves_new_pid_epoch_and_start_token(self):
         j=self.data['journeys'][0]

@@ -1,5 +1,32 @@
 # Phase J implementation plan — M1
 
+## Authoritative current status — 2026-11-02
+
+Audit baseline `6d0bbe412237065ce4759d5f11d143250e9608bf`. This section supersedes
+current-status interpretations of the chronological entries below; original execution
+outcomes remain unchanged. See [technical consolidation](J_PHASE_J_CLOSEOUT.md) and
+[authoritative pending acceptance ledger](J_ACCEPTANCE_LEDGER.md).
+
+| Scope | Current status |
+| --- | --- |
+| M1–M3 | Approved technical scopes completed; historical evidence remains revision-specific |
+| M4 | CLOSED only within automated API26 emulator measurement scope |
+| M5-A | CLOSED only within approved three-cycle endurance scope; `review_required=true` unresolved |
+| M5-B | CLOSED only within eight-method non-destructive API26 recovery scope |
+| M6 / J12 | Evidence-triage scope CLOSED; NO CORRECTION JUSTIFIED BY CURRENT EVIDENCE |
+| J13 | NOT AUTHORIZED / DEFERRED; reproduced problem and approved target required |
+| J08 | DEFERRED TO PHASE R |
+| M7-A / J14 | Documentation consolidation IN PROGRESS for review |
+| M7-B | Final verification PENDING |
+| M7-C / J15 | Owner acceptance PENDING |
+| Phase J integration | NOT MERGE-READY / NOT FORMALLY ACCEPTED; unmerged |
+
+Missing mandatory acceptance evidence is not waived by scheduling deferral. No
+workflows, device operations, policy exceptions, integration or releases are authorized
+by this status table. M7-B/C plans and provenance boundaries are in the linked index.
+
+## Original M1 scope and chronological history
+
 Baseline main: `37f51baf8b34b069a0c83e93b5780a6c9f676c16`. Branch `test/mvp-stabilization-j`.
 Owner-approved scope: Tier A evidence foundation only. No M2/device work, production corrections,
 CI/Gradle/dependency/fixture changes or publication. J08 remains DEFERRED TO PHASE R.

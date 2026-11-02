@@ -1,5 +1,28 @@
 # Roadmap and approval boundaries
 
+## Current Phase J roadmap — 2026-11-02
+
+M1–M6 are complete within approved technical scopes on `test/mvp-stabilization-j`,
+audited `6d0bbe412237065ce4759d5f11d143250e9608bf`. **M7-A documentation
+consolidation IN PROGRESS; M7-B final verification PENDING; M7-C owner acceptance
+PENDING. Phase J is not merged, NOT MERGE-READY and NOT FORMALLY ACCEPTED.**
+
+Use the [consolidation index](validation/J_PHASE_J_CLOSEOUT.md) and
+[acceptance ledger](validation/J_ACCEPTANCE_LEDGER.md) for current decisions.
+M5-A memory growth remains unresolved; no physical calibration or numerical budgets
+are approved. J08 remains **DEFERRED TO PHASE R**; J13 remains NOT AUTHORIZED /
+DEFERRED. Next work requires owner approval; no future feature phase starts here.
+
+Read-only remote verification on 2026-11-02 found existing lightweight tag
+`v1.0.0-mvp` at `37f51baf8b34b069a0c83e93b5780a6c9f676c16`. The commit target
+resolves to that same SHA. This supersedes the historical “No tag exists yet” wording
+below, not the historical evidence itself. GitHub Release/assets were not verified;
+a tag does not establish their existence. Do not create or move a tag using the old
+proposal below. See [MVP record](releases/MVP_RELEASE.md).
+
+The following dated/current-at-the-time sections are preserved historical snapshots;
+their original status claims are not fresh evidence at the audited revision.
+
 ## Current milestone — merged functional MVP
 
 PR [#24](https://github.com/alexbonavila/PartiturasPDF/pull/24) integrated Phase I and all D04 corrections into `main` at `f06197a75a2e420fb87153c0e64e3fe2a28841ea`. [CI #99](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39424923611) passed all nine jobs with 407 ordinary Android tests on each API26/27/36; [CI #101](https://github.com/alexbonavila/PartiturasPDF/actions/runs/39456085172) passed the mandatory post-merge checks. Owner-reported tablet/emulator usability is positive; individual manual acceptance observations have not been supplied.

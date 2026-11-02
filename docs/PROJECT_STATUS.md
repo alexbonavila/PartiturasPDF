@@ -1,5 +1,31 @@
 # Current project status — PartiturasPDF
 
+## Current Phase J consolidation — 2026-11-02
+
+Branch `test/mvp-stabilization-j`, audited HEAD
+`6d0bbe412237065ce4759d5f11d143250e9608bf`: **M1–M6 completed within their
+approved technical scopes**. M4 automated emulator measurements, M5-A three-cycle
+endurance, M5-B eight-method non-destructive recovery and M6 evidence triage retain
+their scoped closures; these are not full manual/physical acceptance.
+
+**M7-A documentation consolidation IN PROGRESS; M7-B final verification PENDING;
+M7-C owner acceptance PENDING. Phase J is NOT MERGE-READY, not merged and NOT
+FORMALLY ACCEPTED.** Main/merge base remains `37f51baf8b34b069a0c83e93b5780a6c9f676c16`;
+the audited branch is 48 commits ahead / 0 behind. Current PR, checks and protection
+state are unverified because the audit's GitHub API reads returned Forbidden.
+
+See [technical consolidation](validation/J_PHASE_J_CLOSEOUT.md) and the
+[current acceptance ledger](validation/J_ACCEPTANCE_LEDGER.md). M5-A's
+`review_required=true`, physical-device/budget, provider/recovery/transfer,
+accessibility/localization/delivery and latest-revision CI obligations remain open.
+J12 requires no correction on current evidence; J13 is NOT AUTHORIZED / DEFERRED.
+J08 remains **DEFERRED TO PHASE R**. No scope closure waives policy.
+
+The dated sections below are historical snapshots. Their original PASS/BLOCKED/
+NOT RUN and future-milestone statements remain tied to their original dates, not
+current Phase J status. Existing MVP tag status is reconciled in the release record;
+no new release, binary distribution or integration is asserted here.
+
 ## Phase J / M3 technical verification — 2026-10-23 (unmerged branch)
 
 M3's selected compatibility, locale/offline/local AAB delivery and scoped coverage

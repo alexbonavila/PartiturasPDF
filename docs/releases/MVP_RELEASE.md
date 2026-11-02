@@ -1,5 +1,27 @@
 # PartiturasPDF — functional MVP milestone
 
+## Tag-status reconciliation — verified 2026-11-02
+
+Read-only `git ls-remote origin 'refs/tags/v1.0.0-mvp*'` returns
+`37f51baf8b34b069a0c83e93b5780a6c9f676c16 refs/tags/v1.0.0-mvp` with no
+separate dereference entry. The referenced object is a commit; resolving its
+`^{commit}` yields the same SHA. Thus the existing tag is **lightweight**, with
+resolved commit target `37f51baf8b34b069a0c83e93b5780a6c9f676c16` (the MVP/main
+baseline), not an uncreated annotated tag. No tag was created, moved or deleted.
+
+The draft state, proposed annotated tag and procedure below are the **historical
+2026-10-20 snapshot**, retained verbatim. Their “not created yet” statements are
+superseded as current tag status by this dated observation; the old tag-creation
+procedure is not a present instruction. GitHub Release existence, assets, signatures
+and public distribution were not independently verified in this reconciliation and
+must not be inferred from a Git tag. No new release authorization is granted.
+
+Phase J is a separate unmerged branch: [current consolidation](../validation/J_PHASE_J_CLOSEOUT.md)
+and [pending acceptance](../validation/J_ACCEPTANCE_LEDGER.md). Its technical scopes
+do not revise the old MVP's evidence or establish final Phase J acceptance.
+
+## Historical draft snapshot — 2026-10-20
+
 **State:** Documentation closeout draft on branch `docs/mvp-release-closeout`, dated 2026-10-20. A version tag and GitHub Release have **not** been created. This record does not claim an installable public release.
 
 ## Provenance and version

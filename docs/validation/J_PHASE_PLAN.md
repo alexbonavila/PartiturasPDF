@@ -309,3 +309,39 @@ operations; historical independently reviewed M2/M3-A and owner-reported aggrega
 evidence remain distinct. M4/M5-A scoped closures and M5-A's unresolved memory growth
 flag remain intact. J08 remains **DEFERRED TO PHASE R**. Execution requires separate
 owner approval of the exact device, installation and eight selected methods.
+
+
+## M5-B native recovery evidence — 2026-11-02
+
+[M5-B native results](J_M5_B_RECOVERY_MATRIX.md#2026-11-02--native-recovery-execution-pass)
+record supplied independently verified report `e07d1f8aed8549faaef51103c2528818`,
+execution `d1df892e5d1f7d2c3e722b51e9617ed666ca6d0c`: **PASS**, complete=true,
+8/8 selected JUnit methods, zero failures/errors/skips, API26 / 2048 MiB owned
+emulator, clean source, matched installed APK hashes, valid instrumentation completion
+and ADB exit 0. Recorded JUnit duration is 22.141 s; all three artifact hashes were
+independently verified in the supplied review. No archive was re-audited in this task.
+
+**M5-B is CLOSED by owner approval on 2026-11-02 only within its bounded
+non-destructive eight-method API26 recovery scope. M5-A and M5-B have completed
+their respective approved scopes; final Phase J acceptance remains pending.** Existing test-specific cleanup is distinct from a separate
+host-cleanup campaign, which was not implemented. OS process death, deliberate worker
+killing, real external SAF failures, backup/restore and D2D remain outside acceptance.
+M4/M5-A closures, pending physical-device calibration/budgets and M5-A's unresolved
+`review_required=true` remain unchanged. J08 remains **DEFERRED TO PHASE R**.
+
+### Proposed M6 decision — J12 before conditional J13
+
+The existing milestone definition requires a reproduced defect/measurement, separately
+owner-approved minimal correction and matched before/after regression evidence.
+The catalogue's J12/J13 placeholders are plans, not proof of either execution or defect.
+The evidence reviewed here demonstrates no current production defect requiring J12
+implementation. Historical M4 failures concerned test/host tooling and were corrected;
+they do not justify speculative application changes or reopening the closed scopes.
+
+M5-A's finite post-close PSS growth is an unresolved observation, not a confirmed leak.
+Comparatively stable open-document PSS does not resolve it either. Recommend M6 begin
+with a read-only defect/evidence triage and a separately approved, bounded follow-up
+measurement plan only where needed. Conditional J13 optimization should not begin
+without a reproduced problem, justified target and owner approval; no prefetch/cache,
+parallel-native or limit expansion is authorized. No M6 implementation starts here.
+Broader physical/manual/deferred acceptance remains outstanding for final consolidation.

@@ -1,9 +1,9 @@
 # M5-B recovery evidence selection
 
 2026-11-02. Baseline `3a6fb21960e5ff5ccd3b8410b37e245e42df0e62`, branch
-`test/mvp-stabilization-j`. Documentation/static selection only. All eight
-current-revision executions: **NOT RUN**. No device or installation authorization
-is granted by this document.
+`test/mvp-stabilization-j`. **Current status (2026-11-02): native M5-B execution
+PASS; bounded non-destructive recovery scope CLOSED by owner approval.** The original selection-time NOT RUN matrix below
+is preserved as historical evidence. No further device authorization is granted here.
 
 ## Exact matrix
 
@@ -11,7 +11,7 @@ All methods are existing Android JUnit methods, not JVM tests. Native host metho
 use production controllers/Reader/native isolation with injected local capabilities
 and test-owned storage; they do not prove genuine external SAF authorization.
 
-| Exact JUnit identity | Recovery requirement / capability | Historical evidence | Preservation / limitations | Current revision |
+| Exact JUnit identity | Recovery requirement / capability | Historical evidence | Preservation / limitations | Selection-time status |
 | --- | --- | --- | --- | --- |
 | `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.registeredDisplayedPageFlushesThroughProductionRouteAndRecreationDoesNotReopen` | Actual Activity recreation retains host/native session; page 2 flushes durably. | M2 and M3-A independently reviewed PASS | Registered identity and committed page; replacement presentation consumer. No OS death. | NOT RUN |
 | `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.genuineActivityBackgroundFlushesAndResumeReopensWithoutNewUserIntent` | Actual ActivityScenario CREATED/RESUMED; same Reader entry, fresh native session. | M2 independently reviewed PASS | Transient logical intent and safe route closure. Does not assert all registered metadata. | NOT RUN |
@@ -176,4 +176,63 @@ permission revocation, backup/restore, D2D or destructive operations.
 M4 and M5-A scoped closures remain unchanged. M5-A's `review_required=true` and PSS
 growth remain unresolved. No memory budget, prolonged stability, physical-device
 calibration or leak-free claim is approved. J08 remains **DEFERRED TO PHASE R**.
-M5-B execution and scope closure are pending; no next phase starts automatically.
+At selection time M5-B execution and scope closure were pending; the subsequent
+execution is recorded below. No next phase starts automatically.
+
+
+## 2026-11-02 — native recovery execution PASS
+
+Report: `e07d1f8aed8549faaef51103c2528818`.
+Execution revision: `d1df892e5d1f7d2c3e722b51e9617ed666ca6d0c` on
+`test/mvp-stabilization-j`, clean checkout. **Overall PASS; complete=true.**
+
+The owner supplies verified findings from an independently inspected report archive.
+That archive is not attached to this documentation request: this update records the
+supplied independent review, not an additional raw-artifact inspection by Codex.
+Original M2/M3 evidence retains its own revisions and verification boundaries.
+
+| Attribution / integrity | Verified finding supplied by owner |
+| --- | --- |
+| Emulator | `PartiturasPDF_E2E_API26_f635ff9eba00` |
+| Serial / Android API | `emulator-5580` / 26 |
+| Configured RAM | 2048 MiB |
+| App and instrumentation APKs | Hashes verified against installed packages |
+| Completed methods | 8 selected, 8 PASS; zero failures, errors or skips |
+| Identity inventory | No unexpected, duplicated or missing methods |
+| ADB exit | 0 |
+| Runner completion | `INSTRUMENTATION_CODE: -1`; `OK (8 tests)` |
+| Recorded JUnit duration | 22.141 seconds |
+| Cross-artifact identity | Raw instrumentation, JUnit XML and summary agree |
+| Artifact integrity | All 3 report artifact SHA-256 hashes independently verified |
+
+Exact per-method outcome at this execution revision:
+
+| Fully qualified JUnit identity | Result |
+| --- | --- |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.registeredDisplayedPageFlushesThroughProductionRouteAndRecreationDoesNotReopen` | PASS |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.genuineActivityBackgroundFlushesAndResumeReopensWithoutNewUserIntent` | PASS |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.backgroundWaitsForDelayedRealNativeRenderOutputAndDiscardsItsBitmap` | PASS |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.syntheticSavedBundleReopensDiskRegisteredScoreAtDurablyPresentedPageWithFreshNativeSession` | PASS |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.syntheticTransientSnapshotCannotAutomaticallyReopenOrCreateRegisteredPosition` | PASS |
+| `com.abdev.partituraspdf.app.integration.AppPersistenceIntegrationTest.everyThemeAndFitSurvivesJoinedStoreAndRoomReinitialization` | PASS |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.injectedCheckpointFailurePreservesRealEarlierPositionAndSafeReopenAfterEmptyRouteVerification` | PASS |
+| `com.abdev.partituraspdf.app.integration.ReaderHostNativeIntegrationTest.injectedProviderUnavailableIsContextualAndRetryRevalidatesBeforeRealNativeOpen` | PASS |
+
+The archive verification and installed-hash agreement are recorded without inventing
+unprovided digest values, binary attestation or additional execution counts. Test
+success includes each method's existing state/resource assertions and teardown; there
+was **no separate host-cleanup campaign** and no independently reported global host
+cleanup PASS. This campaign neither reproduces M5-A endurance nor measures memory.
+
+**M5-B is CLOSED by owner approval on 2026-11-02 only within its bounded,
+non-destructive eight-method API26 recovery scope. M5-A and M5-B have completed
+their respective approved scopes; this is not final Phase J acceptance.**
+Synthetic Bundle reconstruction remains distinct from OS process death. Native rendering
+with injected provider/checkpoint errors does not establish genuine external SAF failure
+recovery. Deliberately killed workers, OS process termination, permission revocation,
+backup/restore and D2D remain excluded and unaccepted.
+
+M4/M5-A scoped closures are preserved. M5-A's `review_required=true` remains open;
+no prolonged leak-free stability, physical-device calibration or quantitative budget
+is approved. J08 remains **DEFERRED TO PHASE R**. No tests or devices were operated
+for this documentation update.

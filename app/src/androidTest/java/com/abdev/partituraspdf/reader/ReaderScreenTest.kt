@@ -2,6 +2,11 @@ package com.abdev.partituraspdf.reader
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
+import android.view.ViewTreeObserver
+import androidx.compose.ui.platform.LocalView
+import org.json.JSONObject
+import org.junit.rules.TestName
 import android.util.Log
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
@@ -49,6 +54,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderScreenTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+    @get:Rule val testName=TestName()
+    private val traceLock=Any()
+    private var traceSequence=0
+    private var lastLayoutTrace:String?=null
     private val composition=ReaderTestComposition(compose)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private lateinit var controller:ReaderController
@@ -85,6 +94,7 @@ class ReaderScreenTest {
         override suspend fun render(request:RenderRequest):Outcome<RenderedPage> {
             renderGate?.await()
             requests+=request
+            trace("render-start")
             val bitmap=Bitmap.createBitmap(request.width,request.height,Bitmap.Config.ARGB_8888)
             bitmap.eraseColor(Color.RED);bitmaps+=bitmap
             val retained=activeLeases.incrementAndGet()
@@ -95,7 +105,7 @@ class ReaderScreenTest {
                 override val displayInfo=observed
                 override val bitmap=bitmap
                 private var closed=false
-                override fun close(){if(!closed){closed=true;bitmap.recycle();activeLeases.decrementAndGet()}}
+                override fun close(){if(!closed){closed=true;bitmap.recycle();activeLeases.decrementAndGet();trace("lease-close")}}
             })
         }
         override fun close(){sessionCloses.incrementAndGet()}
@@ -108,9 +118,46 @@ class ReaderScreenTest {
             if(openingCanceled)throw CancellationException("test canceled open")
             return openFailure?.let{Outcome.Failure(it)}?:Outcome.Success(ReaderReady(request,session,PageIndex(0)).also{ready=it})
         }
-        override suspend fun displayed(session:ReadSessionId,page:PageIndex):Outcome<Unit>{acknowledged+=page;return checkpointFailure?.let{Outcome.Failure(it)}?:Outcome.Success(Unit)}
+        override suspend fun displayed(session:ReadSessionId,page:PageIndex):Outcome<Unit>{acknowledged+=page;trace("route-displayed");return checkpointFailure?.let{Outcome.Failure(it)}?:Outcome.Success(Unit)}
         override suspend fun background():Outcome<Unit> = Outcome.Success(Unit)
         override suspend fun close():Outcome<Unit>{ready=null;return Outcome.Success(Unit)}
+    }
+
+    /** Synthetic harness diagnostics only; no text input, document references or screenshots. */
+    private fun trace(event:String, observed:ReaderUiState?=null) {
+        if(!::controller.isInitialized)return
+        val state=observed?:controller.state.value
+        val root=compose.activity.window.decorView
+        val visible=Rect();root.getWindowVisibleDisplayFrame(visible)
+        val surface=runCatching { surface() }.getOrNull()
+        val data=JSONObject().put("test",testName.methodName).put("event",event)
+            .put("phase",state.phase.name).put("viewportWidth",state.viewport?.widthPx?:-1)
+            .put("viewportHeight",state.viewport?.heightPx?:-1).put("generation",state.viewportGeneration)
+            .put("frameToken",state.frame?.let { System.identityHashCode(it) }?:0)
+            .put("requested",state.requestedPage?.value?:-1).put("presented",state.presentedPage?.value?:-1)
+            .put("renders",requests.size).put("opens",opens.get()).put("acknowledgments",acknowledged.map { it.value })
+            .put("activeLeases",activeLeases.get()).put("maximumLeases",maximumLeases.get())
+            .put("consumerActive",state.checkpointConsumer?.let { it.frame.active(it) }?:false)
+            .put("surfaceToken",surface?.let { System.identityHashCode(it) }?:0)
+            .put("surfaceAttached",surface?.isAttachedToWindow?:false)
+            .put("surfaceWidth",surface?.width?:-1).put("surfaceHeight",surface?.height?:-1)
+            .put("windowFocus",compose.activity.hasWindowFocus()).put("decorWidth",root.width).put("decorHeight",root.height)
+            .put("visibleTop",visible.top).put("visibleBottom",visible.bottom)
+            .put("systemInsetBottom",root.rootWindowInsets?.systemWindowInsetBottom?:-1)
+        // Layout callbacks may repeat without a meaningful measurement/state change.
+        // Never hold the logging lock while observing frame locks or Android views.
+        synchronized(traceLock) {
+        val signature=data.toString()
+        if(event=="layout" && signature==lastLayoutTrace)return
+        if(event=="layout")lastLayoutTrace=signature
+        if(traceSequence>=2048) {
+            if(traceSequence==2048)Log.w("ReaderRuntimeSequence","TRACE TRUNCATED: evidence incomplete")
+            traceSequence++
+            return
+        }
+        data.put("sequence",++traceSequence)
+        Log.i("ReaderRuntimeSequence",data.toString())
+        }
     }
 
     private fun text(id:Int,vararg args:Any)=compose.activity.getString(id,*args)
@@ -118,16 +165,23 @@ class ReaderScreenTest {
         controller=ReaderController(scope,route,session.renderLimits,{HeapAvailability(256L*1024*1024,0)},fit)
         if(open)controller.open(ReaderOpenIntent(1,request))
         composition.mount{
+            val view=LocalView.current
+            DisposableEffect(view) {
+                val listener=ViewTreeObserver.OnGlobalLayoutListener { trace("layout") }
+                view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+                onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+            }
             val manager=LocalInputModeManager.current
             SideEffect{inputMode=manager}
             val state by controller.state.collectAsState()
+            SideEffect { trace("composed",state) }
             val generation=recomposition.intValue
             PartiturasPDFTheme(darkTheme=dark){
                 val density=LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density,if(large.value)2f else density.fontScale)){
                     if(shown.value)Box((if(narrow.value)Modifier.width(320.dp) else Modifier.fillMaxWidth()).then(
                         if(shortViewport.value)Modifier.height(with(density){(resizeHeightPx?:240.dp.roundToPx()).toDp()}) else Modifier.fillMaxHeight())){
-                        ReaderScreen(state.copy(phase=phase.value?:state.phase),{if(generation>=0)actions+=it;controller.dispatch(it)},{backs.incrementAndGet()})
+                        ReaderScreen(state.copy(phase=phase.value?:state.phase),{trace("action-before:"+it.javaClass.simpleName);if(generation>=0)actions+=it;controller.dispatch(it);trace("action-after:"+it.javaClass.simpleName)},{backs.incrementAndGet()})
                     }
                 }
             }
@@ -567,6 +621,7 @@ class ReaderScreenTest {
     }
 
     private fun openJump() {
+        trace("jump-open-before")
         compose.onNodeWithTag("reader_page_counter").performScrollTo().assertIsEnabled().performClick()
         compose.onNodeWithTag("reader_jump_dialog").assertIsDisplayed()
         compose.onNodeWithTag("reader_jump_input").assertIsFocused()
@@ -597,6 +652,7 @@ class ReaderScreenTest {
         compose.onNodeWithText(text(R.string.reader_jump_confirm)).performClick();visible(0)
         assertEquals(listOf(7,0),jumps().map { it.index })
         assertTrue(actions.filterIsInstance<ReaderAction.Page>().isEmpty())
+        trace("jump-first-last-before-ack-assertion")
         assertEquals(listOf(PageIndex(0),PageIndex(7),PageIndex(0)),acknowledged.toList())
     }
 
@@ -620,15 +676,16 @@ class ReaderScreenTest {
         keyboardFocus(compose.onNodeWithTag("reader_page")).performKeyInput { pressKey(Key.Plus) }
         val before=controller.state.value;val renders=requests.size;val opened=opens.get();val view=surface()
         val zoom=compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
-        openJump();jumpInput("7");compose.onNodeWithText(text(R.string.reader_jump_cancel)).performClick()
-        openJump();jumpInput("6");pressBack()
+        openJump();jumpInput("7");trace("cancel-before");compose.onNodeWithText(text(R.string.reader_jump_cancel)).performClick();trace("cancel-after")
+        openJump();jumpInput("6");trace("back-before");pressBack();trace("back-after")
         // If an IME consumes the first Back, it must still not navigate the Reader.
         if(compose.onAllNodesWithTag("reader_jump_dialog").fetchSemanticsNodes().isNotEmpty()) pressBack()
         compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
-        openJump();compose.onNodeWithTag("reader_jump_input").performKeyInput { pressKey(Key.Escape) }
+        openJump();trace("escape-before");compose.onNodeWithTag("reader_jump_input").performKeyInput { pressKey(Key.Escape) };trace("escape-after")
         compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
         compose.onNodeWithTag("reader_toolbar").assertExists()
         assertEquals(0,backs.get());assertTrue(jumps().isEmpty())
+        trace("jump-dismiss-before-frame-assertion")
         assertSame(before.frame,controller.state.value.frame);assertSame(view,surface());assertTrue(view.isAttachedToWindow)
         assertEquals(before.viewport,controller.state.value.viewport);assertEquals(before.viewportGeneration,controller.state.value.viewportGeneration)
         assertEquals(before.fit,controller.state.value.fit);assertEquals(before.presentedPage,controller.state.value.presentedPage)

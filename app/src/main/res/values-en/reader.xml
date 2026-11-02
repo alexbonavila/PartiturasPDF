@@ -50,4 +50,11 @@
     <string name="reader_checkpoint_unconfirmed">Last position request accepted; permanent saving unconfirmed.</string>
     <string name="reader_controls_show">Show controls</string>
     <string name="reader_controls_hide">Hide controls</string>
+    <string name="reader_jump_title">Go to a page</string>
+    <string name="reader_jump_page_input">Page number</string>
+    <string name="reader_jump_total">Total: %1$d pages</string>
+    <string name="reader_jump_confirm">Go to page</string>
+    <string name="reader_jump_cancel">Cancel</string>
+    <string name="reader_jump_invalid_number">Enter a whole number using digits 0 to 9.</string>
+    <string name="reader_jump_out_of_range">Enter a page between 1 and %1$d.</string>
 </resources>

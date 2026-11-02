@@ -386,7 +386,8 @@ class ReaderHostNativeIntegrationTest {
     /** M4 adapter reuses these fixture/route/pixel/cleanup helpers; no normal test invokes it.
      * Timing observations include harness/PixelCopy overhead, not an uninstrumented release metric.
      */
-    internal fun benchmarkIteration(launchNanos: Long, result: JSONObject) {
+    internal fun benchmarkIteration(launchNanos: Long, result: JSONObject, fixtureIds: List<String> = listOf("02", "10")) {
+        require(fixtureIds.size in 2..30 && fixtureIds.all { it in listOf("02", "10", "05") })
         fun now() = android.os.SystemClock.elapsedRealtimeNanos()
         fun stamp(name: String) { result.put(name, now()) }
         val production = ViewModelProvider(compose.activity)[AppHostViewModel::class.java]
@@ -427,7 +428,7 @@ class ReaderHostNativeIntegrationTest {
         stamp("idle_memory_end_ns")
         runBlocking { withContext(Dispatchers.Main.immediate) { production.dispose() }.await() }
         val journeys = org.json.JSONArray().also { result.put("journeys", it) }
-        for (id in listOf("02", "10")) {
+        for (id in fixtureIds) {
             mount(id, benchmark = true)
             val owned = session!!
             val bitmaps = CopyOnWriteArrayList<Bitmap>()

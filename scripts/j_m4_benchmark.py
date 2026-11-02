@@ -251,10 +251,10 @@ class Sampler:
         if self.errors: raise e2e.Blocked('PSS sampling incomplete: '+'; '.join(self.errors))
 
 
-def result_payload(output, nonce, fixture_rows):
-    cases = ev.parse_android(output,{METHOD})
+def result_payload(output, nonce, fixture_rows, *, method=METHOD, sequence=("02","10"), channel="m4"):
+    cases = ev.parse_android(output,{method})
     if any(c['status']=='FAIL' for c in cases): raise e2e.FunctionalFailure('Executed M4 JUnit assertion failed')
-    matches = re.findall(r'(?m)^INSTRUMENTATION_RESULT: m4=(.*)$',output)
+    matches = re.findall(r'(?m)^INSTRUMENTATION_RESULT: '+re.escape(channel)+r'=(.*)$',output)
     if len(matches)!=1: raise ValueError('Missing/duplicate M4 result payload')
     data = json.loads(matches[0],object_pairs_hook=unique)
     if data.get('schema')!=1 or data.get('nonce')!=nonce or data.get('status')!='COMPLETE' or data.get('cleanup')!='PASS':
@@ -267,7 +267,7 @@ def result_payload(output, nonce, fixture_rows):
     if not data['library_ready_ns']<=positive(data.get('idle_memory_begin_ns'),'idle memory begin')<=positive(data.get('idle_memory_end_ns'),'idle memory end'):
         raise ValueError('Invalid idle memory timing')
     journeys=data.get('journeys',[])
-    if len(journeys)!=2 or [j.get('fixture') for j in journeys]!=['02','10']: raise ValueError('Wrong/missing fixture journeys')
+    if len(journeys)!=len(sequence) or [j.get('fixture') for j in journeys]!=list(sequence): raise ValueError('Wrong/missing fixture journeys')
     previous_end=data['library_ready_ns']
     for j in journeys:
         pid=positive(j.get('worker_pid'),'worker PID')

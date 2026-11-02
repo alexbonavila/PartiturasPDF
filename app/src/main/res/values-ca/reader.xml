@@ -50,11 +50,7 @@
     <string name="reader_checkpoint_unconfirmed">Darrera sol·licitud de posició acceptada; desament permanent sense confirmar.</string>
     <string name="reader_controls_show">Mostra els controls</string>
     <string name="reader_controls_hide">Amaga els controls</string>
-    <string name="reader_jump_title">Ves a una pàgina</string>
-    <string name="reader_jump_page_input">Número de pàgina</string>
-    <string name="reader_jump_total">Total: %1$d pàgines</string>
-    <string name="reader_jump_confirm">Ves a la pàgina</string>
-    <string name="reader_jump_cancel">Cancel·la</string>
-    <string name="reader_jump_invalid_number">Introdueix un nombre enter amb xifres del 0 al 9.</string>
-    <string name="reader_jump_out_of_range">Introdueix una pàgina entre 1 i %1$d.</string>
+    <string name="reader_seek_label">Cerca una pàgina</string>
+    <string name="reader_seek_preview">Previsualització: pàgina %1$d de %2$d</string>
+    <string name="reader_seek_endpoint">%1$d</string>
 </resources>

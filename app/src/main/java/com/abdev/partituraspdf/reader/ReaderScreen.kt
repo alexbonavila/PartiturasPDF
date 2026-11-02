@@ -36,12 +36,6 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
     var transform by remember(state.intent) { mutableStateOf(ReaderTransform()) }
     var options by remember(state.intent) { mutableStateOf(false) }
     var chromeVisible by remember(state.intent) { mutableStateOf(true) }
-    var jump by remember(state.intent) { mutableStateOf<ReaderPageJumpTarget?>(null) }
-    val modal = jump != null
-    val jumpTarget = readerPageJumpTarget(state)
-    LaunchedEffect(state, jump) {
-        jump?.let { if (!readerNavigationContextIsCurrent(it.context, state) || state.failure != null) jump = null }
-    }
     val available = state.phase !in setOf(ReaderPhase.IDLE, ReaderPhase.OPENING, ReaderPhase.QUIESCED, ReaderPhase.RETIRED) && state.session != null
     val frame = state.frame.takeIf { available }
     val attachable = frame?.availability?.collectAsState()?.value == true
@@ -87,7 +81,7 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                     .onSizeChanged { if (it.width > 0 && it.height > 0) viewport = ReaderViewport(it.width, it.height) }
                     .semantics {
                         contentDescription = pageDescription; stateDescription = zoomDescription
-                        if (available && !modal) {
+                        if (available) {
                             customActions = buildList {
                                 add(CustomAccessibilityAction(toggleLabel) { chromeVisible = !chromeVisible; true })
                                 if ((state.requestedPage?.value ?: 0) > 0) add(CustomAccessibilityAction(previousLabel) { page(-1); true })
@@ -104,7 +98,7 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                         }
                     }
                     .onKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown || !available || options || modal || event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) false else when (event.key) {
+                        if (event.type != KeyEventType.KeyDown || !available || options || event.isCtrlPressed || event.isAltPressed || event.isMetaPressed) false else when (event.key) {
                             Key.C -> { chromeVisible = !chromeVisible; true }
                             Key.DirectionLeft -> { page(-1); true }
                             Key.DirectionRight -> { page(1); true }
@@ -116,8 +110,8 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                             else -> false
                         }
                     }.focusable()
-                    .pointerInput(state.intent, state.requestedPage, viewport, available, slop, modal) {
-                        if (!available || modal) return@pointerInput
+                    .pointerInput(state.intent, state.requestedPage, viewport, available, slop) {
+                        if (!available) return@pointerInput
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val gate = ReaderGestureGate(slop)
@@ -180,18 +174,15 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                     val current = state.presentedPage?.takeIf { it == metadata?.page?.page && state.phase != ReaderPhase.RENDERED }
                     val counter = if (current == null) stringResource(R.string.reader_page_unpresented)
                         else stringResource(R.string.reader_page_counter, current.value + 1, state.session!!.pageCount)
-                    TextButton(onClick = {
-                        // Read current state again: never capture an obsolete recomposition's session.
-                        readerPageJumpTarget(latest)?.let { target ->
-                            chromeVisible = true; options = false; jump = target
-                        }
-                    }, enabled = jumpTarget != null && !modal,
-                        modifier = Modifier.heightIn(min = 48.dp).testTag("reader_page_counter").semantics { liveRegion = LiveRegionMode.Polite }) {
-                        Text(counter)
-                    }
+                    Text(counter, Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                     ReaderStatus(state, onAction)
                 }
 
+                }
+                if (chromeVisible) Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().pointerInput(Unit) {
+                    awaitPointerEventScope { while (true) awaitPointerEvent() }
+                }, color = MaterialTheme.colorScheme.surface) {
+                    ReaderPageSeek(state, onAction = { action(it) })
                 }
                 if (!chromeVisible && (state.phase != ReaderPhase.VISIBLE || state.failure != null || state.checkpoint != ReaderCheckpoint.None)) Surface(Modifier.align(Alignment.TopCenter).zIndex(1f).pointerInput(Unit) {
                     awaitPointerEventScope {
@@ -208,18 +199,7 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
             }
         }
     }
-    jump?.takeIf { readerNavigationContextIsCurrent(it.context, state) && state.failure == null }?.let { target ->
-        ReaderPageJumpDialog(target, onDismiss = { jump = null; chromeVisible = true }, onConfirm = { input ->
-            // Clear before dispatch so repeated callbacks/IME actions cannot navigate twice.
-            if (jump === target) {
-                val request = readerPageJumpAction(target, input, latest)
-                if (request != null) {
-                    jump = null; chromeVisible = true
-                    action(request)
-                }
-            }
-        })
-    }
+
 }
 
 @Composable

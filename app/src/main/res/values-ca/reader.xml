@@ -48,4 +48,6 @@
     <string name="reader_checkpoint_canceled">La sol·licitud de desament s’ha cancel·lat; el desament no està confirmat.</string>
     <string name="reader_checkpoint_failure">No s’ha pogut sol·licitar que es desi la posició.</string>
     <string name="reader_checkpoint_unconfirmed">Darrera sol·licitud de posició acceptada; desament permanent sense confirmar.</string>
+    <string name="reader_controls_show">Mostra els controls</string>
+    <string name="reader_controls_hide">Amaga els controls</string>
 </resources>

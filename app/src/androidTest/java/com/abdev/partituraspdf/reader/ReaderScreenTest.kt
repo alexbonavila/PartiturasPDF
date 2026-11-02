@@ -496,4 +496,73 @@ class ReaderScreenTest {
         disposeFixture();assertTrue(bitmaps.all{it.isRecycled});assertEquals(1,maximumLeases.get())
     }
 
+
+    @Test fun centerTogglesWithoutViewportRenderLeaseOrTimeoutChanges() {
+        start();visible()
+        val initial=controller.state.value;val rendered=requests.size;val opened=opens.get();val view=surface()
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        repeat(4) {
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+            compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(30_000);compose.waitForIdle()
+            compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+            compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        }
+        assertSame(view,surface());assertTrue(view.isAttachedToWindow)
+        assertEquals(initial.viewport,controller.state.value.viewport)
+        assertEquals(initial.viewportGeneration,controller.state.value.viewportGeneration)
+        assertSame(initial.frame,controller.state.value.frame)
+        assertEquals(rendered,requests.size);assertEquals(opened,opens.get());assertEquals(1,maximumLeases.get())
+    }
+    @Test fun quarterBoundariesAndHiddenKeyboardControlsKeepOriginalNavigation() {
+        start();visible()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.25f,height*.7f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.75f,height*.7f)) };visible(1)
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        keyboardFocus(compose.onNodeWithTag("reader_page")).performKeyInput { pressKey(Key.C) }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        val toggle=compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsActions.CustomActions]
+            .single { it.label==text(R.string.reader_controls_hide) }
+        compose.runOnIdle { assertTrue(toggle.action()) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+    }
+    @Test fun canceledAndOutOfBoundsMotionNeverToggleChrome() {
+        start();visible()
+        compose.onNodeWithTag("reader_page").performTouchInput {
+            down(Offset(width*.5f,height*.7f));moveTo(Offset(-1f,height*.7f));moveTo(Offset(width*.5f,height*.7f));up()
+        }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        compose.onNodeWithTag("reader_page").performTouchInput { down(Offset(width*.5f,height*.7f));cancel() }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+    }
+    @Test fun toolbarTouchDoesNotLeakAndHiddenRecoveryRemainsReachable() {
+        start();visible()
+        button(R.string.reader_next).performTouchInput { click() };visible(1)
+        assertEquals(PageIndex(1),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_toolbar").performTouchInput { click(Offset(width-2f,height-2f)) }
+        assertEquals(PageIndex(1),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnUiThread { controller.dispatch(ReaderAction.Page(-1)) }
+        compose.onNodeWithText(text(R.string.reader_error_page)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_back)).performScrollTo().assertIsDisplayed().performTouchInput { click() }
+        assertEquals(1,backs.get())
+    }
+
+    @Test fun hiddenPreferenceSurvivesFitPageAndZoomButNewIntentShowsToolbar() {
+        start();visible()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+        keyboardFocus(compose.onNodeWithTag("reader_page")).performKeyInput { pressKey(Key.Plus) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnUiThread { controller.dispatch(ReaderAction.Fit(PageFit.WIDTH)) };visible()
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.9f,height*.7f)) };visible(1)
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible(0)
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+    }
 }

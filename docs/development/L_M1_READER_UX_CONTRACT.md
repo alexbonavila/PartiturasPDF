@@ -1,5 +1,15 @@
 # PartiturasPDF — Phase L / L-M1 Reader UX contract
 
+> **Owner-approved supersession — L-M3C-R4 (2026-11-02):** Numeric dialog/input,
+> IME and modal-specific page-jump requirements below are historical. Direct
+> navigation now uses a bottom chrome page seek slider with local drag preview
+> and one session-guarded commit on completion. No dialog or keyboard editor is
+> part of this UX. All graphical acknowledgment, ownership, navigation safety,
+> localization and lifecycle boundaries remain applicable. See
+> [R4 evidence](L_M3C_R4_PAGE_SEEK_SLIDER_EVIDENCE.md). R1/R2/R3 results are preserved;
+> the experimental IME window-policy approach is intentionally abandoned.
+
+
 **Status:** Owner-approved UX decisions; design-only baseline, no production implementation authorized by this document  
 **Date:** 2026-11-02  
 **Repository:** https://github.com/alexbonavila/PartiturasPDF  

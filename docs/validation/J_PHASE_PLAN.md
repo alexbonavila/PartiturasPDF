@@ -345,3 +345,28 @@ measurement plan only where needed. Conditional J13 optimization should not begi
 without a reproduced problem, justified target and owner approval; no prefetch/cache,
 parallel-native or limit expansion is authorized. No M6 implementation starts here.
 Broader physical/manual/deferred acceptance remains outstanding for final consolidation.
+
+## M6 read-only triage completion — 2026-11-02
+
+[M6 findings, provenance and open acceptance ledger](J_M6_DEFECT_TRIAGE.md) record the
+repository-based audit at `a6fdcf73f9cfbc3e362ce2e2af539f2927686bf8`:
+
+- **J12: NO CORRECTION JUSTIFIED BY CURRENT EVIDENCE.** No demonstrated current
+  production defect warrants implementation; corrected historical tooling failures
+  and missing acceptance evidence do not create a new production defect.
+- **J13: NOT AUTHORIZED / DEFERRED.** No approved numerical target is shown violated;
+  any future optimization requires reproduction, approved target/scope and matched
+  before/after evidence. No speculative caching/prefetch/concurrency/limit changes.
+- **M6: CLOSED by owner approval on 2026-11-02 within its evidence-triage scope,
+  with no production changes.**
+- **M7: NOT STARTED.** Final Phase J acceptance remains pending.
+
+M4/M5 scoped closures remain unchanged. M5-A's `review_required=true` is an unresolved
+PSS observation, not a confirmed leak or resolved concern; further equivalent
+post-teardown/retention measurements require separate authorization. Physical Android
+8.1/calibration/budgets, external providers, OS process-death/broader worker recovery,
+backup/D2D/transfer, accessibility/manual language/live transitions, delivery/restoration
+and latest-revision CI/final acceptance remain visible in the M6 ledger. J08 remains
+**DEFERRED TO PHASE R**. The supplementary owner-reported empty open-issue search is
+not proof of defect absence or a complete historical issue inventory. No new execution
+campaign, code correction, measurement or M7 work occurred.

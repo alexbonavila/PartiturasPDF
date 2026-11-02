@@ -29,6 +29,19 @@ def processes_dump(active=''):
             '  mProcessesReady=true mSystemReady=true mBooted=true mFactoryTest=0\n')
 
 
+def process_replies(*steps):
+    """Remote (status, body) frames versus real ADB CompletedProcess outcomes."""
+    import re
+    pending=iter(steps)
+    def execute(command, **kwargs):
+        step=next(pending)
+        if isinstance(step,subprocess.CompletedProcess): return step
+        status,body=step
+        nonce=re.search(r'M4_PROC_READ:([a-f0-9]{32}):',command[-1])[1]
+        return subprocess.CompletedProcess(command,0,body+'\nM4_PROC_READ:'+nonce+':'+str(status)+'\n','')
+    return execute
+
+
 class M4Tests(unittest.TestCase):
     def setUp(self):
         self.nonce='a'*32
@@ -171,17 +184,115 @@ class M4Tests(unittest.TestCase):
     def test_normal_process_exit_is_discarded_not_replaced(self):
         from unittest.mock import Mock
         probe=Mock(adb='adb',serial='emulator-5580')
-        replies=[subprocess.CompletedProcess([],0,'101',''),
-                 subprocess.CompletedProcess([],0,m4.ev.APP+'\0',''),
-                 subprocess.CompletedProcess([],1,'','No such process'),
-                 subprocess.CompletedProcess([],1,'','')]
+        replies=process_replies(subprocess.CompletedProcess([],0,'101',''),
+                 (0,m4.ev.APP+'\0'),(1,''),(0,'M4_ABSENT'))
         with patch.object(m4.e2e,'execute',side_effect=replies):self.assertIsNone(m4.process(probe,m4.ev.APP))
+        self.assertIn('exited during stat',probe.record.call_args.args[1])
+
+    def test_exit_during_cmdline_read_requires_positive_absence(self):
+        from unittest.mock import Mock
+        probe=Mock(adb='adb',serial='emulator-5580')
+        # Remote cat exit 255 is distinct from an ADB transport exit 255.
+        replies=process_replies(subprocess.CompletedProcess([],0,'101',''),(255,''),(0,'M4_ABSENT'))
+        with patch.object(m4.e2e,'execute',side_effect=replies) as execute:
+            self.assertIsNone(m4.process(probe,m4.ev.APP))
+            self.assertEqual(3,execute.call_count)  # One independent probe, no retry.
+        self.assertIn('exited during cmdline',probe.record.call_args.args[1])
+
+    def test_empty_cmdline_of_verified_zombie_is_an_exit_gap(self):
+        from unittest.mock import Mock
+        probe=Mock(adb='adb',serial='emulator-5580')
+        replies=process_replies(subprocess.CompletedProcess([],0,'101',''),(0,''),
+                                (0,stat(101,44).replace(') S ',') Z ')))
+        with patch.object(m4.e2e,'execute',side_effect=replies):
+            self.assertIsNone(m4.process(probe,m4.ev.APP))
+
+    def test_live_unreadable_process_and_unverifiable_exit_stay_blocked(self):
+        from unittest.mock import Mock
+        probe=Mock(adb='adb',serial='emulator-5580')
+        for proof in [(0,stat(101,44)),(1,''),(0,'malformed'),
+                      subprocess.CompletedProcess([],255,'','error: device offline')]:
+            with self.subTest(proof=proof):
+                replies=process_replies(subprocess.CompletedProcess([],0,'101',''),(1,''),proof)
+                with patch.object(m4.e2e,'execute',side_effect=replies),self.assertRaises((m4.e2e.Blocked,ValueError)):
+                    m4.process(probe,m4.ev.APP)
+
+    def test_adb_failure_is_not_discarded_even_if_process_might_have_exited(self):
+        from unittest.mock import Mock
+        probe=Mock(adb='adb',serial='emulator-5580')
+        for failure in [subprocess.CompletedProcess([],255,'','error: device offline'),
+                        subprocess.CompletedProcess([],0,'unframed output',''),
+                        m4.e2e.Blocked('Command timed out')]:
+            responses=[subprocess.CompletedProcess([],0,'101',''),failure]
+            with self.subTest(failure=failure),patch.object(m4.e2e,'execute',side_effect=responses) as execute:
+                with self.assertRaises(m4.e2e.Blocked):m4.process(probe,m4.ev.APP)
+                self.assertEqual(2,execute.call_count)  # No probe can launder an ADB failure.
+
+    def test_sampler_discards_pid_replacement_and_kernel_token_reuse(self):
+        from unittest.mock import Mock
+        for replacement in (101,102):
+            probe=Mock(adb='adb',serial='emulator-5580')
+            sampler=m4.Sampler(probe,0.25)
+            replies=process_replies(subprocess.CompletedProcess([],0,'101',''),
+                (0,m4.ev.APP+'\0'),(0,stat(101,44)),
+                subprocess.CompletedProcess([],0,mem(101,m4.ev.APP),''),
+                subprocess.CompletedProcess([],0,str(replacement),''),
+                (0,m4.ev.APP+'\0'),(0,stat(replacement,55)),
+                subprocess.CompletedProcess([],1,'',''))
+            with self.subTest(replacement=replacement),patch.object(m4.e2e,'execute',side_effect=replies),patch.object(sampler,'clock',side_effect=[1,2]):
+                sampler.once()
+            self.assertEqual([],sampler.rows)
+            self.assertTrue(any('discarded' in c.args[1] for c in probe.record.call_args_list))
+
+    def test_sampler_shutdown_joins_verified_exit_without_hiding_errors(self):
+        from unittest.mock import Mock
+        probe=Mock(adb='adb',serial='emulator-5580')
+        sampler=m4.Sampler(probe,0.25)
+        responses=process_replies(subprocess.CompletedProcess([],0,'101',''),(1,''),(0,'M4_ABSENT'))
+        def execute(command,**kwargs):
+            if 'cat /proc/101/cmdline' in command[-1]: sampler.stop.set()
+            return responses(command,**kwargs)
+        with patch.object(m4.e2e,'execute',side_effect=execute),patch.object(sampler,'clock',side_effect=[1,2]):
+            sampler.thread.start();sampler.thread.join(1);sampler.finish()
+        self.assertEqual([],sampler.rows);self.assertEqual([],sampler.errors)
+        sampler.errors.append('device offline')
+        with self.assertRaisesRegex(m4.e2e.Blocked,'device offline'):sampler.finish()
+
+    def test_stopped_sampler_does_not_start_new_process_discovery(self):
+        from unittest.mock import Mock
+        sampler=m4.Sampler(Mock(),0.25);sampler.stop.set()
+        with patch.object(m4,'process') as process,patch.object(sampler,'clock',side_effect=[1,2]):
+            sampler.once();process.assert_not_called()
+
+    def test_sampler_transport_failure_remains_blocked_after_stop(self):
+        from unittest.mock import Mock
+        sampler=m4.Sampler(Mock(),0.25)
+        with patch.object(m4,'process',side_effect=m4.e2e.Blocked('ADB device offline')),patch.object(sampler,'clock',return_value=1):
+            sampler.thread.start();sampler.thread.join(1)
+            with self.assertRaisesRegex(m4.e2e.Blocked,'ADB device offline'):sampler.finish()
+        self.assertEqual([],sampler.rows)
+
+    def test_process_probe_rejects_duplicate_or_malformed_status(self):
+        from unittest.mock import Mock
+        probe=Mock(adb='adb',serial='emulator-5580')
+        def invalid(command,**kwargs):
+            import re
+            nonce=re.search(r'M4_PROC_READ:([a-f0-9]{32}):',command[-1])[1]
+            return subprocess.CompletedProcess(command,0,'\nM4_PROC_READ:'+nonce+':not-a-code\n','')
+        with patch.object(m4.e2e,'execute',side_effect=invalid),self.assertRaisesRegex(m4.e2e.Blocked,'Malformed'):
+            m4.process_shell(probe,'false')
+        def duplicate(command,**kwargs):
+            result=process_replies((0,'body'))(command,**kwargs)
+            result.stdout+=result.stdout
+            return result
+        with patch.object(m4.e2e,'execute',side_effect=duplicate),self.assertRaisesRegex(m4.e2e.Blocked,'ambiguous'):
+            m4.process_shell(probe,'false')
 
     def test_meminfo_query_rejects_unrelated_process(self):
         from unittest.mock import Mock
         probe=Mock(adb='adb',serial='emulator-5580')
-        replies=[subprocess.CompletedProcess([],0,'101',''),
-                 subprocess.CompletedProcess([],0,'other\0',''),subprocess.CompletedProcess([],0,stat(101,1),'')]
+        replies=process_replies(subprocess.CompletedProcess([],0,'101',''),
+                 (0,'other\0'),(0,stat(101,1)))
         with patch.object(m4.e2e,'execute',side_effect=replies),self.assertRaises(m4.e2e.Blocked):m4.process(probe,m4.ev.APP)
 
     def test_foreign_serial_and_concurrent_instrumentation_block(self):

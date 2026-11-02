@@ -149,6 +149,36 @@ def preflight(home, sdk, serial=None):
                 installed_identity='Verified only after explicit installation in run',avd_config_sha256=sha(config),host=host, device=dict(serial=actual,name=owned['name'],api=26,abi=e2e.host_image()['abi'],boot=boot), ram=memory)
 
 
+def process_shell(probe, script):
+    """Frame remote status separately from ADB status; never retry an uncertain read."""
+    nonce = uuid.uuid4().hex
+    command = [probe.adb,'-s',probe.serial,'shell',
+               f'( {script} ); m4_code=$?; printf \'\\nM4_PROC_READ:{nonce}:%s\\n\' "$m4_code"']
+    result = e2e.execute(command,timeout=5)
+    probe.record('process-probe',result.stdout+'\n'+result.stderr)
+    if result.returncode:
+        raise e2e.Blocked('ADB process probe failed ('+str(result.returncode)+'); termination unverified')
+    marker = '\nM4_PROC_READ:'+nonce+':'
+    if result.stdout.count(marker)!=1:
+        raise e2e.Blocked('Missing/ambiguous remote process probe status')
+    body, status = result.stdout.rsplit(marker,1)
+    if not re.fullmatch(r'\d+\n',status) or not 0<=int(status)<=255:
+        raise e2e.Blocked('Malformed remote process probe status')
+    return body, int(status)
+
+
+def process_exited(probe, pid):
+    # A healthy shell and readable procfs must positively report absence, or a
+    # valid original-PID stat must report a terminal state. pidof alone cannot.
+    body, status = process_shell(probe,
+        f'if [ -r /proc/self/stat ] && [ -x /proc ]; then '
+        f'if [ -d /proc/{pid} ]; then cat /proc/{pid}/stat; else printf M4_ABSENT; fi; else false; fi')
+    if status: raise e2e.Blocked('Independent process termination probe failed')
+    if body=='M4_ABSENT': return True
+    start_ticks(body,pid)  # Reject malformed identities, even on the discard path.
+    return body.rsplit(') ',1)[1].split()[0] in ('Z','X','x')
+
+
 def process(probe, name):
     result = e2e.execute([probe.adb,'-s',probe.serial,'shell','pidof',name],timeout=5)
     probe.record('pidof', result.stdout+'\n'+result.stderr)
@@ -156,17 +186,16 @@ def process(probe, name):
     if result.returncode or not re.fullmatch(r'\d+\s*',result.stdout): raise e2e.Blocked('Missing/ambiguous process discovery for '+name)
     pid = int(result.stdout.strip())
     # Verify PID reuse around every PSS observation; stat field 22 is a kernel start token.
-    try:
-        cmd = e2e.checked([probe.adb,'-s',probe.serial,'shell','cat',f'/proc/{pid}/cmdline'],timeout=5).split('\0')[0]
-        stat = e2e.checked([probe.adb,'-s',probe.serial,'shell','cat',f'/proc/{pid}/stat'],timeout=5)
-    except e2e.Blocked:
-        # Process termination during a read is expected at Reader close. Never substitute a
-        # replacement's data; only discard if a separate read proves that PID disappeared.
-        current=e2e.execute([probe.adb,'-s',probe.serial,'shell','pidof',name],timeout=5)
-        if ((current.returncode==1 and not current.stdout.strip() and not current.stderr.strip()) or
-                (current.returncode==0 and re.fullmatch(r'\d+\s*',current.stdout) and int(current.stdout)!=pid)):
-            return None
-        raise
+    values=[]
+    for field in ('cmdline','stat'):
+        body, status = process_shell(probe,f'cat /proc/{pid}/{field}')
+        if status or not body:
+            if process_exited(probe,pid):
+                probe.record('sample-gap',f'{name} PID {pid} exited during {field}; incomplete observation discarded')
+                return None
+            raise e2e.Blocked(f'Cannot read live process {pid} {field}; termination unverified')
+        values.append(body)
+    cmd, stat = values[0].split('\0')[0], values[1]
     if cmd != name: raise e2e.Blocked('Process identity changed')
     return dict(pid=pid,name=name,start_ticks=start_ticks(stat,pid))
 
@@ -187,8 +216,12 @@ class Sampler:
         begin = self.clock()
         records = []
         for name in (ev.APP,ev.APP+':pdf'):
+            if self.stop.is_set(): break
             identity = process(self.probe,name)
             if identity is None: continue
+            if self.stop.is_set():
+                self.probe.record('sample-gap','Sampler stopped before memory query; incomplete observation discarded')
+                break
             result = e2e.execute([self.probe.adb,'-s',self.probe.serial,'shell','dumpsys','-t','5','meminfo',str(identity['pid'])],timeout=8)
             self.probe.record('sample-meminfo',result.stdout+'\n'+result.stderr)
             if result.returncode: raise e2e.Blocked('Memory query failed')
@@ -419,6 +452,7 @@ def run(args):
                 result=probe.command('instrumentation', [probe.adb,'-s',probe.serial,'shell','am','instrument','-w','-r',
                     '-e','class',METHOD.replace('.coldProcessAndTwoLocalDocuments','#coldProcessAndTwoLocalDocuments'),
                     '-e','m4Nonce',nonce,COMPONENT],timeout=240)
+                sampler.stop.set()  # Stop new discovery before parsing; in-flight reads remain fully checked.
                 report['android']='EXECUTED'
                 data=checked_result(result,nonce,fixture_rows)
             except BaseException as error:

@@ -271,3 +271,47 @@ No emulator operations, native rerun, full JVM/Android campaign, commits or publ
 were performed for this correction. A new single authorized native M4 attempt must
 demonstrate completion of both fixtures; runtime cleanup and measurements remain
 **NOT RUN** on the corrected source until then.
+
+## 2026-11-02 — sampler process-exit evidence correction
+
+The owner reports run `20261102T081409Z-df3366fcb40542ab846450c329aaba5b`
+at revision `fd303fcc1801f6d034c363ab5cd4fb88ec01bc18`: the sole benchmark JUnit
+method passed, both fixtures completed, and the payload was COMPLETE/cleanup PASS.
+The overall run remained **BLOCKED**, with zero accepted iterations and 13 partial
+PSS observations, after a failed read of instrumentation PID 4161's cmdline. Host
+cleanup passed; M4 acceptance remains pending. These details are owner-reported;
+the raw failed-read stderr and follow-up pidof response were not supplied for this
+correction. No historical report or classification is changed.
+
+The previous code used `checked()` for procfs reads, losing the distinction between
+ADB exit and remote cat exit in its control flow, then accepted disappearance only
+for a silent pidof exit 1 or a different single PID. It also stopped the sampler only
+after result parsing. Source inspection confirms these limitations; the exact native
+fallback response that caused the supplied run's BLOCKED status is not independently
+established from the summary alone.
+
+Procfs reads now use a fresh nonce-framed remote shell status. ADB nonzero exit,
+timeout, missing/ambiguous framing or malformed identities remain BLOCKED, even after
+instrumentation completes. A remote read failure or empty cmdline is discarded only
+after one independent successful shell probe establishes that procfs is accessible
+and the original PID is absent, or validates its PID/start-token stat in a terminal
+zombie/dead state. A live, unreadable or unverifiable PID remains BLOCKED. This is a
+bounded independent termination check, not a retry of the failed read; it records an
+explicit sample-gap reason and never substitutes zero or replacement-process PSS.
+PID/start-token comparisons around memory queries and all phase-sampling requirements
+remain unchanged. Unusable missing phase observations still block a complete report.
+
+Instrumentation return now requests sampler stop before payload parsing. New process
+queries are not started after that signal; in-flight reads must still pass the same
+verification. `finish()` joins the thread and preserves any transport/evidence errors;
+it does not suppress them merely because the test finished. Report schema, warm-up
+exclusion, statistics, worker attribution and FAIL/BLOCKED rules are unchanged.
+
+Focused validation: **32 Python tests PASS**, including exit during cmdline/stat,
+positive absence/zombie proof, live-PID and failed-proof rejection, ADB failures and
+unframed output, PID replacement/start-token reuse, and shutdown with an in-flight
+verified exit. Whitespace/scope checks: **PASS**. No Android/Gradle execution or device
+operation was performed. The clean checkout was fast-forwarded to the owner's
+execution revision before editing; its pre-existing AGP update is not part of this fix.
+Real sampler compatibility and M4 observations remain **NOT RUN** on the correction;
+one new authorized native attempt is required after review/publication.

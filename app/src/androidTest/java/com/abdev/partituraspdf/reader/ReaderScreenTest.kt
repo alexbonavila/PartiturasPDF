@@ -16,6 +16,10 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -620,13 +624,26 @@ class ReaderScreenTest {
         compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
     }
 
+    private fun assertDialogPan() {
+        onView(isRoot()).inRoot(isDialog()).check { view, missing ->
+            if(missing!=null)throw missing
+            val attrs=view.rootView.layoutParams as WindowManager.LayoutParams
+            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN,
+                attrs.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)
+        }
+    }
     private fun openJump() {
         trace("jump-open-before")
         compose.onNodeWithTag("reader_page_counter").performScrollTo().assertIsEnabled().performClick()
         compose.onNodeWithTag("reader_jump_dialog").assertIsDisplayed()
         compose.onNodeWithTag("reader_jump_input").assertIsFocused()
+        assertDialogPan()
     }
-    private fun jumpInput(value: String) = compose.onNodeWithTag("reader_jump_input").performTextReplacement(value)
+    private fun jumpInput(value: String) {
+        compose.onNodeWithTag("reader_jump_input").performTextReplacement(value)
+        compose.waitForIdle()
+        assertDialogPan()
+    }
     private fun jumps() = actions.filterIsInstance<ReaderAction.PageIfCurrent>()
 
     @Test fun pageJumpOpensOnlyForAcknowledgedPresentedPage() {
@@ -654,6 +671,7 @@ class ReaderScreenTest {
         assertTrue(actions.filterIsInstance<ReaderAction.Page>().isEmpty())
         trace("jump-first-last-before-ack-assertion")
         assertEquals(listOf(PageIndex(0),PageIndex(7),PageIndex(0)),acknowledged.toList())
+        assertEquals(3,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
     }
 
     @Test fun pageJumpInvalidSyntaxAndRangeCannotDispatch() {
@@ -744,6 +762,38 @@ class ReaderScreenTest {
         compose.onNodeWithText(text(R.string.reader_jump_confirm)).assertIsNotEnabled()
         compose.onNodeWithText(text(R.string.reader_jump_cancel)).assertIsDisplayed().performClick()
         compose.onNodeWithTag("reader_toolbar").assertExists()
+    }
+
+    @Test fun pageJumpPolicyDoesNotFreezeGenuineContentResize() {
+        start();visible();openJump()
+        val before=controller.state.value;val renders=requests.size
+        compose.runOnIdle { resizeHeightPx=(before.viewport!!.heightPx/2).coerceAtLeast(2);shortViewport.value=true }
+        compose.waitUntil(10_000) { controller.state.value.viewport!=before.viewport }
+        visible()
+        assertTrue(controller.state.value.viewportGeneration>before.viewportGeneration)
+        assertTrue(requests.size>renders);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+        assertDialogPan()
+        compose.onNodeWithTag("reader_jump_input").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_jump_cancel)).assertIsDisplayed().performClick()
+        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
+    }
+
+    @Test fun dialogPolicyReappliesAdjustmentAndRestoresOnlyItsOwnedBits() {
+        compose.runOnUiThread {
+            val dialog=android.app.Dialog(compose.activity)
+            val window=dialog.window!!
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            val originalCallback=window.callback
+            val policy=ReaderDialogImePolicy(window)
+            try {
+                assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN, window.attributes.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)
+                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED)
+                assertEquals(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN,window.attributes.softInputMode)
+            } finally { policy.close() }
+            assertSame(originalCallback,window.callback)
+            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,window.attributes.softInputMode)
+            policy.close();assertSame(originalCallback,window.callback)
+        }
     }
 
 }

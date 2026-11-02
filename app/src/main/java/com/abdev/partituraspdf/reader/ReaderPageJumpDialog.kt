@@ -12,6 +12,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.TextRange
@@ -67,6 +69,15 @@ internal fun ReaderPageJumpDialog(target: ReaderPageJumpTarget, onDismiss: () ->
         },
         title = { Text(stringResource(R.string.reader_jump_title)) },
         text = {
+            // LocalView here belongs to the separate Compose Dialog composition, not Activity.
+            val view = LocalView.current
+            val window = checkNotNull((view.parent as? DialogWindowProvider)?.window)
+            DisposableEffect(window) {
+                val policy = ReaderDialogImePolicy(window)
+                onDispose { policy.close() }
+            }
+            // DisposableEffect installs the policy before this focus request is launched.
+            LaunchedEffect(window, target) { focus.requestFocus() }
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.reader_jump_total, target.context.session.pageCount))
                 OutlinedTextField(
@@ -89,5 +100,4 @@ internal fun ReaderPageJumpDialog(target: ReaderPageJumpTarget, onDismiss: () ->
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.reader_jump_cancel)) }
         },
     )
-    LaunchedEffect(target) { focus.requestFocus() }
 }

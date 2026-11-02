@@ -27,12 +27,17 @@ inspection used git status/branch/rev-parse/log/show/diff, file inventories,
 rg searches and numbered source reads. No build, test, validator, fixture checker,
 coverage tool, CI, emulator, ADB, install or backup operation was executed.
 
-The three supplied documents were read completely. The original
-PHASE_M_SAFE_PDF_WRITING_CODEX_HANDOFF is not attached and was not found in the
-tracked inventory. The supplied scope document supplies all 20 scenario seeds;
-the test plan preserves them but cannot certify wording parity with an unavailable
-original. This is a document-provenance limitation for owner review, not a reason
-to invent missing original requirements.
+The three initial supplied documents were read completely for M-M1. In this
+owner-authorized alignment correction, the original
+PHASE_M_SAFE_PDF_WRITING_CODEX_HANDOFF(1).md (prepared 2026-11-02, base 7f00a793...)
+was supplied and read completely. Its M01–M12 scope, M-M1–M-M8 sequence and all
+M-T01–M-T20 guarantees have now been compared against these three documents.
+The initial missing-handoff limitation is historical, not a current limitation.
+The technical findings were accepted in substance by the owner; this correction
+does not freeze unresolved interfaces or authorize M-M2. Original milestone order
+is restored in the companion matrix and test-plan stage references. Later approved
+M-D01–M-D14 constraints remain binding where they clarify/narrow the handoff.
+No suggested build/test commands in that handoff override the current prohibition.
 
 ## Verified capability inventory
 
@@ -45,6 +50,7 @@ not execution evidence for M writing.
 | Logical/provider identity | src/core/document/DocumentModels.kt:5–27,49–55 | DocumentRef registered identity and opaque StorageDocumentRef exist; no operation-local M identity |
 | Byte/revision values | src/core/document/DocumentModels.kt:62–95 | SnapshotEvidence validates representation only; VerifiedSnapshot requires DocumentRef. No trusted producer is thereby installed |
 | Registry/metadata | src/core/document/DocumentRepositories.kt:12–44,57–68; src/data/metadata/RoomDocumentRegistry.kt:19–85 | Explicit register/resolve/observation/rebind implemented; no provider mutation. Preserve favorite/position ownership; do not rebind Save As |
+| Actual Reader position authority | src/data/foundation/SharedPreferencesReaderPositions.kt:14–49; src/app/di/FoundationDependencies.kt:26–31 | SharedPreferences-backed ReaderPositionRepository is active; legacy Room positions are not read/migrated/written. Save As must preserve this authority as well as registry/favorites |
 | Typed failures | src/core/result/Outcome.kt:3–20 | Outcome and access/resource/conflict errors exist. No BUSY, journal/publication state or uncertainty-specific result |
 | Read-only grants | src/storage/saf/SafTreeGrantAccess.kt:11–49,52–93 | Persist/release READ only. Listing a grant is not provider availability or WRITE authority |
 | Direct provider read | src/storage/saf/SafProviderRead.kt:24–84 | Resolver mode r, owned descriptor transfer, seek probe and typed access errors. FileNotFoundException is not inferred deletion |
@@ -137,3 +143,19 @@ reproduce these future M failures.
 No fsync/rename sequence is declared power-loss-safe merely by invoking APIs.
 No time-based purge, wildcard deletion, overwrite or automatic grant acquisition
 is allowed. See H-01–H-08 in the companion matrix before M-M2.
+
+## Handoff alignment and retained owner decisions
+
+M01–M12 deliverables are mapped explicitly in the companion matrix; original
+M-M2–M-M8 ordering is restored without moving journal safety behind publication.
+Durable pre-mutation prerequisites belong within the M-M5 coordinator and must be
+proved before its public effects; M-M6 then exercises the complete fault matrix.
+M-M7 documents later K/N/O/P and host integration, not premature host edits.
+
+The handoff's simplified canceled/denied-destination row says no mutation; H-03
+and approved M-D05/D06 preserve the stricter distinction: no application write
+does not prove no provider document was created during the picker. The handoff's
+copy/no-op transform allowance can demonstrate foundation mechanics, but M-D07
+still forbids treating a copy/hash match as independent PDF structure/content
+validation. Real editing/fidelity remains blocked by H-06. These are explicit
+retained approval boundaries, not decisions silently changed by this alignment.

@@ -148,26 +148,62 @@ when read-only reconciliation is invoked, what existing read grants suffice and
 how unresolved status reaches later host UI. Startup wiring/editor resume/new
 grant acquisition are not implicitly authorized.
 
-## Proposed sequence and approvals (M-M2 → M-M8)
+## Original handoff scope: M01–M12 traceability
 
-This ordering is a proposal because the original handoff's full milestone schedule
-was not attached. Do not mistake it for a new approved phase plan.
+The original handoff is now supplied and reviewed completely. This mapping
+restores its roadmap rather than approving new contracts or milestone execution.
+Mxx deliverable IDs and M-Mx milestone IDs are different namespaces.
 
-1. **M-M2:** resolve H-01–H-08 as applicable; approve a minimal exact contract slice,
-   owners and consuming tests. No public definitions before approval.
-2. **M-M3:** operation-local snapshot/lease/quota primitives and mirrored tests;
-   no provider write. Owner executes JVM/API26 evidence.
-3. **M-M4:** private staging, exclusive reservation, durable pre-publication journal
-   and selective retention/recovery primitives; no public mutation until proven.
-4. **M-M5:** separately approved engine evaluation and strict operation-specific
-   validation. Without H-06, engine work remains BLOCKED, not replaced by fakes.
-5. **M-M6:** capability-injected Save As transfer, close/readback and read-only
-   reconciliation, dependent on H-03/04 and earlier durable journal/validator.
-6. **M-M7:** owner-run full fault-window/test-provider campaign, genuine API26,
-   crash/restart and privacy/packaging evidence. No personal-document writes.
-7. **M-M8:** owner acceptance and separately authorized host/K/L integration review;
-   actual picker integration is not installed by independent M. Compatibility,
-   physical-device and publication limits must be explicit before formal acceptance.
+| Handoff deliverable | Preserved scope / required proof | Original milestone placement |
+|---|---|---|
+| M01 capability/risk inventory | Existing APIs versus missing capabilities, source/permission/backup/license evidence | M-M1, this accepted-in-substance audit |
+| M02 contract freeze proposal | Narrow capabilities/state/result owners; exact signatures require approval | M-M2 |
+| M03 immutable source snapshot | Bounded cancellable copy, actual digest/length, seal/lease ownership and external-change caveat | M-M3 |
+| M04 draft/result staging | Separate bounded writable result, close before seal/validation, safe cleanup | M-M3, not a separate journal-first M-M4 |
+| M05 PDF result validation | Operation-specific structure/geometry/order/content/annotation checks; unsupported format rejects | M-M4; H-06 blocks engine-backed guarantees |
+| M06 editing library evaluation | PDFBox-Android historical 2.0.27.0 candidate versus current alternatives; maintenance/security/transitives/API26/fonts/forms/annotations/encryption/license/app size | M-M4; no dependency installed. Future M_ENGINE_EVALUATION.md is not created by this correction |
+| M07 Save As coordinator | Snapshot -> isolated transform -> validated artifact -> narrowed destination -> readback/verified result; durable ordering and original survival | M-M5; H-03/04 prerequisites before any possible public creation/write |
+| M08 fault/interruption recovery | Every failure window, disk full/provider denial/I/O/cancel/process interruption, journal rehydrate, uncertainty and no replay | M-M6; safety invariants already mandatory in M-M5 |
+| M09 publication identity/metadata plan | Later explicit registration; confirmed move identity only as future design; Reader position/revision invalidation and ambiguous provider outcomes; no Room/registry mutation | M-M7 |
+| M10 API26 SAF compatibility | Owned DocumentsProvider capability/permission/atomic-versus-nonatomic variants; no blanket truncate/rename guarantee | M-M6 |
+| M11 privacy/backup hardening | No private artifact backup, production assets or URI/path leaks; existing Policy B unchanged | M-M6 audit, with protections present from first primitives |
+| M12 acceptance/integration handoff | Actual source/evidence/coverage/license/Save As guarantees, deferred replacement, K/N/O/P integration proposal | M-M7 handoff, M-M8 PR/owner acceptance; no PR authorized now |
 
-The next narrowly scoped request is owner resolution of H-01/H-03 plus approval
-of the first exact M-M2 contract slice. This audit does not authorize M-M2.
+## Restored original sequence and approval gates (M-M2 → M-M8)
+
+The earlier alternative ordering is withdrawn. The following names/order follow
+the original handoff; internal safety dependencies remain obligations, not a new
+milestone schedule. All future execution still requires owner authorization.
+
+1. **M-M2 — Shared contract ownership freeze.** Publish interfaces, owners,
+   state transitions and dependencies for approval. Resolve H-01–H-08 as needed
+   before exact public file/signature approval; do not edit unrelated shared APIs.
+2. **M-M3 — Sealed private source and staging leases.** Bounded immutable snapshot,
+   digest validation, lifetime/failure handling and internal output staging.
+   Include accounting/cleanup prerequisites; no public provider mutation.
+3. **M-M4 — Validation and editor-engine decision.** Build readback checks and
+   research/evaluate the modification engine. Obtain dependency approval before
+   installation; unsupported structural/content guarantees stay blocked by H-06.
+4. **M-M5 — Save As end-to-end vertical slice.** Inject test-authorized destination/
+   write capability; maintain transaction/journal/recovery invariants and verify
+   output/original survival. Exclusive reservation and durable pre-publication
+   journal must be in place before possible creation/write, not postponed to M-M6.
+5. **M-M6 — Fault matrix and API26 tests.** Full critical suite, expressly
+   authorized process/lifetime/provider tests, backup/temp/privacy audit. This
+   milestone verifies M-M5 safety; it does not retroactively make unsafe writes safe.
+6. **M-M7 — Phase-local integration contracts.** Document K/N/O/P operation requests,
+   new identity/metadata implications and host-owned WRITE Activity Results and
+   confirmations. No host wiring or cross-branch integration is authorized by it.
+7. **M-M8 — PR and owner acceptance.** Coverage/fixture evidence, compatibility,
+   dependency licensing, exact guarantees and explicit deferrals; no merge without
+   owner decision. A future PR is a roadmap deliverable, not current permission.
+
+The handoff permits deterministic copy/no-op transforms while an editing engine
+is withheld: snapshot/staging/transaction/readback mechanics may progress within
+approved scope. Such a transform is not an independent structural/content
+validator and cannot close H-06 or engine-dependent M-T06/M-T07 guarantees.
+Approved M-D07 remains binding. No engine, signature, journal schema or host
+handshake has been selected in this alignment.
+
+The next step remains owner resolution of H-01/H-03 and approval of the first
+exact M-M2 contract slice. This correction does not begin M-M2.

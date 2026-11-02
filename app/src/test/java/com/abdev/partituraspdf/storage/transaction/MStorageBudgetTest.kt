@@ -21,7 +21,7 @@ class MStorageBudgetTest {
         override fun openLease(file: File): SnapshotLeasePort = error("Unused")
     }
     @Test fun exactAggregateReservationAcceptsButNextByteRejects() {
-        val root = PrivateRoot(File(temporary.root, "root"), io)
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
         val budget = MStorageBudget(root, MStoragePolicy(source = 3, output = 4, total = 7))
         val tx = root.newTransaction()
         budget.reserve(File(tx, "source.part"), 3)
@@ -30,7 +30,7 @@ class MStorageBudgetTest {
         assertThrows(StorageFault::class.java) { budget.reserve(File(tx, "checkpoint.tmp"), 1) }
     }
     @Test fun freeMarginAndOutstandingReservationsBothConstrainAdmission() {
-        val root = PrivateRoot(File(temporary.root, "root"), io)
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
         val budget = MStorageBudget(root)
         val tx = root.newTransaction()
         free = 64L * 1024 * 1024 + 4
@@ -41,7 +41,7 @@ class MStorageBudgetTest {
         assertEquals(5L, budget.used())
     }
     @Test fun unknownFilesAreChargedAcrossRestartAndNeverSwept() = runTest {
-        val root = PrivateRoot(File(temporary.root, "root"), io)
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
         val tx = root.newTransaction()
         val unknown = File(tx, "unknown.part").apply { writeBytes(ByteArray(6)) }
         val budget = MStorageBudget(root, MStoragePolicy(total = 7))
@@ -52,7 +52,7 @@ class MStorageBudgetTest {
         assertArrayEquals(before, unknown.readBytes())
     }
     @Test fun corruptScanBlocksNewAdmissionInsteadOfIgnoringOccupancy() {
-        val root = PrivateRoot(File(temporary.root, "root"), io)
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
         val link = File(root.directory, "foreign")
         java.nio.file.Files.createSymbolicLink(link.toPath(), temporary.newFile().toPath())
         val budget = MStorageBudget(root)

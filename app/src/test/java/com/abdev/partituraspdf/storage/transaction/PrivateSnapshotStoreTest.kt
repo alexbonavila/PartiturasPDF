@@ -49,7 +49,7 @@ class PrivateSnapshotStoreTest {
     }
     @Test fun stagingUsesMeasuredBytesAndSameOwnerUntilLastLeaseCloses() = runTest {
         val io = Io()
-        val budget = MStorageBudget(PrivateRoot(File(temporary.root, "root"), io))
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
         val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
         val id = TransactionId(UUID.randomUUID().toString())
         val bytes = byteArrayOf(1, 2, 3)
@@ -70,7 +70,7 @@ class PrivateSnapshotStoreTest {
     }
     @Test fun emptyOverLimitAndFailedSyncNeverSeal() = runTest {
         val io = Io()
-        val budget = MStorageBudget(PrivateRoot(File(temporary.root, "root"), io), MStoragePolicy(output = 3))
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io), MStoragePolicy(output = 3))
         val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
         suspend fun attempt(body: suspend (PrivateSnapshotStore.Writer) -> Unit) =
             store.stage(TransactionId(UUID.randomUUID().toString()), body)
@@ -84,7 +84,7 @@ class PrivateSnapshotStoreTest {
     }
     @Test fun cancellationIdentitySurvivesCleanupFaultAndRetainedCharge() = runTest {
         val io = Io()
-        val budget = MStorageBudget(PrivateRoot(File(temporary.root, "root"), io))
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
         val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
         val cancel = CancellationException("Test cancellation")
         try {
@@ -100,7 +100,7 @@ class PrivateSnapshotStoreTest {
     }
     @Test fun failedDeletionIsCleanupPendingNotReleased() = runTest {
         val io = Io()
-        val budget = MStorageBudget(PrivateRoot(File(temporary.root, "root"), io))
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
         val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
         val snapshot = (store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(byteArrayOf(9)) }
             as SnapshotCaptureResult.Captured).snapshot
@@ -110,7 +110,7 @@ class PrivateSnapshotStoreTest {
     }
     @Test fun canceledWaiterDoesNotCancelOwnerOrLiveLease() = runTest {
         val io = Io()
-        val budget = MStorageBudget(PrivateRoot(File(temporary.root, "root"), io))
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
         val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
         val snapshot = (store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(byteArrayOf(1)) }
             as SnapshotCaptureResult.Captured).snapshot
@@ -124,7 +124,7 @@ class PrivateSnapshotStoreTest {
     @Test fun writeCloseAndRereadFailuresNeverEscapeAsCaptured() = runTest {
         for (fault in listOf("write", "close", "reread")) {
             val io = Io()
-            val root = PrivateRoot(File(temporary.root, fault), io)
+            val root = PrivateRoot(File(temporary.root.canonicalFile, fault), io)
             val budget = MStorageBudget(root)
             val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
             io.outputFault = fault; io.evidenceFault = fault == "reread"
@@ -135,7 +135,7 @@ class PrivateSnapshotStoreTest {
     }
     @Test fun originalFailureIsNotReplacedByCleanupFailure() = runTest {
         val io = Io()
-        val budget = MStorageBudget(PrivateRoot(File(temporary.root, "root"), io))
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
         val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
         val primary = IllegalStateException("Programmer defect")
         try {

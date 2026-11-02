@@ -27,7 +27,7 @@ class PrivateJournalTest {
         override fun openLease(file: File): SnapshotLeasePort = error("Not used by journal tests")
     }
     private fun setup(io: Files = Files()): Pair<MStorageBudget, Files> {
-        val root = PrivateRoot(File(temporary.root, UUID.randomUUID().toString()), io)
+        val root = PrivateRoot(File(temporary.root.canonicalFile, UUID.randomUUID().toString()), io)
         return MStorageBudget(root) to io
     }
     @Test fun appendReopenAndRecoveryAreIdempotent() = runTest {

@@ -72,4 +72,16 @@
     <string name="library_error_resource">La operación supera los recursos disponibles o los límites permitidos.</string>
     <string name="library_error_unsupported">Esta operación o este documento no es compatible.</string>
     <string name="library_action_error">No se pudo aplicar la acción a este elemento.</string>
+    <string name="library_search">Buscar en esta carpeta</string>
+    <string name="library_clear_search">Borrar búsqueda</string>
+    <string name="library_filter_all">Todos</string>
+    <string name="library_filter_folders">Carpetas</string>
+    <string name="library_filter_pdfs">PDF</string>
+    <string name="library_filter_registered">PDF registrados</string>
+    <string name="library_filter_favorites">PDF favoritos</string>
+    <string name="library_sort_asc">Nombre A–Z</string>
+    <string name="library_sort_desc">Nombre Z–A</string>
+    <string name="library_no_matches">Sin coincidencias entre los elementos cargados.</string>
+    <string name="library_no_confirmed">Sin coincidencias confirmadas; hay elementos pendientes de comprobar.</string>
+    <string name="library_unresolved">Elementos pendientes de comprobar</string>
 </resources>

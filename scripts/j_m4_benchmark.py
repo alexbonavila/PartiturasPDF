@@ -149,7 +149,7 @@ def preflight(home, sdk, serial=None):
                 installed_identity='Verified only after explicit installation in run',avd_config_sha256=sha(config),host=host, device=dict(serial=actual,name=owned['name'],api=26,abi=e2e.host_image()['abi'],boot=boot), ram=memory)
 
 
-def process_shell(probe, script):
+def process_shell(probe, script, *, quiet=False):
     """Frame remote status separately from ADB status; never retry an uncertain read."""
     nonce = uuid.uuid4().hex
     command = [probe.adb,'-s',probe.serial,'shell',
@@ -158,6 +158,8 @@ def process_shell(probe, script):
     probe.record('process-probe',result.stdout+'\n'+result.stderr)
     if result.returncode:
         raise e2e.Blocked('ADB process probe failed ('+str(result.returncode)+'); termination unverified')
+    if quiet and result.stderr.strip():
+        raise e2e.Blocked('Unexpected stderr from process discovery; identity unverified')
     marker = '\nM4_PROC_READ:'+nonce+':'
     if result.stdout.count(marker)!=1:
         raise e2e.Blocked('Missing/ambiguous remote process probe status')
@@ -180,11 +182,12 @@ def process_exited(probe, pid):
 
 
 def process(probe, name):
-    result = e2e.execute([probe.adb,'-s',probe.serial,'shell','pidof',name],timeout=5)
-    probe.record('pidof', result.stdout+'\n'+result.stderr)
-    if result.returncode == 1 and not result.stdout.strip() and not result.stderr.strip(): return None
-    if result.returncode or not re.fullmatch(r'\d+\s*',result.stdout): raise e2e.Blocked('Missing/ambiguous process discovery for '+name)
-    pid = int(result.stdout.strip())
+    if name not in (ev.APP,ev.APP+':pdf'): raise e2e.Blocked('Unexpected process discovery target')
+    body, status = process_shell(probe,'pidof '+name,quiet=True)
+    probe.record('pidof',f'remote_exit={status}\n'+body)
+    if status == 1 and not body.strip(): return None
+    if status or not re.fullmatch(r'[1-9]\d*\s*',body): raise e2e.Blocked('Missing/ambiguous process discovery for '+name)
+    pid = int(body.strip())
     # Verify PID reuse around every PSS observation; stat field 22 is a kernel start token.
     values=[]
     for field in ('cmdline','stat'):

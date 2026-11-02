@@ -315,3 +315,38 @@ operation was performed. The clean checkout was fast-forwarded to the owner's
 execution revision before editing; its pre-existing AGP update is not part of this fix.
 Real sampler compatibility and M4 observations remain **NOT RUN** on the correction;
 one new authorized native attempt is required after review/publication.
+
+## 2026-11-02 — framed PID discovery compatibility correction
+
+The owner reports run `20261102T083033Z-e33d4afab2f34c218db59465f2fad350`
+at baseline `26476eab7089c66078b892e7bffc2aa5f154c9a5`: preflight/APK checks,
+both JUnit invocations and both PDF journeys passed. One warm-up was accepted, but
+zero measured iterations were accepted; the campaign remained **BLOCKED** on empty
+unframed worker pidof output. Host cleanup passed. This remains owner-provided evidence,
+not a fresh execution or independent raw-artifact review; historical results are unchanged.
+
+The remaining discovery path still used raw `adb shell pidof`, accepting absence only
+when the combined command returned exit 1 without output/errors. Unlike procfs reads,
+it did not separate a remote pidof status from an ADB transport result. Discovery now
+reuses the same nonce-framed `process_shell()` wrapper, with strict stderr rejection:
+
+- Remote 0 plus exactly one positive decimal PID proceeds to unchanged cmdline/stat
+  identity and kernel-start-token verification.
+- Remote 1 plus empty output and no stderr establishes absence, returning no sample.
+- ADB failure, missing/duplicate/malformed framing, multiple/invalid PIDs, unexpected
+  status, error text or contradictory output remains BLOCKED.
+
+The allowed process targets remain the application and its `:pdf` worker. Procfs exit
+proof, sampler stop/join behavior, explicit gap records, phase-sampling requirements,
+statistics, timeouts and report format are unchanged. No zero or replacement memory
+observations are fabricated. This addresses the demonstrated unframed discovery path;
+the summary alone cannot prove which underlying status caused the original empty
+output. No other implementation issue is demonstrated by the supplied evidence.
+
+Focused Python validation: **36 tests PASS**, including framed success/absence,
+contradictory status/output, stderr, transport errors and invalid framing, plus retained
+procfs race and worker-attribution regressions. Scope/whitespace: **PASS**. No Gradle,
+Android instrumentation, emulator operations or full regression suite was run.
+Runtime compatibility remains **NOT RUN** on this correction. After owner review and
+publication, one authorized native M4 rerun must establish real sampler completeness;
+benchmark completion and final M4 acceptance are still pending.

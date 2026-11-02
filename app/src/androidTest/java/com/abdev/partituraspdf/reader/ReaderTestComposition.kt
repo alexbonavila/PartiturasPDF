@@ -1,5 +1,8 @@
 package com.abdev.partituraspdf.reader
 
+import android.app.Activity
+import android.app.Application
+import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.setContent
@@ -14,14 +17,42 @@ import org.junit.Assert.assertTrue
 internal class ReaderTestComposition(private val rule: AndroidComposeTestRule<*, MainActivity>) {
     private val mounted = mutableStateOf(true)
     private var installed = false
+    private var content: (@Composable () -> Unit)? = null
+
+    private fun install(activity: MainActivity) {
+        activity.setContent { if (mounted.value) content?.invoke() }
+    }
 
     fun mount(content: @Composable () -> Unit) {
         check(!installed)
         installed = true
+        this.content = content
         // MainActivity already owns a ComposeView, so rule.setContent would reject it. Replace
         // its content on Main, then explicitly drain composition/layout/viewport effects.
-        rule.runOnUiThread { rule.activity.setContent { if (mounted.value) content() } }
+        rule.runOnUiThread { install(rule.activity) }
         rule.waitForIdle()
+    }
+
+    /** Actual Activity recreation, with test content reinstalled before the first resumed frame.
+     * The synthetic controller remains test-owned; this is not a production route/process-death test.
+     */
+    fun recreate(recreateActivity: () -> Unit) {
+        val old=rule.activity
+        val application=old.application
+        val callback=object:Application.ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity:Activity) {
+                if(activity is MainActivity && activity!==old) install(activity)
+            }
+            override fun onActivityCreated(activity:Activity,savedInstanceState:Bundle?) {}
+            override fun onActivityResumed(activity:Activity) {}
+            override fun onActivityPaused(activity:Activity) {}
+            override fun onActivityStopped(activity:Activity) {}
+            override fun onActivitySaveInstanceState(activity:Activity,outState:Bundle) {}
+            override fun onActivityDestroyed(activity:Activity) {}
+        }
+        application.registerActivityLifecycleCallbacks(callback)
+        try { recreateActivity();rule.waitForIdle() }
+        finally { application.unregisterActivityLifecycleCallbacks(callback) }
     }
 
     fun surfaces(): List<ReaderPageSurface> {

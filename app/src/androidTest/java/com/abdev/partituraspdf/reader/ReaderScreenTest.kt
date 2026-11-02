@@ -705,4 +705,54 @@ class ReaderScreenTest {
         assertEquals(1,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
     }
 
+    @Test fun realActivityRecreationRestoresHiddenChromeForSameIntentOnly() {
+        start();visible();val opened=opens.get()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        composition.recreate { compose.activityRule.scenario.recreate() };visible()
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.onNodeWithTag("reader_seek").assertDoesNotExist()
+        assertEquals(opened,opens.get());assertEquals(1,maximumLeases.get())
+        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible()
+        compose.onNodeWithTag("reader_toolbar").assertExists()
+        compose.onNodeWithTag("reader_seek").assertExists()
+    }
+    @Test fun recreationDismissesOptionsAndResetsUnfinishedSeekWithoutNavigation() {
+        start();visible();button(R.string.reader_options).performClick()
+        compose.onNodeWithText(text(R.string.reader_fit_width)).assertIsDisplayed()
+        composition.recreate { compose.activityRule.scenario.recreate() };visible()
+        compose.onNodeWithText(text(R.string.reader_fit_width)).assertDoesNotExist()
+        val before=actions.filterIsInstance<ReaderAction.PageIfCurrent>().size
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput {
+            down(Offset(width*.05f,height/2f))
+            for(fraction in listOf(.2f,.5f,.9f,1f)) {advanceEventTime(16L);moveTo(Offset((width-1f)*fraction,height/2f))}
+        }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_seek_preview,8,8))
+        composition.recreate { compose.activityRule.scenario.recreate() };visible()
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_counter,1,8))
+        assertEquals(before,actions.filterIsInstance<ReaderAction.PageIfCurrent>().size)
+        assertEquals(PageIndex(0),controller.state.value.requestedPage);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+    }
+    @Test fun optionsDismissalRestoresButtonFocusWithoutPageKeyLeakageOrRendering() {
+        start();visible();val renders=requests.size;val before=controller.state.value
+        keyboardFocus(button(R.string.reader_options)).performKeyInput { pressKey(Key.Enter) }
+        keyboardFocus(compose.onNodeWithText(text(R.string.reader_fit_width)),popup=true).performKeyInput { pressKey(Key.Escape) }
+        button(R.string.reader_options).assertIsFocused()
+        button(R.string.reader_options).performKeyInput {pressKey(Key.DirectionRight)}
+        assertEquals(before.requestedPage,controller.state.value.requestedPage)
+        assertSame(before.frame,controller.state.value.frame);assertEquals(renders,requests.size);assertEquals(1,opens.get())
+    }
+
+    @Test fun freshPresentationEntryStartsVisibleEvenForSameIntentValue() {
+        start();visible();val before=controller.state.value;val renders=requests.size
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnIdle { shown.value=false };compose.waitForIdle()
+        compose.runOnIdle { shown.value=true };visible()
+        compose.onNodeWithTag("reader_toolbar").assertExists()
+        compose.onNodeWithTag("reader_seek").assertExists()
+        assertEquals(before.intent,controller.state.value.intent);assertEquals(1,opens.get());assertEquals(renders,requests.size)
+        assertEquals(1,maximumLeases.get())
+    }
+
 }

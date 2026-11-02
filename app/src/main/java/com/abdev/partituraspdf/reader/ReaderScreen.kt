@@ -7,6 +7,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.retain.retain
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.*
@@ -35,7 +38,10 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
     var viewport by remember { mutableStateOf(ReaderViewport(0, 0)) }
     var transform by remember(state.intent) { mutableStateOf(ReaderTransform()) }
     var options by remember(state.intent) { mutableStateOf(false) }
-    var chromeVisible by remember(state.intent) { mutableStateOf(true) }
+    var chromeVisible by retain(state.intent) { mutableStateOf(true) }
+    val optionsFocus = remember(state.intent) { FocusRequester() }
+    var restoreOptionsFocus by remember(state.intent) { mutableStateOf(false) }
+    fun closeOptions() { options = false; restoreOptionsFocus = true }
     val available = state.phase !in setOf(ReaderPhase.IDLE, ReaderPhase.OPENING, ReaderPhase.QUIESCED, ReaderPhase.RETIRED) && state.session != null
     val frame = state.frame.takeIf { available }
     val attachable = frame?.availability?.collectAsState()?.value == true
@@ -51,6 +57,12 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
     }
     LaunchedEffect(state.intent, state.requestedPage) { transform = transform.copy(panX = 0f, panY = 0f) }
     LaunchedEffect(available, state.phase) { if (!available || state.failure != null || state.phase == ReaderPhase.CANCELED) options = false }
+    LaunchedEffect(restoreOptionsFocus, chromeVisible, available) {
+        if (restoreOptionsFocus) {
+            if (chromeVisible && available) optionsFocus.requestFocus()
+            restoreOptionsFocus = false
+        }
+    }
     SideEffect { if (geometry != null && geometry.transform != transform) transform = geometry.transform }
 
     fun page(delta: Int) {
@@ -155,14 +167,14 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                 }, color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.fillMaxWidth().height(chromeHeight).testTag("reader_toolbar").verticalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ReaderButton(R.string.reader_back, true, onBack)
+                        ReaderButton(R.string.reader_back, true, onClick = onBack)
                         ReaderButton(R.string.reader_previous, available && (state.requestedPage?.value ?: 0) > 0) { page(-1) }
                         ReaderButton(R.string.reader_next, available && (state.requestedPage?.value ?: Int.MAX_VALUE) < (state.session?.pageCount ?: 0) - 1) { page(1) }
                         Box {
-                            ReaderButton(R.string.reader_options, available) { options = true }
-                            DropdownMenu(options && available, { options = false }) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.reader_fit_page)) }, modifier = Modifier.semantics { selected = state.fit == PageFit.PAGE }, onClick = { options = false; action(ReaderAction.Fit(PageFit.PAGE)) })
-                                DropdownMenuItem(text = { Text(stringResource(R.string.reader_fit_width)) }, modifier = Modifier.semantics { selected = state.fit == PageFit.WIDTH }, onClick = { options = false; action(ReaderAction.Fit(PageFit.WIDTH)) })
+                            ReaderButton(R.string.reader_options, available, Modifier.focusRequester(optionsFocus)) { options = true }
+                            DropdownMenu(options && available, { closeOptions() }) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.reader_fit_page)) }, modifier = Modifier.semantics { selected = state.fit == PageFit.PAGE }, onClick = { closeOptions(); action(ReaderAction.Fit(PageFit.PAGE)) })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.reader_fit_width)) }, modifier = Modifier.semantics { selected = state.fit == PageFit.WIDTH }, onClick = { closeOptions(); action(ReaderAction.Fit(PageFit.WIDTH)) })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.reader_zoom_in)) }, enabled = transform.zoom < 4f,
                                     onClick = { pan(0f, 0f, 1.25f) })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.reader_zoom_out)) }, enabled = transform.zoom > 1f,
@@ -193,7 +205,7 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                 }, color = MaterialTheme.colorScheme.surface) {
                     Column(Modifier.fillMaxWidth().heightIn(max = chromeHeight).verticalScroll(rememberScrollState()).padding(8.dp)) {
                         ReaderStatus(state, onAction)
-                        if (state.failure != null) ReaderButton(R.string.reader_back, true, onBack)
+                        if (state.failure != null) ReaderButton(R.string.reader_back, true, onClick = onBack)
                     }
                 }
             }
@@ -203,8 +215,8 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
 }
 
 @Composable
-private fun ReaderButton(label: Int, enabled: Boolean, onClick: () -> Unit) {
-    OutlinedButton(onClick, Modifier.heightIn(min = 48.dp), enabled = enabled,
+private fun ReaderButton(label: Int, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    OutlinedButton(onClick, modifier.heightIn(min = 48.dp), enabled = enabled,
         colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalContentColor.current)) { Text(stringResource(label)) }
 }
 

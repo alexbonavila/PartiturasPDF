@@ -72,4 +72,16 @@
     <string name="library_error_resource">The operation exceeds available resources or permitted limits.</string>
     <string name="library_error_unsupported">This operation or document is unsupported.</string>
     <string name="library_action_error">Could not apply the action to this item.</string>
+    <string name="library_search">Search this folder</string>
+    <string name="library_clear_search">Clear search</string>
+    <string name="library_filter_all">All</string>
+    <string name="library_filter_folders">Folders</string>
+    <string name="library_filter_pdfs">PDFs</string>
+    <string name="library_filter_registered">Registered PDFs</string>
+    <string name="library_filter_favorites">Favorite PDFs</string>
+    <string name="library_sort_asc">Name A–Z</string>
+    <string name="library_sort_desc">Name Z–A</string>
+    <string name="library_no_matches">No matches among loaded entries.</string>
+    <string name="library_no_confirmed">No confirmed matches; some entries remain unresolved.</string>
+    <string name="library_unresolved">Unresolved entries</string>
 </resources>

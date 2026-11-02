@@ -4,9 +4,12 @@ import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import java.security.MessageDigest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -23,6 +26,29 @@ import com.abdev.partituraspdf.core.result.Observation
 fun LibraryScreen(state: LibraryUiState, onAction: (LibraryAction) -> Unit, modifier: Modifier = Modifier) {
     val busy = state.rootSelection == LibraryOperation.Pending || state.navigation == LibraryOperation.Pending
     val available = state.location as? LibraryLocation.Available
+    // Only a non-reversible scope digest and primitive controls enter saved state.
+    val snapshot = available?.snapshot
+    val scope = remember(snapshot) {
+        snapshot?.let {
+            val fields = listOf(it.root.provider, it.root.value, it.current.provider, it.current.value, it.version.toString())
+            MessageDigest.getInstance("SHA-256").digest(fields.joinToString("") { value -> "${value.length}:$value" }.toByteArray())
+                .joinToString("") { byte -> "%02x".format(byte) }
+        } ?: "unavailable"
+    }
+    var query by rememberSaveable(scope, stateSaver = Saver<LibraryQuery, List<String>>(
+        save = { listOf(scope, it.text, it.filter.name, it.sort.name) },
+        restore = { if (it[0] == scope) LibraryQuery(it[1], LibraryFilter.valueOf(it[2]), LibrarySort.valueOf(it[3])) else LibraryQuery() },
+    )) { mutableStateOf(LibraryQuery()) }
+    val ready = state.content as? LibraryContent.Ready
+    val projection = remember(ready, query) { ready?.let { projectVisibleRows(it, query) } }
+    // Session-local ordinals: no provider identifiers in LazyColumn saved keys or semantics.
+    val rowKeys = remember(scope) { mutableMapOf<LibraryRowKey, Long>() }
+    val nextRowKey = remember(scope) { longArrayOf(0L) }
+    val visibleKeys = remember(ready, scope) {
+        val observed = ready?.rows.orEmpty().map { it.key }.toSet()
+        if (ready != null) rowKeys.keys.retainAll(observed)
+        ready?.rows.orEmpty().associate { row -> row.key to rowKeys.getOrPut(row.key) { nextRowKey[0]++ } }
+    }
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             LazyColumn(
@@ -37,6 +63,36 @@ fun LibraryScreen(state: LibraryUiState, onAction: (LibraryAction) -> Unit, modi
                         if (available != null) {
                             LibraryButton(R.string.library_back, enabled = !busy && available.canGoBack) { onAction(LibraryAction.Back(available.snapshot.version)) }
                             LibraryButton(R.string.library_refresh, enabled = !busy) { onAction(LibraryAction.Refresh) }
+                        }
+                    }
+                }
+                if (available != null) item("query_controls") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(query.text, { query = query.copy(text = it) },
+                            modifier = Modifier.fillMaxWidth().testTag("library_search"), singleLine = true,
+                            label = { Text(stringResource(R.string.library_search)) })
+                        LibraryButton(R.string.library_clear_search, enabled = query.text.isNotEmpty()) { query = query.copy(text = "") }
+                        LibraryControls {
+                            val labels = listOf(R.string.library_filter_all, R.string.library_filter_folders, R.string.library_filter_pdfs,
+                                R.string.library_filter_registered, R.string.library_filter_favorites)
+                            LibraryFilter.entries.forEachIndexed { index, filter ->
+                                FilterChip(query.filter == filter, { query = query.copy(filter = filter) },
+                                    label = { Text(stringResource(labels[index])) },
+                                    modifier = Modifier.heightIn(min = 48.dp).testTag("library_filter_${filter.name}"))
+                            }
+                        }
+                        var expanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton({ expanded = true }, Modifier.heightIn(min = 48.dp).testTag("library_sort")) {
+                                Text(stringResource(if (query.sort == LibrarySort.NAME_ASC) R.string.library_sort_asc else R.string.library_sort_desc))
+                            }
+                            DropdownMenu(expanded, { expanded = false }) {
+                                LibrarySort.entries.forEach { sort ->
+                                    DropdownMenuItem(text = { Text(stringResource(if (sort == LibrarySort.NAME_ASC) R.string.library_sort_asc else R.string.library_sort_desc)) },
+                                        onClick = { query = query.copy(sort = sort); expanded = false },
+                                        modifier = Modifier.heightIn(min = 48.dp).semantics { selected = query.sort == sort })
+                                }
+                            }
                         }
                     }
                 }
@@ -77,10 +133,23 @@ fun LibraryScreen(state: LibraryUiState, onAction: (LibraryAction) -> Unit, modi
                     is LibraryContent.Ready -> {
                         if (!content.complete) item("partial") { Text(stringResource(R.string.library_partial), Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
                         if (content.complete && content.rows.isEmpty()) item("empty") { Text(stringResource(R.string.library_empty)) }
-                        itemsIndexed(content.rows, key = { index, row -> "row-${row.key.loadGeneration}-${row.key.navigationVersion}-$index" }) { _, row ->
+                        val result = requireNotNull(projection)
+                        if (content.rows.isNotEmpty() && result.matches.isEmpty()) item("no_matches") {
+                            Text(stringResource(if (result.unresolved.isEmpty()) R.string.library_no_matches else R.string.library_no_confirmed))
+                        }
+                        items(result.matches, key = { "observed-${it.key.navigationVersion}-${it.key.loadGeneration}-${visibleKeys.getValue(it.key)}" }) { row ->
                             when (row) {
                                 is LibraryRow.Directory -> LibraryFolderRow(row, !busy, onAction)
                                 is LibraryRow.Pdf -> LibraryPdfRow(row, !busy, onAction)
+                            }
+                        }
+                        if (result.unresolved.isNotEmpty()) {
+                            item("unresolved_heading") { Text(stringResource(R.string.library_unresolved), Modifier.semantics { heading() }) }
+                            items(result.unresolved, key = { "observed-${it.key.navigationVersion}-${it.key.loadGeneration}-${visibleKeys.getValue(it.key)}" }) { row ->
+                                when (row) {
+                                    is LibraryRow.Directory -> LibraryFolderRow(row, !busy, onAction)
+                                    is LibraryRow.Pdf -> LibraryPdfRow(row, !busy, onAction)
+                                }
                             }
                         }
                     }

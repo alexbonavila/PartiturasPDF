@@ -282,9 +282,16 @@ class ReaderHostNativeIntegrationTest {
 
     private fun pdf() = ((host!!.state.value as AppHostState.Ready).features.library.state.value.content as LibraryContent.Ready).rows.single() as LibraryRow.Pdf
     private fun entry() = session!!.features.reader!!.state.value.entry!!
+    /** Reveal lazy rows before querying their actions; never bypass production interaction. */
+    private fun libraryAction(matcher: SemanticsMatcher): SemanticsNodeInteraction {
+        compose.onNodeWithTag("library_list").performScrollToNode(matcher)
+        compose.onAllNodes(matcher).assertCountEquals(1)
+        return compose.onNode(matcher).performScrollTo()
+            .assertIsDisplayed().assertIsEnabled().assertHasClickAction()
+    }
     private fun open() {
-        compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_open_description, "score.pdf"))
-            .performScrollTo().performClick()
+        libraryAction(hasContentDescription(compose.activity.getString(R.string.library_open_description, "score.pdf")))
+            .performClick()
         compose.waitUntil(15_000) { host!!.navigation.value.destination == AppDestination.READER }
     }
     // Snapshots are independent observations, not an atomic state transition or proof of acceptance.
@@ -514,14 +521,14 @@ class ReaderHostNativeIntegrationTest {
         }.toSet()
         if (LocaleMatrixUi.enabled) {
             assertEquals(LocaleMatrixUi.expectedLanguage(), compose.activity.resources.configuration.locales[0].language)
-            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.library_register)).performScrollTo().assertIsDisplayed()
+            libraryAction(hasText(LocaleMatrixUi.expectedString(compose.activity, R.string.library_register)))
             LocaleMatrixUi.capture("library-fixture-visible")
         }
-        compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_register_description, "score.pdf"))
+        libraryAction(hasContentDescription(compose.activity.getString(R.string.library_register_description, "score.pdf")))
             .performScrollTo().assertIsDisplayed().assertHasClickAction().performClick()
         compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
         val document = (pdf().association as LibraryAssociation.Registered).value.document
-        compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_favorite_add_description, "score.pdf"))
+        libraryAction(hasContentDescription(compose.activity.getString(R.string.library_favorite_add_description, "score.pdf")))
             .performScrollTo().performClick()
         compose.waitUntil(15_000) {
             ((pdf().association as? LibraryAssociation.Registered)?.metadata as? Observation.Ready)?.value?.favorite == true

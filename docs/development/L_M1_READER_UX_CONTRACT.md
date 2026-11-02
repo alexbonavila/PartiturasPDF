@@ -10,11 +10,11 @@
 > the experimental IME window-policy approach is intentionally abandoned.
 
 
-**Status:** Owner-approved UX decisions; design-only baseline, no production implementation authorized by this document  
-**Date:** 2026-11-02  
-**Repository:** https://github.com/alexbonavila/PartiturasPDF  
-**Target branch:** `feat/reader-advanced-l`  
-**Verified base commit:** `7f00a793a06e988859dbefc3e21814c21ec727dd`  
+**Status:** Owner-approved UX decisions; design-only baseline, no production implementation authorized by this document\
+**Date:** 2026-11-02\
+**Repository:** https://github.com/alexbonavila/PartiturasPDF\
+**Target branch:** `feat/reader-advanced-l`\
+**Verified base commit:** `7f00a793a06e988859dbefc3e21814c21ec727dd`\
 **Scope:** Reader-only behavior in L-M2 to L-M4; L-M1 records decisions and acceptance contracts.
 
 ## 1. Purpose and approval record

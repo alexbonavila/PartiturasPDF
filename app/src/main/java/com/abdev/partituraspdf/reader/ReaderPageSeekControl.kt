@@ -11,6 +11,7 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import com.abdev.partituraspdf.R
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReaderPageSeek(state: ReaderUiState, onAction: (ReaderAction) -> Unit) {
     val current by rememberUpdatedState(state)
@@ -40,6 +41,10 @@ internal fun ReaderPageSeek(state: ReaderUiState, onAction: (ReaderAction) -> Un
             value = readerSeekPosition(index, count), valueRange = 0f..1f, steps = 0,
             enabled = eligible != null && count > 1,
             interactionSource = interactions,
+            // Material3's default measured thumb is 44dp; padding alone does not enlarge
+            // the inner slider semantics/gesture layout. Keep the actual layout at 48dp.
+            thumb = { SliderDefaults.Thumb(interactionSource = interactions,
+                enabled = eligible != null && count > 1, modifier = Modifier.height(48.dp)) },
             onValueChange = { position ->
                 val live = readerSeekTarget(current)
                 val captured = pending?.first ?: live

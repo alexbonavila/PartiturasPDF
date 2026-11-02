@@ -174,7 +174,7 @@ fun ReaderScreen(state: ReaderUiState, onAction: (ReaderAction) -> Unit, onBack:
                     val current = state.presentedPage?.takeIf { it == metadata?.page?.page && state.phase != ReaderPhase.RENDERED }
                     val counter = if (current == null) stringResource(R.string.reader_page_unpresented)
                         else stringResource(R.string.reader_page_counter, current.value + 1, state.session!!.pageCount)
-                    Text(counter, Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    Text(counter, Modifier.testTag("reader_toolbar_counter").semantics { liveRegion = LiveRegionMode.Polite })
                     ReaderStatus(state, onAction)
                 }
 

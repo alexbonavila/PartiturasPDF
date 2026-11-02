@@ -348,7 +348,7 @@ class ReaderScreenTest {
     @Test fun activeSoftwareSurfaceDrawAcknowledgesExactlyOnePage(){
         start();visible()
         assertEquals(listOf(PageIndex(0)),acknowledged)
-        compose.onNodeWithText(text(R.string.reader_page_counter,1,8)).assertIsDisplayed()
+        compose.onNodeWithTag("reader_toolbar_counter").assertTextEquals(text(R.string.reader_page_counter,1,8)).assertIsDisplayed()
         assertFalse(bitmaps.single().isRecycled);assertEquals(1,maximumLeases.get())
     }
     @Test fun renderAndAttachmentWithoutVisibleScreenNeverAcknowledge(){
@@ -487,8 +487,9 @@ class ReaderScreenTest {
     @Test fun requestedPageIsNotReportedAsPresentedDuringPendingRender(){
         start();visible();renderGate=CompletableDeferred()
         button(R.string.reader_next).performClick()
-        compose.onNodeWithText(text(R.string.reader_page_unpresented)).assertIsDisplayed()
-        compose.onNodeWithText(text(R.string.reader_page_counter,2,8)).assertDoesNotExist()
+        compose.onNodeWithTag("reader_toolbar_counter").assertTextEquals(text(R.string.reader_page_unpresented)).assertIsDisplayed()
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_unpresented)).assertIsDisplayed()
+        compose.onAllNodesWithText(text(R.string.reader_page_counter,2,8)).assertCountEquals(0)
         assertEquals(listOf(PageIndex(0)),acknowledged)
         renderGate!!.complete(Unit);visible(1)
     }
@@ -645,7 +646,14 @@ class ReaderScreenTest {
     }
     @Test fun seekDragOnlyPreviewsUntilReleaseAndConsumesPointer() {
         start();visible();val before=controller.state.value;val renders=requests.size
-        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(12f,height/2f));moveTo(Offset(width-1f,height/2f)) }
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(width*.05f,height/2f))
+            // Timed input samples cross touch slop and continue dragging after activation.
+            // Event time is synthetic gesture timing, not a thread sleep or test retry.
+            for(fraction in listOf(.15f,.35f,.6f,.85f,1f)) {
+                advanceEventTime(16L)
+                moveTo(Offset((width-1f)*fraction,height/2f))
+            } }
+        compose.runOnIdle { trace("seek-drag-held-before-preview-assertion") }
         compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_seek_preview,8,8))
         assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
         assertSame(before.frame,controller.state.value.frame);assertEquals(renders,requests.size);assertEquals(listOf(PageIndex(0)),acknowledged)

@@ -49,22 +49,28 @@ current-revision regression/compatibility evidence → explicit acceptance.
 | Item | Classification / next evidence |
 |---|---|
 | K-M5 cross-feature integration | DEFERRED BY OWNER / NOT VERIFIED; not completed or PASS. Revisit only after L/M implementation and separate authorization. |
-| API27 and recent API36 compatibility | PENDING; latest supplied run skipped compatibility. Obtain implementation/PR-revision evidence under testing policy before functional phase close. |
+| API27 and recent API36 compatibility | VERIFIED AT PUBLISHED K-M6 SHA: owner-triggered run `41462058074` executed 445 instrumentation tests on API27 and 445 on API36, all PASS; API26 also 445 PASS. Re-evaluate against a future combined/integration revision. |
 | Physical Android 8.1 tablet | REQUIRED BEFORE FORMAL ACCEPTANCE; device/API/revision and per-scenario UI results missing. General Android manual success is insufficient. |
 | Real Activity rotation, host transitions and actual process recovery | EVIDENCE GAP; separate current-source device evidence where applicable. Compose emulation and synthetic reconstruction are not actual OS process death. No worker killing or destructive recovery is authorized here. |
 | TalkBack, focus/keyboard, large-font/contrast/orientation and human es/ca/en review | REQUIRED UI ACCEPTANCE; automated semantics/resource checks do not replace manual/device review. Preserve J08 full audit deferral to Phase R without waiving K control accessibility. |
 | Actual external SAF/provider behavior | PENDING applicable acceptance; injected/synthetic tests do not prove real authorization, revocation or unavailable-provider journeys. |
 | Performance / memory | Descriptive JVM observations only; no approved numerical K budget or physical calibration. No claim of leak-free operation, measured Android memory or proven performance regression. |
-| CI Python skip | OWNER EXPLANATION REQUIRED; supplied run reports one skipped test, reason unavailable. Existing policy forbids unexplained skipped checks; do not silently waive it because quality gate passed. Local K-M4 had no skip. |
-| New K-M6 documentation revision | STATIC CHECKED locally; supplied CI remains at implementation SHA, not this later commit. Required latest-head/current-base checks remain necessary for a future PR. |
+| CI Python skip | EXPLAINED / NOT EXECUTED: `test_offline_coverage.RealHostReportSmokeTests.test_real_jacoco_report_and_identity_reader_without_application_build` conditionally skips when host `java`/`javac` or cached JaCoCo report libraries are missing. CI log: `Existing host JDK/JaCoCo report libraries unavailable; no downloads`. Python: 492 executed, 1 skipped, 0 failed. This is not PASS for that individual smoke test or a waiver of mandatory policy; local K-M4 had no skip. |
+| K-M6 published revision | CI VERIFIED at documentation SHA `23624a1c3c087e545da68243a1a42875f48f7caf` in run `41462058074`. This follow-up evidence-only documentation amendment is not separately CI-verified. Any later PR/integration requires checks at its actual revision. |
 | Human approval / merge | NOT GRANTED by this task. No PR or merge; only owner may authorize integration after applicable gates and acceptance. |
 
-Latest owner-supplied CI: run `41457440097`, implementation SHA above, 653 JVM,
-445 API26, 15 fixtures, build/Lint/localization/quality gate PASS; Python 492
-executed with one skip; compatibility SKIPPED. This is not independently obtained
-CI evidence. General manual K-M3 success is owner-reported, with no physical
-Android 8.1 or per-scenario attribution inferred.
+Latest independently checked owner-triggered CI:
+[run 41462058074](https://github.com/alexbonavila/PartiturasPDF/actions/runs/41462058074),
+at published K-M6 SHA `23624a1c3c087e545da68243a1a42875f48f7caf`,
+completed SUCCESS: 653 JVM PASS; 445 Android instrumentation PASS on **each**
+of API26, API27 and API36; build, Lint, localization, 15 PDF fixtures and
+quality gate PASS. Python: 492 executed, 0 failures, 1 explained conditional
+skip (see above). The source implementation remains unchanged from the
+previously audited SHA. This follow-up amendment itself is documentation-only
+and has no distinct CI run. General manual K-M3 success is owner-reported
+without physical Android 8.1 or per-scenario attribution.
 
-Standalone K is ready for owner review with these limitations. Formal Phase K
-acceptance and merge readiness remain pending; no mandatory policy requirement
-is waived by deferring K-M5 or by this documentary closeout.
+Standalone K-M1–K-M4 implementation and K-M6 technical audit are closed for
+owner review with the above limits. K-M5 remains **DEFERRED / NOT VERIFIED**;
+formal whole-Phase-K acceptance, integration and merge readiness are pending.
+No mandatory policy requirement is waived by this documentary closeout.

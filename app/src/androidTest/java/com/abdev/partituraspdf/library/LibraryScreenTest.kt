@@ -385,4 +385,60 @@ class LibraryScreenTest {
         }
         compose.runOnIdle { assertTrue(actions.isEmpty()) }
     }
+
+    @Test fun moderatelyLargeDuplicateNameListingKeepsOffscreenActionsBoundToOriginalKeys() {
+        val rows = (0 until 150).map { index ->
+            val ref = StorageDocumentRef("ui-test", "private-$index")
+            val observed = entry.copy(storage = ref, info = entry.info.copy(name = if (index == 149) "ZZ target.pdf" else "Duplicate.pdf"))
+            LibraryRow.Pdf(key.copy(storage = ref), observed, LibraryAssociation.Unregistered)
+        }
+        render(ready(rows))
+        find(hasTestTag("library_search")).performTextInput("target")
+        find(hasTestTag("library_filter_PDFS")).performClick()
+        find(hasTestTag("library_sort")).performClick()
+        compose.onNodeWithText(text(R.string.library_sort_desc)).performClick()
+        find(hasContentDescription(text(R.string.library_open_description, "ZZ target.pdf"))).performClick()
+        compose.runOnIdle { assertEquals(listOf(LibraryAction.Open(rows.last().key)), actions); actions.clear() }
+        findText(R.string.library_clear_search).performClick()
+        find(hasTestTag("library_sort")).performClick()
+        compose.onNodeWithText(text(R.string.library_sort_asc)).performClick()
+        find(hasContentDescription(text(R.string.library_open_description, "ZZ target.pdf"))).performClick()
+        compose.runOnIdle { assertEquals(listOf(LibraryAction.Open(rows.last().key)), actions) }
+    }
+
+    @Test fun failedRefreshRetryAndParentOrRootChangesKeepTruthfulControlLifetime() {
+        val child = FolderRef("ui-test", "child")
+        val state = mutableStateOf(ready(listOf(pdf())).copy(location = LibraryLocation.Available(FolderNavigationState(root, listOf(root, child), 19))))
+        compose.runOnUiThread { compose.activity.setContent { PartiturasPDFTheme { LibraryScreen(state.value, actions::add) } } }
+        find(hasTestTag("library_search")).performTextInput("absent")
+        compose.runOnIdle { state.value = state.value.copy(content = LibraryContent.Failed(LibraryFailure(LibraryFailureOperation.LISTING, AppError.Access.PROVIDER_UNAVAILABLE))) }
+        findText(R.string.library_error_provider_unavailable).assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.library_no_matches)).assertDoesNotExist()
+        find(hasTestTag("library_search")).assertTextContains("absent")
+        compose.runOnIdle { state.value = state.value.copy(content = LibraryContent.Loading(99)) }
+        findText(R.string.library_loading).assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(content = LibraryContent.Ready(listOf(pdf().copy(key = key.copy(loadGeneration = 99))), false)) }
+        findText(R.string.library_partial).assertIsDisplayed()
+        findText(R.string.library_no_matches).assertIsDisplayed()
+        find(hasTestTag("library_search")).assertTextContains("absent")
+        compose.runOnIdle { state.value = ready(listOf(pdf())).copy(location = LibraryLocation.Available(FolderNavigationState(root, listOf(root), 20))) }
+        findText(R.string.library_clear_search).assertIsNotEnabled()
+        find(hasTestTag("library_search")).performTextInput("sonata")
+        val replacement = FolderRef("ui-test", "replacement")
+        compose.runOnIdle { state.value = ready().copy(location = LibraryLocation.Available(FolderNavigationState(replacement, listOf(replacement), 21))) }
+        findText(R.string.library_clear_search).assertIsNotEnabled()
+        compose.runOnIdle { assertTrue(actions.isEmpty()) }
+    }
+
+    @Test fun duplicateNamesRetainDistinctRegisterAndFavoriteKeysAfterSorting() {
+        val unregistered = pdf()
+        val otherStorage = StorageDocumentRef("ui-test", "other-private-location")
+        val confirmed = pdf(registered(true).let { it.copy(value = it.value.copy(storage = otherStorage)) }).copy(key = key.copy(storage = otherStorage), entry = entry.copy(storage = otherStorage))
+        render(ready(listOf(unregistered, confirmed)))
+        find(hasTestTag("library_sort")).performClick()
+        compose.onNodeWithText(text(R.string.library_sort_desc)).performClick()
+        find(hasContentDescription(text(R.string.library_register_description, entry.info.name!!))).performClick()
+        find(hasContentDescription(text(R.string.library_favorite_remove_description, entry.info.name!!))).performClick()
+        compose.runOnIdle { assertEquals(listOf(LibraryAction.Register(unregistered.key), LibraryAction.SetFavorite(confirmed.key, false)), actions) }
+    }
 }

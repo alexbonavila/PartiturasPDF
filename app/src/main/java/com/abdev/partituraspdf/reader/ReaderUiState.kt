@@ -50,6 +50,12 @@ sealed interface ReaderAction {
     data class Viewport(val value: ReaderViewport) : ReaderAction
     data class Fit(val value: PageFit) : ReaderAction
     data class Page(val index: Int) : ReaderAction
+    /** Session-bound jump; controller validates expectations atomically before scheduling. */
+    data class PageIfCurrent(
+        val index: Int,
+        val expectedIntent: ReaderOpenIntent,
+        val expectedSession: ReadSessionInfo,
+    ) : ReaderAction
     /** Relative navigation is resolved atomically, even before Compose receives the next snapshot. */
     data class Step(val delta: Int) : ReaderAction {
         init { require(delta == -1 || delta == 1) }

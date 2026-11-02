@@ -112,6 +112,7 @@ class ReaderController(
                 scheduleRender()
             }
             is ReaderAction.Page -> if (active) requestPage(action.index)
+            is ReaderAction.PageIfCurrent -> pageIfCurrent(action)
             is ReaderAction.Step -> if (active) {
                 val index = state.value.requestedPage?.value
                 val count = ready?.session?.info?.pageCount
@@ -187,6 +188,17 @@ class ReaderController(
     }
 
     private fun signal() { wake.trySend(Unit) }
+    /** Called only within dispatch's lock; rejected jumps have no observable side effects. */
+    private fun pageIfCurrent(action: ReaderAction.PageIfCurrent) {
+        if (!active) return
+        val current = ready ?: return
+        val expected = ReaderNavigationContext(action.expectedIntent, action.expectedSession)
+        if (!readerNavigationContextIsCurrent(expected, state.value)) return
+        if (current.session.info != action.expectedSession) return
+        if (action.index !in 0 until action.expectedSession.pageCount) return
+        requestPage(action.index)
+    }
+
     private fun requestPage(index: Int) {
         val session = ready?.session
         if (session == null || index < 0 || index >= session.info.pageCount) {

@@ -2,6 +2,11 @@ package com.abdev.partituraspdf.reader
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
+import android.view.ViewTreeObserver
+import androidx.compose.ui.platform.LocalView
+import org.json.JSONObject
+import org.junit.rules.TestName
 import android.util.Log
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
@@ -49,6 +54,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReaderScreenTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+    @get:Rule val testName=TestName()
+    private val traceLock=Any()
+    private var traceSequence=0
+    private var lastLayoutTrace:String?=null
     private val composition=ReaderTestComposition(compose)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main.immediate)
     private lateinit var controller:ReaderController
@@ -75,16 +84,18 @@ class ReaderScreenTest {
     private var renderGate:CompletableDeferred<Unit>?=null
     private var openGate:CompletableDeferred<Unit>?=null
     private var portraitHeight=900
+    private var pageCount=8
     private var ready:ReaderReady?=null
     private var request:DocumentOpenRequest=DocumentOpenRequest.Transient(StorageDocumentRef("ui-synthetic","pdf"))
     private val session=object:PdfReadSession {
-        override val info=ReadSessionInfo(ReadSessionId("ui-session"),0,8)
+        override val info get()=ReadSessionInfo(ReadSessionId("ui-session"),0,pageCount)
         override val renderLimits=RenderLimits(4096,4_194_304)
         override suspend fun displayInfo(page:ReadPageRef):Outcome<PageDisplayInfo> =
             Outcome.Success(PageDisplayInfo(page,if(page.page.value%2==0)600 else 900,if(page.page.value%2==0)portraitHeight else 600))
         override suspend fun render(request:RenderRequest):Outcome<RenderedPage> {
             renderGate?.await()
             requests+=request
+            trace("render-start")
             val bitmap=Bitmap.createBitmap(request.width,request.height,Bitmap.Config.ARGB_8888)
             bitmap.eraseColor(Color.RED);bitmaps+=bitmap
             val retained=activeLeases.incrementAndGet()
@@ -95,7 +106,7 @@ class ReaderScreenTest {
                 override val displayInfo=observed
                 override val bitmap=bitmap
                 private var closed=false
-                override fun close(){if(!closed){closed=true;bitmap.recycle();activeLeases.decrementAndGet()}}
+                override fun close(){if(!closed){closed=true;bitmap.recycle();activeLeases.decrementAndGet();trace("lease-close")}}
             })
         }
         override fun close(){sessionCloses.incrementAndGet()}
@@ -108,9 +119,46 @@ class ReaderScreenTest {
             if(openingCanceled)throw CancellationException("test canceled open")
             return openFailure?.let{Outcome.Failure(it)}?:Outcome.Success(ReaderReady(request,session,PageIndex(0)).also{ready=it})
         }
-        override suspend fun displayed(session:ReadSessionId,page:PageIndex):Outcome<Unit>{acknowledged+=page;return checkpointFailure?.let{Outcome.Failure(it)}?:Outcome.Success(Unit)}
+        override suspend fun displayed(session:ReadSessionId,page:PageIndex):Outcome<Unit>{acknowledged+=page;trace("route-displayed");return checkpointFailure?.let{Outcome.Failure(it)}?:Outcome.Success(Unit)}
         override suspend fun background():Outcome<Unit> = Outcome.Success(Unit)
         override suspend fun close():Outcome<Unit>{ready=null;return Outcome.Success(Unit)}
+    }
+
+    /** Synthetic harness diagnostics only; no text input, document references or screenshots. */
+    private fun trace(event:String, observed:ReaderUiState?=null) {
+        if(!::controller.isInitialized)return
+        val state=observed?:controller.state.value
+        val root=compose.activity.window.decorView
+        val visible=Rect();root.getWindowVisibleDisplayFrame(visible)
+        val surface=runCatching { surface() }.getOrNull()
+        val data=JSONObject().put("test",testName.methodName).put("event",event)
+            .put("phase",state.phase.name).put("viewportWidth",state.viewport?.widthPx?:-1)
+            .put("viewportHeight",state.viewport?.heightPx?:-1).put("generation",state.viewportGeneration)
+            .put("frameToken",state.frame?.let { System.identityHashCode(it) }?:0)
+            .put("requested",state.requestedPage?.value?:-1).put("presented",state.presentedPage?.value?:-1)
+            .put("renders",requests.size).put("opens",opens.get()).put("acknowledgments",acknowledged.map { it.value })
+            .put("activeLeases",activeLeases.get()).put("maximumLeases",maximumLeases.get())
+            .put("consumerActive",state.checkpointConsumer?.let { it.frame.active(it) }?:false)
+            .put("surfaceToken",surface?.let { System.identityHashCode(it) }?:0)
+            .put("surfaceAttached",surface?.isAttachedToWindow?:false)
+            .put("surfaceWidth",surface?.width?:-1).put("surfaceHeight",surface?.height?:-1)
+            .put("windowFocus",compose.activity.hasWindowFocus()).put("decorWidth",root.width).put("decorHeight",root.height)
+            .put("visibleTop",visible.top).put("visibleBottom",visible.bottom)
+            .put("systemInsetBottom",root.rootWindowInsets?.systemWindowInsetBottom?:-1)
+        // Layout callbacks may repeat without a meaningful measurement/state change.
+        // Never hold the logging lock while observing frame locks or Android views.
+        synchronized(traceLock) {
+        val signature=data.toString()
+        if(event=="layout" && signature==lastLayoutTrace)return
+        if(event=="layout")lastLayoutTrace=signature
+        if(traceSequence>=2048) {
+            if(traceSequence==2048)Log.w("ReaderRuntimeSequence","TRACE TRUNCATED: evidence incomplete")
+            traceSequence++
+            return
+        }
+        data.put("sequence",++traceSequence)
+        Log.i("ReaderRuntimeSequence",data.toString())
+        }
     }
 
     private fun text(id:Int,vararg args:Any)=compose.activity.getString(id,*args)
@@ -118,16 +166,23 @@ class ReaderScreenTest {
         controller=ReaderController(scope,route,session.renderLimits,{HeapAvailability(256L*1024*1024,0)},fit)
         if(open)controller.open(ReaderOpenIntent(1,request))
         composition.mount{
+            val view=LocalView.current
+            DisposableEffect(view) {
+                val listener=ViewTreeObserver.OnGlobalLayoutListener { trace("layout") }
+                view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+                onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+            }
             val manager=LocalInputModeManager.current
             SideEffect{inputMode=manager}
             val state by controller.state.collectAsState()
+            SideEffect { trace("composed",state) }
             val generation=recomposition.intValue
             PartiturasPDFTheme(darkTheme=dark){
                 val density=LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density,if(large.value)2f else density.fontScale)){
                     if(shown.value)Box((if(narrow.value)Modifier.width(320.dp) else Modifier.fillMaxWidth()).then(
                         if(shortViewport.value)Modifier.height(with(density){(resizeHeightPx?:240.dp.roundToPx()).toDp()}) else Modifier.fillMaxHeight())){
-                        ReaderScreen(state.copy(phase=phase.value?:state.phase),{if(generation>=0)actions+=it;controller.dispatch(it)},{backs.incrementAndGet()})
+                        ReaderScreen(state.copy(phase=phase.value?:state.phase),{trace("action-before:"+it.javaClass.simpleName);if(generation>=0)actions+=it;controller.dispatch(it);trace("action-after:"+it.javaClass.simpleName)},{backs.incrementAndGet()})
                     }
                 }
             }
@@ -293,7 +348,7 @@ class ReaderScreenTest {
     @Test fun activeSoftwareSurfaceDrawAcknowledgesExactlyOnePage(){
         start();visible()
         assertEquals(listOf(PageIndex(0)),acknowledged)
-        compose.onNodeWithText(text(R.string.reader_page_counter,1,8)).assertIsDisplayed()
+        compose.onNodeWithTag("reader_toolbar_counter").assertTextEquals(text(R.string.reader_page_counter,1,8)).assertIsDisplayed()
         assertFalse(bitmaps.single().isRecycled);assertEquals(1,maximumLeases.get())
     }
     @Test fun renderAndAttachmentWithoutVisibleScreenNeverAcknowledge(){
@@ -432,8 +487,9 @@ class ReaderScreenTest {
     @Test fun requestedPageIsNotReportedAsPresentedDuringPendingRender(){
         start();visible();renderGate=CompletableDeferred()
         button(R.string.reader_next).performClick()
-        compose.onNodeWithText(text(R.string.reader_page_unpresented)).assertIsDisplayed()
-        compose.onNodeWithText(text(R.string.reader_page_counter,2,8)).assertDoesNotExist()
+        compose.onNodeWithTag("reader_toolbar_counter").assertTextEquals(text(R.string.reader_page_unpresented)).assertIsDisplayed()
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_unpresented)).assertIsDisplayed()
+        compose.onAllNodesWithText(text(R.string.reader_page_counter,2,8)).assertCountEquals(0)
         assertEquals(listOf(PageIndex(0)),acknowledged)
         renderGate!!.complete(Unit);visible(1)
     }
@@ -494,6 +550,209 @@ class ReaderScreenTest {
         assertTrue("Unmount must return the live consumer",current.availability.value)
         assertTrue(first.isRecycled);assertFalse(bitmaps.last().isRecycled)
         disposeFixture();assertTrue(bitmaps.all{it.isRecycled});assertEquals(1,maximumLeases.get())
+    }
+
+
+    @Test fun centerTogglesWithoutViewportRenderLeaseOrTimeoutChanges() {
+        start();visible()
+        val initial=controller.state.value;val rendered=requests.size;val opened=opens.get();val view=surface()
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        repeat(4) {
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+            compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(30_000);compose.waitForIdle()
+            compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+            compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        }
+        assertSame(view,surface());assertTrue(view.isAttachedToWindow)
+        assertEquals(initial.viewport,controller.state.value.viewport)
+        assertEquals(initial.viewportGeneration,controller.state.value.viewportGeneration)
+        assertSame(initial.frame,controller.state.value.frame)
+        assertEquals(rendered,requests.size);assertEquals(opened,opens.get());assertEquals(1,maximumLeases.get())
+    }
+    @Test fun quarterBoundariesAndHiddenKeyboardControlsKeepOriginalNavigation() {
+        start();visible()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.25f,height*.7f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.75f,height*.7f)) };visible(1)
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        keyboardFocus(compose.onNodeWithTag("reader_page")).performKeyInput { pressKey(Key.C) }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        val toggle=compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsActions.CustomActions]
+            .single { it.label==text(R.string.reader_controls_hide) }
+        compose.runOnIdle { assertTrue(toggle.action()) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+    }
+    @Test fun canceledAndOutOfBoundsMotionNeverToggleChrome() {
+        start();visible()
+        compose.onNodeWithTag("reader_page").performTouchInput {
+            down(Offset(width*.5f,height*.7f));moveTo(Offset(-1f,height*.7f));moveTo(Offset(width*.5f,height*.7f));up()
+        }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        compose.onNodeWithTag("reader_page").performTouchInput { down(Offset(width*.5f,height*.7f));cancel() }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+    }
+    @Test fun toolbarTouchDoesNotLeakAndHiddenRecoveryRemainsReachable() {
+        start();visible()
+        button(R.string.reader_next).performTouchInput { click() };visible(1)
+        assertEquals(PageIndex(1),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_toolbar").performTouchInput { click(Offset(width-2f,height-2f)) }
+        assertEquals(PageIndex(1),controller.state.value.requestedPage)
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnUiThread { controller.dispatch(ReaderAction.Page(-1)) }
+        compose.onNodeWithText(text(R.string.reader_error_page)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(text(R.string.reader_back)).performScrollTo().assertIsDisplayed().performTouchInput { click() }
+        assertEquals(1,backs.get())
+    }
+
+    @Test fun hiddenPreferenceSurvivesFitPageAndZoomButNewIntentShowsToolbar() {
+        start();visible()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.7f)) }
+        keyboardFocus(compose.onNodeWithTag("reader_page")).performKeyInput { pressKey(Key.Plus) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnUiThread { controller.dispatch(ReaderAction.Fit(PageFit.WIDTH)) };visible()
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.9f,height*.7f)) };visible(1)
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible(0)
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+    }
+
+    private fun seekTo(value:Float) {
+        compose.onNodeWithTag("reader_seek_slider").performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(value)) }
+    }
+    @Test fun seekChromeTogglePreservesFrameViewportAndRendering() {
+        start();visible();val before=controller.state.value;val view=surface();val renders=requests.size
+        repeat(3) {
+            compose.onNodeWithTag("reader_seek").assertIsDisplayed()
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+            compose.onNodeWithTag("reader_seek").assertDoesNotExist()
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+        }
+        assertSame(before.frame,controller.state.value.frame);assertSame(view,surface())
+        assertEquals(before.viewport,controller.state.value.viewport);assertEquals(before.viewportGeneration,controller.state.value.viewportGeneration)
+        assertEquals(renders,requests.size);assertEquals(1,opens.get());assertEquals(listOf(PageIndex(0)),acknowledged)
+    }
+    @Test fun seekFirstLastUsesExactlyTwoGuardedActionsAndThreeAcknowledgments() {
+        start();visible();seekTo(1f);visible(7);seekTo(0f);visible(0)
+        assertEquals(listOf(7,0),actions.filterIsInstance<ReaderAction.PageIfCurrent>().map { it.index })
+        assertTrue(actions.filterIsInstance<ReaderAction.Page>().isEmpty());assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
+        assertEquals(listOf(PageIndex(0),PageIndex(7),PageIndex(0)),acknowledged)
+        assertEquals(3,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+    }
+    @Test fun seekDragOnlyPreviewsUntilReleaseAndConsumesPointer() {
+        start();visible();val before=controller.state.value;val renders=requests.size
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(width*.05f,height/2f))
+            // Timed input samples cross touch slop and continue dragging after activation.
+            // Event time is synthetic gesture timing, not a thread sleep or test retry.
+            for(fraction in listOf(.15f,.35f,.6f,.85f,1f)) {
+                advanceEventTime(16L)
+                moveTo(Offset((width-1f)*fraction,height/2f))
+            } }
+        compose.runOnIdle { trace("seek-drag-held-before-preview-assertion") }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_seek_preview,8,8))
+        assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
+        assertSame(before.frame,controller.state.value.frame);assertEquals(renders,requests.size);assertEquals(listOf(PageIndex(0)),acknowledged)
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { up() };visible(7)
+        assertEquals(1,actions.filterIsInstance<ReaderAction.PageIfCurrent>().size);assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
+    }
+    @Test fun seekCancelPreservesPageFitZoomAndFrame() {
+        start(PageFit.WIDTH);visible();val before=controller.state.value
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(12f,height/2f));moveTo(Offset(width-1f,height/2f));cancel() }
+        compose.waitForIdle()
+        assertSame(before.frame,controller.state.value.frame);assertEquals(before.viewport,controller.state.value.viewport)
+        assertEquals(before.fit,controller.state.value.fit);assertEquals(1,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+        assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
+    }
+    @Test fun seekPendingRequestDoesNotClaimPresentation() {
+        start();visible();val gate=CompletableDeferred<Unit>();compose.runOnIdle { renderGate=gate }
+        seekTo(1f);compose.waitUntil(10_000) { controller.state.value.requestedPage==PageIndex(7) }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_unpresented))
+        assertEquals(listOf(PageIndex(0)),acknowledged)
+        compose.runOnIdle { gate.complete(Unit) };visible(7)
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_counter,8,8))
+    }
+    @Test fun seekReplacementCancelsDragAndCannotNavigateNewIntent() {
+        start();visible()
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(12f,height/2f));moveTo(Offset(width-1f,height/2f)) }
+        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible()
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { up() };compose.waitForIdle()
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+        assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
+    }
+    @Test fun seekLargeFontAndRealResizeRemainUsable() {
+        narrow.value=true;large.value=true;start(dark=true);visible();val before=controller.state.value.viewport
+        compose.onNodeWithTag("reader_seek_slider").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        compose.runOnIdle { resizeHeightPx=(before!!.heightPx/2).coerceAtLeast(2);shortViewport.value=true }
+        compose.waitUntil(10_000) { controller.state.value.viewport!=before };visible()
+        compose.onNodeWithTag("reader_seek_slider").assertIsDisplayed()
+        seekTo(1f);visible(7);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+    }
+    @Test fun seekKeyboardStaysBounded() {
+        start();visible()
+        keyboardFocus(compose.onNodeWithTag("reader_seek_slider")).performKeyInput { pressKey(Key.MoveEnd) }
+        visible(7);assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
+        assertEquals(1,actions.filterIsInstance<ReaderAction.PageIfCurrent>().size)
+    }
+    @Test fun onePageSeekIsDisabledWithoutExtraWork() {
+        pageCount=1;start();visible()
+        compose.onNodeWithTag("reader_seek_slider").assertIsNotEnabled()
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_counter,1,1))
+        assertEquals(1,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+    }
+
+    @Test fun realActivityRecreationRestoresHiddenChromeForSameIntentOnly() {
+        start();visible();val opened=opens.get()
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        composition.recreate { compose.activityRule.scenario.recreate() };visible()
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.onNodeWithTag("reader_seek").assertDoesNotExist()
+        assertEquals(opened,opens.get());assertEquals(1,maximumLeases.get())
+        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible()
+        compose.onNodeWithTag("reader_toolbar").assertExists()
+        compose.onNodeWithTag("reader_seek").assertExists()
+    }
+    @Test fun recreationDismissesOptionsAndResetsUnfinishedSeekWithoutNavigation() {
+        start();visible();button(R.string.reader_options).performClick()
+        compose.onNodeWithText(text(R.string.reader_fit_width)).assertIsDisplayed()
+        composition.recreate { compose.activityRule.scenario.recreate() };visible()
+        compose.onNodeWithText(text(R.string.reader_fit_width)).assertDoesNotExist()
+        val before=actions.filterIsInstance<ReaderAction.PageIfCurrent>().size
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput {
+            down(Offset(width*.05f,height/2f))
+            for(fraction in listOf(.2f,.5f,.9f,1f)) {advanceEventTime(16L);moveTo(Offset((width-1f)*fraction,height/2f))}
+        }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_seek_preview,8,8))
+        composition.recreate { compose.activityRule.scenario.recreate() };visible()
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_counter,1,8))
+        assertEquals(before,actions.filterIsInstance<ReaderAction.PageIfCurrent>().size)
+        assertEquals(PageIndex(0),controller.state.value.requestedPage);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+    }
+    @Test fun optionsDismissalRestoresButtonFocusWithoutPageKeyLeakageOrRendering() {
+        start();visible();val renders=requests.size;val before=controller.state.value
+        keyboardFocus(button(R.string.reader_options)).performKeyInput { pressKey(Key.Enter) }
+        keyboardFocus(compose.onNodeWithText(text(R.string.reader_fit_width)),popup=true).performKeyInput { pressKey(Key.Escape) }
+        button(R.string.reader_options).assertIsFocused()
+        button(R.string.reader_options).performKeyInput {pressKey(Key.DirectionRight)}
+        assertEquals(before.requestedPage,controller.state.value.requestedPage)
+        assertSame(before.frame,controller.state.value.frame);assertEquals(renders,requests.size);assertEquals(1,opens.get())
+    }
+
+    @Test fun freshPresentationEntryStartsVisibleEvenForSameIntentValue() {
+        start();visible();val before=controller.state.value;val renders=requests.size
+        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        compose.runOnIdle { shown.value=false };compose.waitForIdle()
+        compose.runOnIdle { shown.value=true };visible()
+        compose.onNodeWithTag("reader_toolbar").assertExists()
+        compose.onNodeWithTag("reader_seek").assertExists()
+        assertEquals(before.intent,controller.state.value.intent);assertEquals(1,opens.get());assertEquals(renders,requests.size)
+        assertEquals(1,maximumLeases.get())
     }
 
 }

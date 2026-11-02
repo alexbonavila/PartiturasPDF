@@ -32,15 +32,36 @@ internal class ReaderGestureGate(private val slop: Float) {
     private var distanceX = 0f
     private var distanceY = 0f
     private var transformed = false
-    private var blocked = false
+    private var blocked = !slop.isFinite() || slop < 0f
+    private var terminal = false
+    private var sawPointer = false
     fun update(pointers: Int, dx: Float, dy: Float, zoom: Float, consumed: Boolean): Boolean {
-        if (consumed || !dx.isFinite() || !dy.isFinite() || !zoom.isFinite()) blocked = true
+        if (terminal) return false
+        if (pointers > 0) sawPointer = true
+        if (pointers < 0 || consumed || !dx.isFinite() || !dy.isFinite() || !zoom.isFinite() || zoom <= 0f) blocked = true
         if (pointers > 1 || zoom != 1f) transformed = true
         distanceX += dx; distanceY += dy
         if (distanceX * distanceX + distanceY * distanceY > slop * slop) transformed = true
         return transformed && !blocked
     }
-    fun isTap(): Boolean = !transformed && !blocked
+    /** Compatibility query for the existing screen; does not dispatch or consume a tap. */
+    fun isTap(): Boolean = sawPointer && !terminal && !transformed && !blocked
+    fun cancel() { blocked = true; terminal = true }
+    /** New adapters finish exactly once; rejection is terminal too. */
+    fun finishTap(): Boolean = isTap().also { terminal = true }
+}
+
+internal enum class ReaderTapZone { PREVIOUS, CONTROLS, NEXT }
+
+/** Exact proportional zones, independent of control touch-target minimums. Endpoint excluded. */
+internal fun readerTapZone(x: Float, width: Int): ReaderTapZone? {
+    val coordinate = x.toDouble()
+    if (!x.isFinite() || width <= 0 || coordinate < 0.0 || coordinate >= width.toDouble()) return null
+    return when {
+        coordinate < width.toDouble() * 0.25 -> ReaderTapZone.PREVIOUS
+        coordinate < width.toDouble() * 0.75 -> ReaderTapZone.CONTROLS
+        else -> ReaderTapZone.NEXT
+    }
 }
 
 /** 15% bands, at least the caller's 48dp in pixels, capped at half width to avoid overlap. */

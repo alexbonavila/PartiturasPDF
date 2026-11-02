@@ -48,4 +48,9 @@
     <string name="reader_checkpoint_canceled">La solicitud de guardado se canceló; el guardado no está confirmado.</string>
     <string name="reader_checkpoint_failure">No se ha podido solicitar el guardado de la posición.</string>
     <string name="reader_checkpoint_unconfirmed">Última solicitud de posición aceptada; guardado permanente sin confirmar.</string>
+    <string name="reader_controls_show">Mostrar controles</string>
+    <string name="reader_controls_hide">Ocultar controles</string>
+    <string name="reader_seek_label">Buscar página</string>
+    <string name="reader_seek_preview">Vista previa: página %1$d de %2$d</string>
+    <string name="reader_seek_endpoint">%1$d</string>
 </resources>

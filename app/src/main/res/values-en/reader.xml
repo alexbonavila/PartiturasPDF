@@ -48,4 +48,9 @@
     <string name="reader_checkpoint_canceled">The save request was canceled; saving is unconfirmed.</string>
     <string name="reader_checkpoint_failure">Could not request position saving.</string>
     <string name="reader_checkpoint_unconfirmed">Last position request accepted; permanent saving unconfirmed.</string>
+    <string name="reader_controls_show">Show controls</string>
+    <string name="reader_controls_hide">Hide controls</string>
+    <string name="reader_seek_label">Seek page</string>
+    <string name="reader_seek_preview">Preview: page %1$d of %2$d</string>
+    <string name="reader_seek_endpoint">%1$d</string>
 </resources>

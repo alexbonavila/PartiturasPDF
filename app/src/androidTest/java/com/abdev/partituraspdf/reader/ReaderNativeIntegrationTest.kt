@@ -18,11 +18,13 @@ import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.*
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.abdev.partituraspdf.pdf.android.FreshPdfiumProcess
 import com.abdev.partituraspdf.pdf.android.FreshPdfiumIdentity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.abdev.partituraspdf.R
 import com.abdev.partituraspdf.MainActivity
 import com.abdev.partituraspdf.core.document.*
 import com.abdev.partituraspdf.core.foundation.*
@@ -526,4 +528,64 @@ class ReaderNativeIntegrationTest {
         }
         assertEquals(2, opens.get())
     }
+
+    @Test fun f_nativeSurfaceAndCompositeToolbarToggleWithoutNewRendering() {
+        open(fixtures().single { it.getString("id")=="02" });visible(0)
+        val before=controller.state.value;val view=surface();val count=leases.size;val opened=opens.get()
+        val toolbar=compose.onNodeWithTag("reader_toolbar").assertIsDisplayed().fetchSemanticsNode().boundsInWindow
+        fun windowPixels():IntArray {
+            val decor=compose.activity.window.decorView
+            val image=Bitmap.createBitmap(decor.width,decor.height,Bitmap.Config.ARGB_8888)
+            val done=CountDownLatch(1);var result=-1
+            try {
+                PixelCopy.request(compose.activity.window,image,{ result=it;done.countDown() },Handler(Looper.getMainLooper()))
+                assertTrue(done.await(20,TimeUnit.SECONDS));assertEquals(PixelCopy.SUCCESS,result)
+                val left=toolbar.left.toInt().coerceIn(0,image.width-1);val top=toolbar.top.toInt().coerceIn(0,image.height-1)
+                val width=toolbar.width.toInt().coerceIn(1,image.width-left);val height=toolbar.height.toInt().coerceIn(1,image.height-top)
+                return IntArray(width*height).also { image.getPixels(it,0,width,left,top,width,height) }
+            } finally { image.recycle() }
+        }
+        val shownPixels=windowPixels()
+        val posted=copy(view)
+        try {
+            val pixels=IntArray(posted.width*posted.height)
+            posted.getPixels(pixels,0,posted.width,0,0,posted.width,posted.height)
+            assertTrue("Native score ink must be posted",pixels.any { Color.red(it)+Color.green(it)+Color.blue(it)<300 })
+        } finally { posted.recycle() }
+        compose.onNodeWithTag("reader_page").performTouchInput { click(androidx.compose.ui.geometry.Offset(width*.5f,height*.7f)) }
+        compose.onNodeWithTag("reader_toolbar").assertDoesNotExist()
+        val hiddenPixels=windowPixels()
+        assertFalse("Overlay must change composite window pixels",shownPixels.contentEquals(hiddenPixels))
+        compose.onNodeWithTag("reader_page").performTouchInput { click(androidx.compose.ui.geometry.Offset(width*.5f,height*.7f)) }
+        compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
+        assertSame(view,surface());assertTrue(view.isAttachedToWindow)
+        assertSame(before.frame,controller.state.value.frame)
+        assertEquals(before.viewport,controller.state.value.viewport);assertEquals(before.viewportGeneration,controller.state.value.viewportGeneration)
+        assertEquals(count,leases.size);assertEquals(opened,opens.get());assertEquals(1,maximumRetained.get())
+        compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performScrollTo().performTouchInput { click() };visible(1)
+        assertEquals(PageIndex(1),controller.state.value.requestedPage)
+    }
+    @Test fun g_hundredPageTransientSeekPreviewsWithoutNativeRenderAndCommitsOnce() {
+        open(fixtures().single { it.getString("id")=="05" });visible(0)
+        awaitCheckpoint(controller.state.value.frame!!)
+        val before=controller.state.value;val rendered=leases.size;val view=surface()
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput {
+            down(androidx.compose.ui.geometry.Offset(width*.05f,height/2f))
+            for(fraction in listOf(.15f,.35f,.6f,.85f,1f)) {
+                advanceEventTime(16L);moveTo(androidx.compose.ui.geometry.Offset((width-1f)*fraction,height/2f))
+            }
+        }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(instrumentation.targetContext.getString(R.string.reader_seek_preview,100,100))
+        assertSame(before.frame,controller.state.value.frame);assertEquals(rendered,leases.size)
+        assertEquals(PageIndex(0),controller.state.value.requestedPage);assertEquals(listOf(0),displayed.map { it.second.value })
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { up() };visible(99)
+        awaitCheckpoint(controller.state.value.frame!!)
+        assertEquals(listOf(0,99),displayed.map { it.second.value })
+        assertEquals(rendered+1,leases.size);assertSame(view,surface())
+        assertEquals(1,opens.get());assertEquals(1,maximumRenders.get());assertEquals(1,maximumRetained.get())
+        assertTrue(controller.state.value.intent!!.request is DocumentOpenRequest.Transient)
+        // Route displayed is scheduling evidence only; this test route has no durable metadata.
+        // Existing @After proves recycling, descriptor closure and original PDF hash integrity.
+    }
+
 }

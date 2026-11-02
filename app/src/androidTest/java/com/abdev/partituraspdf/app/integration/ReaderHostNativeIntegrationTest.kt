@@ -1054,4 +1054,34 @@ class ReaderHostNativeIntegrationTest {
         assertNull(entry().controller.state.value.session)
         assertNull(entry().controller.state.value.presentedPage); back()
     }
+    @Test fun registeredHundredPageSeekFlushesDurablePositionAndReopensThroughHost() {
+        mount("05")
+        compose.runOnUiThread { host!!.library(LibraryAction.Register(pdf().key),0) }
+        compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
+        val document=(pdf().association as LibraryAssociation.Registered).value.document
+        val fixture=session!!;val original=fixture.source.readBytes()
+        open();visible("l-m4-initial");verifyPostedScorePixels()
+        val first=entry();val native=first.controller.state.value.session!!.id
+        compose.onNodeWithTag("reader_seek_slider").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { assertTrue(it(1f)) }
+        compose.waitUntil(20_000) { first.controller.state.value.presentedPage==PageIndex(99) }
+        visible("l-m4-seek-last");verifyPostedScorePixels()
+        assertEquals(PageIndex(99),first.controller.state.value.requestedPage)
+        assertEquals(native,first.controller.state.value.session!!.id)
+        assertEquals(1,fixture.nativeOpens)
+        back()
+        assertEquals(ReaderPhase.RETIRED,first.controller.state.value.phase)
+        assertTrue(routeClosed())
+        assertEquals(fixture.descriptorOpens.get(),fixture.descriptorCloses.get())
+        // Durable assertion is after production Back has flushed the checkpoint, not after dispatch.
+        assertEquals(Outcome.Success(PageIndex(99)),runBlocking { fixture.positions.restore(document,100) })
+        assertArrayEquals(original,fixture.source.readBytes())
+        open();visible("l-m4-restored")
+        assertNotSame(first.controller,entry().controller)
+        assertEquals(document,(entry().intent.request as DocumentOpenRequest.Registered).document)
+        assertEquals(PageIndex(99),entry().controller.state.value.presentedPage)
+        assertNotEquals(native,entry().controller.state.value.session!!.id)
+        verifyPostedScorePixels();back()
+        assertArrayEquals(original,fixture.source.readBytes())
+    }
+
 }

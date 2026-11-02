@@ -72,4 +72,16 @@
     <string name="library_error_resource">L’operació supera els recursos disponibles o els límits permesos.</string>
     <string name="library_error_unsupported">Aquesta operació o aquest document no és compatible.</string>
     <string name="library_action_error">No s’ha pogut aplicar l’acció a aquest element.</string>
+    <string name="library_search">Cerca en aquesta carpeta</string>
+    <string name="library_clear_search">Esborra la cerca</string>
+    <string name="library_filter_all">Tots</string>
+    <string name="library_filter_folders">Carpetes</string>
+    <string name="library_filter_pdfs">PDF</string>
+    <string name="library_filter_registered">PDF registrats</string>
+    <string name="library_filter_favorites">PDF preferits</string>
+    <string name="library_sort_asc">Nom A–Z</string>
+    <string name="library_sort_desc">Nom Z–A</string>
+    <string name="library_no_matches">Cap coincidència entre els elements carregats.</string>
+    <string name="library_no_confirmed">Cap coincidència confirmada; hi ha elements pendents de comprovar.</string>
+    <string name="library_unresolved">Elements pendents de comprovar</string>
 </resources>

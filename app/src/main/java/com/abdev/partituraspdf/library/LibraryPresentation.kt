@@ -6,6 +6,15 @@ import com.abdev.partituraspdf.core.result.Outcome
 import com.abdev.partituraspdf.storage.api.FolderNavigationState
 import java.util.Locale
 
+/** Existing listing order, shared with the feature-private query projection. */
+internal val libraryAscendingComparator: Comparator<LibraryRow> =
+    compareBy<LibraryRow> { it !is LibraryRow.Directory }
+        .thenBy { it.entry.info.name == null }
+        .thenBy { it.entry.info.name?.lowercase(Locale.ROOT) }
+        .thenBy { it.entry.info.name }
+        .thenBy { it.entry.storage.provider }
+        .thenBy { it.entry.storage.value }
+
 internal fun libraryErrorCategory(error: AppError): LibraryErrorCategory = when (error) {
     AppError.Access.PERMISSION_DENIED -> LibraryErrorCategory.PERMISSION_DENIED
     AppError.Access.PERMISSION_REVOKED -> LibraryErrorCategory.PERMISSION_REVOKED
@@ -34,14 +43,7 @@ internal fun prepareLibraryListing(
         val key = LibraryRowKey(entry.storage, navigation.version, generation)
         rows += if (directory) LibraryRow.Directory(key, entry) else LibraryRow.Pdf(key, entry)
     }
-    val sorted = rows.sortedWith(
-        compareBy<LibraryRow> { it !is LibraryRow.Directory }
-            .thenBy { it.entry.info.name == null }
-            .thenBy { it.entry.info.name?.lowercase(Locale.ROOT) }
-            .thenBy { it.entry.info.name }
-            .thenBy { it.entry.storage.provider }
-            .thenBy { it.entry.storage.value },
-    )
+    val sorted = rows.sortedWith(libraryAscendingComparator)
     return Outcome.Success(LibraryContent.Ready(sorted, listing.complete))
 }
 

@@ -295,3 +295,17 @@ reuse existing recovery tests, adding only demonstrated gaps. Longer endurance,
 destructive recovery/device operations, backup/D2D and production fixes are not
 implicitly authorized. M5-B, remaining M5/M6/M7 work, J14/J15 and formal Phase J
 acceptance remain outstanding. **J08 remains DEFERRED TO PHASE R.**
+
+
+## M5-B recovery evidence selection — 2026-11-02
+
+[M5-B exact eight-method matrix and future execution procedure](J_M5_B_RECOVERY_MATRIX.md)
+reuse existing ordinary Android tests for recreation, background/resume, delayed
+render cleanup, registered/transient reconstruction, persistence reinitialization,
+injected checkpoint failure and provider Retry. **All current-revision executions
+remain NOT RUN.** This is documentation/static preparation only, not a new runner
+or device authorization. Exact method selection excludes worker loss and all destructive
+operations; historical independently reviewed M2/M3-A and owner-reported aggregate
+evidence remain distinct. M4/M5-A scoped closures and M5-A's unresolved memory growth
+flag remain intact. J08 remains **DEFERRED TO PHASE R**. Execution requires separate
+owner approval of the exact device, installation and eight selected methods.

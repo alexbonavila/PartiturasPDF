@@ -2,8 +2,11 @@
 
 2026-10-23. Branch `test/mvp-stabilization-j`; implementation baseline
 `3682b040a99a2c48a58b5412c38d65c7a05f2d5a`.
-**Android runtime benchmark: NOT RUN.** This document describes implementation and
-host validation, not measured latency, a memory budget or final M4 acceptance.
+**Current status (2026-11-02): M4 emulator measurement scope CLOSED by owner approval; native benchmark
+execution PASS**, from the owner-provided successful campaign recorded below.
+Final performance acceptance remains pending; no quantitative budgets or physical
+tablet calibration are approved. Earlier dated NOT RUN/FAIL/BLOCKED entries below
+remain historical records of their original revisions and executions.
 M3 evidence remains unchanged. J08 remains **DEFERRED TO PHASE R**; M5 is not started.
 
 ## Entry point and safety
@@ -350,3 +353,78 @@ Android instrumentation, emulator operations or full regression suite was run.
 Runtime compatibility remains **NOT RUN** on this correction. After owner review and
 publication, one authorized native M4 rerun must establish real sampler completeness;
 benchmark completion and final M4 acceptance are still pending.
+
+## 2026-11-02 — successful native API26 benchmark execution
+
+**M4 emulator measurement scope: CLOSED by owner approval (2026-11-02). Benchmark execution: PASS. Evidence
+complete: true. Final performance acceptance: PENDING.**
+
+Source revision: `a782903fef1a5cc8ab3404d8c27fbc8cd45d16e3`, branch
+`test/mvp-stabilization-j`. Report:
+`20261102T084249Z-a38be721e7404c949a05e6c30c79b64d` under
+`build/j-m4/reports/`. The following are verified owner-provided results, not a new
+Codex execution or an independent audit of raw report files/APK binaries. The raw
+four-file report was not attached to this documentation task; no hashes or additional
+measurements are inferred.
+
+The owner reports a native API26 emulator with 2048 MiB configured RAM, a clean
+execution source tree and matching installed/host APK hashes. The campaign completed
+one warm-up plus five measured fresh-process iterations, with **six successful Android
+JUnit executions** of `M4BenchmarkTest.coldProcessAndTwoLocalDocuments`. Both canonical
+fixtures (02 vector/text and 10 raster/image, identities above) completed in every
+execution. There were **60 measured PSS samples, excluding warm-up**. Host cleanup
+was **PASS**. All **12 PDF journeys** (two warm-up and ten measured) reported successful
+bitmap recycling, descriptor closure and unchanged PDF sources.
+
+### Observed latency — measured iterations only
+
+All values are milliseconds; median and nearest-rank p95 use five measured iterations,
+excluding the warm-up. At this sample count, p95 is the observed maximum, not a robust
+population-tail estimate.
+
+| Metric | Median ms | p95 ms |
+| --- | ---: | ---: |
+| Instrumented cold process to visible Library | 3065.160 | 3334.925 |
+| Library interaction ready | 2215.309 | 2401.245 |
+| PDF 02 native open | 425.719 | 488.749 |
+| PDF 02 open to visible | 1942.948 | 2000.258 |
+| PDF 02 next page visible | 1528.746 | 1604.809 |
+| PDF 10 native open | 331.855 | 406.599 |
+| PDF 10 open to visible | 1774.282 | 1870.339 |
+| PDF 10 next page visible | 1489.296 | 1513.871 |
+
+The cold-process metric begins at process start; Library interaction-ready begins
+at the pre-Activity-rule timestamp. Their different origins explain why the reported
+ready duration can be smaller; they must not be treated as successive intervals
+with the same origin. The separate cold-Activity-to-visible metric is not supplied
+in this summary and is not invented here. Presentation endpoints, PixelCopy/harness
+overhead and injected local-capability limitations remain as defined above.
+
+### Observed PSS maxima — measured iterations only
+
+| Observation | Maximum KiB |
+| --- | ---: |
+| Main process | 122898 |
+| Isolated PDF worker | 29664 |
+| Combined observation | 145677 |
+
+These are **maximum observed PSS**, not absolute memory peaks. Main/worker maxima
+need not occur in the same observation; the combined value is its own sequential
+paired observation, not the sum of the two independent maxima. The sampling and
+debug/instrumentation perturbations described above still apply.
+
+### Scoped closure and outstanding acceptance
+
+The owner approved closure of the minimal automated API26 emulator measurement
+scope on 2026-11-02. **M4 is CLOSED only within that scope.** Execution completeness
+PASS does **not** establish compliance
+with quantitative latency/memory budgets: those budgets and physical tablet
+calibration are not yet approved. Physical Android tablet performance remains
+unverified by this campaign; no release-build or broad device performance acceptance
+is inferred. No new hosted CI evidence is asserted.
+
+Long-duration memory stability, cumulative retention and endurance are **M5 work**,
+not proven by these six short executions. M5 has not started. M4 formal performance
+acceptance and Phase J completion remain pending; J08 remains **DEFERRED TO PHASE R**.
+All earlier FAIL/BLOCKED campaigns and their corrective-action history above retain
+their original classifications. No tests or devices were operated for this update.

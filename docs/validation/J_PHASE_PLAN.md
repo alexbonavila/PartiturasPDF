@@ -253,3 +253,21 @@ and restoration limitations remain as detailed in the closeout. No new hosted CI
 merge is claimed. Next planned milestone: **M4 — memory and performance (J03/J04)**;
 its existing scope is unchanged and no execution is authorized or started here.
 M4–M7 and J14/J15 remain outstanding. **J08 remains DEFERRED TO PHASE R.**
+
+## M4 scoped emulator measurement closure — 2026-11-02
+
+[M4 benchmark results and limitations](J_M4_BENCHMARK.md#2026-11-02--successful-native-api26-benchmark-execution)
+record the verified owner-provided API26/2048 MiB campaign
+`20261102T084249Z-a38be721e7404c949a05e6c30c79b64d` at
+`a782903fef1a5cc8ab3404d8c27fbc8cd45d16e3`: **PASS**, evidence complete,
+one warm-up plus five measured iterations, six JUnit PASS, 12 successful PDF journeys,
+60 measured PSS samples excluding warm-up, and host cleanup PASS.
+
+**M4 automated API26 emulator measurement scope is CLOSED by owner approval
+on 2026-11-02.** The measurements are completed; this scoped closure
+does not approve quantitative performance budgets or physical tablet calibration;
+formal performance acceptance remains pending. Historical FAIL/BLOCKED/NOT RUN
+entries remain unchanged. Raw campaign files were not independently audited in this
+documentation task. Long-duration memory stability/endurance belongs to **M5**, which
+has not started. M5–M7, J14/J15 and formal Phase J acceptance remain outstanding.
+**J08 remains DEFERRED TO PHASE R.** No next milestone starts automatically.

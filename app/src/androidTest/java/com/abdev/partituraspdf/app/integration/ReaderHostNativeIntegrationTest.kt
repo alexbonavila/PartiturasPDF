@@ -37,6 +37,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -85,6 +86,8 @@ class ReaderHostNativeIntegrationTest {
     private val observedSurface = AtomicInteger()
     private val injectedNightMode = mutableStateOf<Boolean?>(null)
     private lateinit var factory: ViewModelProvider.Factory
+    private var benchmarkStore: ViewModelStore? = null
+    private var benchmarkLifecycleObserver: Pair<Lifecycle, LifecycleEventObserver>? = null
 
     private inner class Session(val fixture: JSONObject, persistent: Boolean = false, reuse: Session? = null, benchmark: Boolean = false) : AppHostSession {
         val directory: File = reuse?.directory ?: File(context.cacheDir, "i05-${UUID.randomUUID()}").apply { check(mkdir()) }
@@ -204,14 +207,24 @@ class ReaderHostNativeIntegrationTest {
         val entries = InstrumentationRegistry.getInstrumentation().context.assets.open("manifest.json").bufferedReader().use { JSONObject(it.readText()).getJSONArray("files") }
         val row = (0 until entries.length()).map(entries::getJSONObject).single { it.getString("id") == id }
         val session = Session(row, persistent, benchmark = benchmark).also { this.session = it }
-        factory = object : ViewModelProvider.Factory {
+        var createdHost: AppHostViewModel? = null
+        val sessionFactory = object : ViewModelProvider.Factory {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
-                return AppHostViewModel({ session }, Dispatchers.Main.immediate, Dispatchers.IO, { false }, failures::add) as T
+                return AppHostViewModel({ session }, Dispatchers.Main.immediate, Dispatchers.IO, { false }, failures::add)
+                    .also { if (benchmark) createdHost = it } as T
             }
         }
         compose.runOnUiThread {
-            host = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java]
+            if (benchmark) {
+                check(benchmarkStore == null && benchmarkLifecycleObserver == null)
+                val store = ViewModelStore().also { benchmarkStore = it }
+                host = ViewModelProvider(store, sessionFactory)["i05.test.host", AppHostViewModel::class.java]
+                assertSame("Each benchmark fixture must create its own host", createdHost, host)
+            } else {
+                factory = sessionFactory
+                host = ViewModelProvider(compose.activity, factory)["i05.test.host", AppHostViewModel::class.java]
+            }
             installLifecycleBridge()
         }
         mountPresentation()
@@ -257,11 +270,13 @@ class ReaderHostNativeIntegrationTest {
         val retained = host!!
         val identity = UUID.randomUUID().toString().also { callbackIdentity = it }
         retained.activityCreated(identity)
-        activity.lifecycle.addObserver(LifecycleEventObserver { _, event -> when (event) {
+        val observer = LifecycleEventObserver { _, event -> when (event) {
             Lifecycle.Event.ON_START -> retained.activityStarted(identity)
             Lifecycle.Event.ON_STOP -> retained.activityStopped(identity, activity.isChangingConfigurations)
             else -> Unit
-        } })
+        } }
+        activity.lifecycle.addObserver(observer)
+        if (benchmarkStore != null) benchmarkLifecycleObserver = activity.lifecycle to observer
     }
     private fun routeClosed() = runBlocking { session!!.routes.last().current() == null }
 
@@ -354,10 +369,18 @@ class ReaderHostNativeIntegrationTest {
         compose.waitUntil(15_000) { session!!.features.library.state.value.content is LibraryContent.Ready && pdf().opening == LibraryOpening.Idle && pdf().association !is LibraryAssociation.LookingUp }
     }
     @After fun cleanup() {
+        val benchmark = benchmarkStore != null
         composition.unmount() // Synchronous Android detach evidence before waiting for terminal cleanup.
         val owner = host
         if (owner != null) runBlocking { val stopped = withContext(Dispatchers.Main.immediate) { owner.dispose() }; stopped.await() }
+        if (benchmark) compose.runOnUiThread {
+            benchmarkLifecycleObserver?.let { (lifecycle, observer) -> lifecycle.removeObserver(observer) }
+            benchmarkLifecycleObserver = null
+            benchmarkStore!!.clear() // Disposal above has completed before onCleared runs.
+            benchmarkStore = null
+        }
         session?.let { context.deleteSharedPreferences(it.preferencesName); check(it.directory.deleteRecursively()) }
+        if (benchmark) { session = null; host = null }
         assertTrue("Unexpected owned host failures: $failures", failures.isEmpty())
     }
     /** M4 adapter reuses these fixture/route/pixel/cleanup helpers; no normal test invokes it.
@@ -451,7 +474,9 @@ class ReaderHostNativeIntegrationTest {
             row.put("closed_memory_end_ns", now())
             // Fully join the current test host/store before mounting another fixture.
             cleanup()
-            session = null; host = null; composition = ReaderTestComposition(compose)
+            assertNull(benchmarkStore); assertNull(benchmarkLifecycleObserver)
+            assertNull(session); assertNull(host)
+            composition = ReaderTestComposition(compose)
             assertTrue(failures.isEmpty())
         }
     }

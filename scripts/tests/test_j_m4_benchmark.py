@@ -157,6 +157,17 @@ class M4Tests(unittest.TestCase):
         self.assertEqual({m4.METHOD},m4.ev.android_inventory(m4.ROOT/'scripts/j-m4/androidTest',None))
         self.assertEqual({'02','10'},set(m4.fixtures()))
 
+    def test_benchmark_fixture_ownership_is_separate_from_activity_retention(self):
+        source=(m4.ROOT/'app/src/androidTest/java/com/abdev/partituraspdf/app/integration/ReaderHostNativeIntegrationTest.kt').read_text()
+        benchmark=source.split('if (benchmark) {',1)[1].split('} else {',1)[0]
+        self.assertIn('ViewModelStore()',benchmark)
+        self.assertIn('ViewModelProvider(store, sessionFactory)',benchmark)
+        self.assertNotIn('ViewModelProvider(compose.activity',benchmark)
+        cleanup=source.split('@After fun cleanup()',1)[1].split('internal fun benchmarkIteration',1)[0]
+        self.assertLess(cleanup.index('stopped.await()'),cleanup.index('benchmarkStore!!.clear()'))
+        self.assertIn('lifecycle.removeObserver(observer)',cleanup)
+        self.assertIn('session = null; host = null',cleanup)
+
     def test_normal_process_exit_is_discarded_not_replaced(self):
         from unittest.mock import Mock
         probe=Mock(adb='adb',serial='emulator-5580')

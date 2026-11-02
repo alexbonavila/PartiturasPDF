@@ -226,3 +226,48 @@ not Android execution.
 
 No full JVM/Python/Android campaign or emulator operation was executed. M4
 performance and memory, runtime cleanup, and API26 compatibility: **NOT RUN**.
+
+## 2026-11-02 — sequential fixture ownership correction
+
+The owner reports that execution `20261023T125516Z-f2174104a00241b092351e5e16bc2aa5`
+on revision `76d8aca5292d7189263872624a2703a7697740e6` failed while mounting
+fixture 10, after fixture 02 completed its presentation/navigation/cleanup assertions.
+That run remains **FAIL**, with zero complete measured iterations; acceptance remains
+pending. No raw archive was supplied with this correction request, so those runtime
+details are owner-reported, not an independent artifact review.
+
+Source inspection and a focused JVM reproduction confirm that `dispose()` closes an
+AppHostViewModel but does not evict it from its ViewModelStore. Reusing the Activity's
+fixed `i05.test.host` key therefore returned a Closed host on the second mount.
+
+Only benchmark mounts now use a fresh dedicated ViewModelStore and a local factory.
+Ordinary Reader tests retain the Activity-owned key/factory and their recreation
+semantics. Benchmark cleanup detaches the presentation, joins host disposal, removes
+its Activity lifecycle observer, clears the dedicated store, deletes its UUID-owned
+storage and releases the harness's host/session references. The next fixture cannot
+mount over an uncleared store. Both fixture mounts assert actual factory creation;
+each completed cleanup asserts that the owning references were released. This
+prevents Activity/store/observer retention of the earlier fixture rather than merely
+using a different key and leaving disposed hosts cached. No forced GC is introduced;
+ordinary garbage collection and the documented instrumentation overhead remain part
+of observed PSS. No production ownership behavior or report schema changed.
+
+Validation on this uncommitted correction:
+
+- Focused Python discovery for `test_j_m4_benchmark.py`: **23 PASS**, including a
+  guard for dedicated benchmark ownership, joined disposal and observer removal.
+- `:app:testDebugUnitTest --tests com.abdev.partituraspdf.app.host.AppHostViewModelTest`:
+  **20 executed, 20 PASS, zero failures/errors/skips**, including cached-disposed-host
+  reproduction and two sequential fresh-store sessions with exactly-once closure and
+  zero remaining Settings collectors.
+- In the same opt-in Gradle invocation, Android instrumentation Kotlin compilation
+  and `:app:assembleDebugAndroidTest` packaging succeeded. The **overall command
+  failed** at the unchanged `:app:verifyContractCoverage` finalizer: the filtered class
+  produced 10% A1 lines / 4% branches against the 90%/80% whole-scope gate. This is
+  not a passing coverage campaign, nor a replacement for previous whole-suite evidence.
+- Whitespace/scope checks: **PASS**. Existing 27 Reader Android test bodies unchanged.
+
+No emulator operations, native rerun, full JVM/Android campaign, commits or publication
+were performed for this correction. A new single authorized native M4 attempt must
+demonstrate completion of both fixtures; runtime cleanup and measurements remain
+**NOT RUN** on the corrected source until then.

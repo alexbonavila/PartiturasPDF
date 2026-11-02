@@ -14,6 +14,8 @@ import kotlinx.coroutines.test.*
 import org.junit.Assert.*
 import org.junit.Test
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -218,6 +220,64 @@ class AppHostViewModelTest {
             assertNull(host.dispose().await())
             assertEquals(1, session.stops); assertEquals(1, session.closes)
             assertEquals(0, session.h.collectors)
+        } finally { Dispatchers.resetMain() }
+    }
+
+    @Test fun disposingHostDoesNotEvictItsFixedViewModelProviderKey() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            val session = Session(); var creations = 0
+            val factory = object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    creations++
+                    @Suppress("UNCHECKED_CAST")
+                    return host(session) as T
+                }
+            }
+            val first = ViewModelProvider(store, factory)["i05.test.host", AppHostViewModel::class.java]
+            runCurrent(); assertTrue(first.state.value is AppHostState.Ready)
+            assertNull(first.dispose().await())
+            val cached = ViewModelProvider(store, factory)["i05.test.host", AppHostViewModel::class.java]
+            assertSame(first, cached)
+            assertEquals(AppHostState.Closed(null), cached.state.value)
+            assertEquals(1, creations)
+        } finally { store.clear(); Dispatchers.resetMain() }
+    }
+
+    @Test fun sequentialBenchmarkFixtureStoresReleaseBeforeCreatingTheNextHost() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val sessions = listOf(Session(), Session())
+            var creations = 0
+            for ((index, session) in sessions.withIndex()) {
+                val store = ViewModelStore()
+                try {
+                    val factory = object : ViewModelProvider.Factory {
+                        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                            creations++
+                            @Suppress("UNCHECKED_CAST")
+                            return host(session) as T
+                        }
+                    }
+                    val current = ViewModelProvider(store, factory)["i05.test.host", AppHostViewModel::class.java]
+                    runCurrent()
+                    assertTrue(current.state.value is AppHostState.Ready)
+                    assertEquals(index + 1, creations)
+                    assertEquals(1, session.loads)
+                    if (index > 0) {
+                        assertEquals(1, sessions[0].closes)
+                        assertEquals(0, sessions[0].h.collectors)
+                    }
+                    assertNull(current.dispose().await()) // Join resource closure before clearing retention.
+                    store.clear(); runCurrent()
+                    assertTrue(store.keys().isEmpty())
+                    assertEquals(AppHostState.Closed(null), current.state.value)
+                    assertEquals(0, session.h.collectors)
+                    assertEquals(1, session.stops); assertEquals(1, session.closes)
+                } finally { store.clear() }
+            }
+            assertEquals(2, creations)
         } finally { Dispatchers.resetMain() }
     }
 

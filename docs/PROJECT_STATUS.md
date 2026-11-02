@@ -1,5 +1,53 @@
 # Current project status — PartiturasPDF
 
+## Current Phase J consolidation — 2026-11-02
+
+Branch `test/mvp-stabilization-j`, audited HEAD
+`6d0bbe412237065ce4759d5f11d143250e9608bf`: **M1–M6 completed within their
+approved technical scopes**. M4 automated emulator measurements, M5-A three-cycle
+endurance, M5-B eight-method non-destructive recovery and M6 evidence triage retain
+their scoped closures; these are not full manual/physical acceptance.
+
+**M7-A documentation consolidation IN PROGRESS; M7-B final verification PENDING;
+M7-C owner acceptance PENDING. Phase J is NOT MERGE-READY, not merged and NOT
+FORMALLY ACCEPTED.** Main/merge base remains `37f51baf8b34b069a0c83e93b5780a6c9f676c16`;
+the audited branch is 48 commits ahead / 0 behind. Current PR, checks and protection
+state are unverified because the audit's GitHub API reads returned Forbidden.
+
+See [technical consolidation](validation/J_PHASE_J_CLOSEOUT.md) and the
+[current acceptance ledger](validation/J_ACCEPTANCE_LEDGER.md). M5-A's
+`review_required=true`, physical-device/budget, provider/recovery/transfer,
+accessibility/localization/delivery and latest-revision CI obligations remain open.
+J12 requires no correction on current evidence; J13 is NOT AUTHORIZED / DEFERRED.
+J08 remains **DEFERRED TO PHASE R**. No scope closure waives policy.
+
+The dated sections below are historical snapshots. Their original PASS/BLOCKED/
+NOT RUN and future-milestone statements remain tied to their original dates, not
+current Phase J status. Existing MVP tag status is reconciled in the release record;
+no new release, binary distribution or integration is asserted here.
+
+## Phase J / M3 technical verification — 2026-10-23 (unmerged branch)
+
+M3's selected compatibility, locale/offline/local AAB delivery and scoped coverage
+work is technically completed on `test/mvp-stabilization-j`, at implementation and
+coverage execution revision `b2cff985ee3d9204c3d46728636afdb329d1cc22`.
+**This Phase J work is not merged into `main`.** See the
+[M3 closeout](validation/J_M3_CLOSEOUT.md) for revision-specific evidence and limits.
+
+The owner-provided verified API26/arm64-v8a campaign reports PASS/0: 631 JVM + 431
+standard Android tests PASS, 17 validated isolated-worker captures, coverage VERIFIED
+and cleanup PASS. A1/B5/C05 gates passed; B5 measured 623/658 lines (94.68%) and
+375/452 branches (82.96%), with unchanged 90%/80% gates and denominator. The archive
+is unavailable in this checkout; no independent raw-artifact review or new CI result
+is claimed here. Fourteen diagnostics were excluded, not executed PASS.
+
+Earlier API26/27/36 compatibility and selected manual locale/offline/AAB results
+retain their original sources, owner-reported limits, restoration gaps and historical
+blockers. Formal owner acceptance remains pending. M4–M7 and final Phase J acceptance
+are outstanding; **M4 — memory and performance** is planned next, not started or
+authorized by this update. **J08 remains DEFERRED TO PHASE R.** Main/MVP release
+records below remain unchanged; this is neither a merge nor a release declaration.
+
 ## Current MVP state — 2026-10-20
 
 **Implementation merged:** [PR #24](https://github.com/alexbonavila/PartiturasPDF/pull/24) merged Phase I into `main` by squash commit `f06197a75a2e420fb87153c0e64e3fe2a28841ea` on 2026-10-20. The final feature commit `aebddfd8adf0bab2954af9918140d668269d0a1f` has an **identical Git tree** to merged `main`: no Phase I files were omitted.

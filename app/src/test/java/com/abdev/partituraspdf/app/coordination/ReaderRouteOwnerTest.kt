@@ -98,4 +98,46 @@ class ReaderRouteOwnerTest {
         assertTrue(second.await() is Outcome.Success)
         route.close(); assertEquals(listOf(1,1),f.inputs.map { it.closed })
     } }
+    @Test fun lateFailedRegisteredOpenCannotReplaceQueuedDifferentDocumentAndReleasesInput() { runBlocking {
+        withTimeout(10_000) {
+            val f = Fixture(this)
+            RegistrationCoordinator(f.registry) { f.registry.document.id }.register(f.registry.storage)
+            val registered = f.registry.row
+            assertNotNull(registered)
+            val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+            var attempts = 0
+            val failure = Outcome.Failure(AppError.Access.PROVIDER_IO_FAILURE)
+            val engine = object : PdfReadEngine {
+                override suspend fun open(source: PdfReadSource): Outcome<PdfReadSession> {
+                    if (++attempts == 1) {
+                        entered.complete(Unit); release.await()
+                        return failure // No takeHandle(): the route still owns this failed input.
+                    }
+                    return f.engine.open(source)
+                }
+            }
+            val route = ReaderRouteOwner(this, f.registry, f.access, engine, f.positions, ReadAccessLimits(100))
+            try {
+                val old = async { route.open(DocumentOpenRequest.Registered(f.registry.document)) }
+                entered.await()
+                val replacement = DocumentOpenRequest.Transient(StorageDocumentRef("provider", "different-document"))
+                val next = async(start = CoroutineStart.UNDISPATCHED) { route.open(replacement) }
+                assertFalse(next.isCompleted)
+                release.complete(Unit)
+                assertEquals(failure, old.await())
+                val ready = (next.await() as Outcome.Success).value
+                assertEquals(replacement, ready.request)
+                assertSame(ready, route.current())
+                assertEquals(listOf(1, 0), f.inputs.map { it.closed })
+                assertEquals(1, f.sessions.size)
+                assertSame(registered, f.registry.row)
+                assertTrue(f.positions.pages.isEmpty())
+                assertEquals(Outcome.Success(Unit), route.close())
+                assertNull(route.current())
+                assertEquals(listOf(1, 1), f.inputs.map { it.closed })
+                assertEquals(1, f.sessions.single().closes)
+            } finally { release.complete(Unit); route.close() }
+        }
+    } }
+
 }

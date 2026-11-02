@@ -66,6 +66,14 @@ class AppLocaleIntegrationTest {
         var old: AppHostViewModel?=null
         compose.activityRule.scenario.onActivity { old=ViewModelProvider(it)[AppHostViewModel::class.java] }
         compose.waitUntil(15_000) { old!!.state.value is AppHostState.Ready }
+        if (LocaleMatrixUi.enabled) {
+            LocaleMatrixUi.changeWhileActivityRunning()
+            compose.waitForIdle()
+            assertEquals(LocaleMatrixUi.expectedLanguage(), compose.activity.resources.configuration.locales[0].language)
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.library_title)).assertIsDisplayed()
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.app_settings)).assertIsDisplayed()
+            LocaleMatrixUi.capture("library-visible")
+        }
         assertEquals(systemAppLanguage(),compose.activity.resources.configuration.locales[0].language)
         compose.onNodeWithTag("app_settings").performClick()
         compose.activityRule.scenario.recreate(); compose.waitForIdle()
@@ -74,6 +82,16 @@ class AppLocaleIntegrationTest {
             assertEquals(systemAppLanguage(),it.resources.configuration.locales[0].language)
         }
         compose.onNodeWithTag("settings_content").assertExists()
+        if (LocaleMatrixUi.enabled) {
+            assertEquals(LocaleMatrixUi.expectedLanguage(), compose.activity.resources.configuration.locales[0].language)
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.settings_title)).assertIsDisplayed()
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.settings_theme_title)).assertIsDisplayed()
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.settings_theme_system)).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(LocaleMatrixUi.expectedString(compose.activity, R.string.settings_fit_title)).performScrollTo().assertIsDisplayed()
+            LocaleMatrixUi.capture("recreated-settings-visible")
+            compose.onNodeWithTag("app_back").assertIsDisplayed()
+            // Keep the original final Back-action assertion below before navigating away.
+        }
         compose.onNodeWithText(compose.activity.getString(R.string.app_back)).assertHasClickAction()
     }
     @Test fun contextualRecoveryMessagesStayTranslatedAndDistinctWithoutExposingTechnicalPaths() {

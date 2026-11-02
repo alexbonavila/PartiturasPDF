@@ -24,6 +24,7 @@ class CoverageRunnerTests(unittest.TestCase):
         self.c = coverage.CoverageRun(self.r, self.runtime)
         self.c.android_expected = {coverage.evidence.SMOKE}
         self.c.unchanged = Mock()
+        self.c.retrieve_workers = Mock()  # Transport tests below exercise the real worker retrieval separately.
         self.r.identify = Mock()
         self.r.adb_command = Mock(return_value='instrumentation:' + coverage.evidence.APP + '.test/' +
                                      coverage.evidence.NORMAL_RUNNER + ' (target=' + coverage.evidence.APP + ')')
@@ -93,6 +94,8 @@ class CoverageRunnerTests(unittest.TestCase):
         self.assertEqual(['adb', '-s', 'emulator-5580', 'shell', 'am', 'instrument', '-w', '-r'], command[:8])
         self.assertIn('coverage', command); self.assertIn('true', command)
         self.assertIn('coverageFile', command)
+        self.assertEqual(1, command.count('notAnnotation'))
+        self.assertEqual(coverage.diagnostics.ANNOTATION, command[command.index('notAnnotation') + 1])
         self.assertEqual(coverage.evidence.APP + '.test/' + coverage.evidence.NORMAL_RUNNER, command[-1])
         self.assertNotIn('class', command)
         self.assertEqual(['adb', '-s', 'emulator-5580', 'exec-out', 'run-as'], self.runtime['execute'].call_args.args[0][:5])
@@ -383,7 +386,8 @@ class LocalFreshnessAndFinalizationTests(unittest.TestCase):
             source = root / 'app/src/main/java/example.kt'; source.parent.mkdir(parents=True)
             source.write_text('before')
             args = Namespace(local_output=output, gradle_version='9', agp_version='9', jdk_version='25', jacoco_version='0.8.14')
-            with patch.object(pc, 'ROOT', root), patch.object(pc.subprocess, 'check_output', return_value='same status'):
+            with patch.object(pc, 'ROOT', root), patch.object(pc.subprocess, 'check_output', return_value='same status'), \
+                    patch.object(pc, 'java', return_value={}):
                 before = pc.current_build(args)
                 source.write_text('after')
                 after = pc.current_build(args)
@@ -452,6 +456,268 @@ class CoverageResultPrecedenceTests(unittest.TestCase):
         self.assertEqual('FAIL', self.c.result['status'])
         self.assertIn('later report could not be authenticated', self.c.result['blockers'])
         self.assertIsNotNone(ET.parse(self.c.directory / 'junit.xml').getroot().find('testcase/failure'))
+
+
+class CoverageSelectionTests(unittest.TestCase):
+    def test_current_source_partition_preserves_standard_isolation_and_diagnostic_plan(self):
+        root = Path(__file__).resolve().parents[2]
+        selection = coverage.android_selection(root)
+        complete = coverage.evidence.android_inventory(root / 'app/src/androidTest')
+        standard, assigned = set(selection['standard']), set(selection['diagnostics'])
+        self.assertFalse(standard & assigned)
+        self.assertEqual(complete, standard | assigned)
+        self.assertEqual(sorted(complete), selection['all'])
+        self.assertIn(coverage.evidence.SMOKE, standard)
+        for cls, count in coverage.diagnostics.ISOLATED.items():
+            self.assertEqual(count, sum(name.startswith(cls + '.') for name in standard))
+        self.assertEqual(coverage.diagnostics.invocation_plan(coverage.SCENARIOS),
+                         selection['diagnostic_invocations'])
+        self.assertEqual('NOT RUN', selection['diagnostic_status'])
+        # Capture retains all APK methods, not merely the selected standard subset.
+        source = (root / 'scripts/local_coverage.py').read_text()
+        self.assertIn("'normal', self.android_all", source)
+        self.assertIn('android_inventory=sorted(self.android_all)', source)
+        self.assertIn('android_selection=self.android_selection', source)
+
+    def test_partition_rejects_missing_overlap_duplicate_and_unexpected_source(self):
+        good = dict(standard=['A#a'], assigned=['A#b'], total=2)
+        variants = [dict(good, standard=[]), dict(good, standard=['A#a', 'A#b']),
+                    dict(good, standard=['A#a', 'A#a']), dict(good, assigned=['A#z']),
+                    dict(good, total=3)]
+        for inventory in variants:
+            with self.subTest(inventory=inventory), \
+                    patch.object(coverage.evidence, 'android_inventory', return_value={'A.a', 'A.b'}), \
+                    patch.object(coverage.diagnostics, 'test_inventory', return_value=inventory):
+                with self.assertRaisesRegex(ValueError, 'partition'):
+                    coverage.android_selection(Path('.'))
+
+    def test_existing_annotation_audit_failure_is_not_suppressed(self):
+        with patch.object(coverage.evidence, 'android_inventory', return_value={'A.a'}), \
+                patch.object(coverage.diagnostics, 'test_inventory', side_effect=ValueError('unassigned annotation')):
+            with self.assertRaisesRegex(ValueError, 'unassigned annotation'):
+                coverage.android_selection(Path('.'))
+
+    def test_filter_guard_rejects_absent_wrong_duplicate_or_extra_selection(self):
+        path = '/data/data/app/files/local-coverage-id/coverage.ec'
+        command = ['adb', '-s', 'emulator-5580', 'shell', 'am', 'instrument', '-w', '-r',
+                   '-e', 'coverage', 'true', '-e', 'coverageFile', path,
+                   '-e', 'notAnnotation', coverage.diagnostics.ANNOTATION,
+                   coverage.evidence.APP + '.test/' + coverage.evidence.NORMAL_RUNNER]
+        coverage.validate_android_selection(command, path)
+        wrong = command.copy(); wrong[16] = 'wrong.Annotation'
+        for modified in [command[:14] + command[17:], wrong,
+                         command[:-1] + command[14:17] + command[-1:],
+                         command[:-1] + ['-e', 'class', 'A#a'] + command[-1:]]:
+            with self.subTest(command=modified), self.assertRaisesRegex(ValueError, 'filter'):
+                coverage.validate_android_selection(modified, path)
+
+
+class CoverageSelectionExecutionTests(unittest.TestCase):
+    setUp = CoverageRunnerTests.setUp
+    protocol = CoverageRunnerTests.protocol
+    command = CoverageRunnerTests.command
+    android = CoverageRunnerTests.android
+
+    def test_unexpected_diagnostic_missing_duplicate_and_skipped_results_block(self):
+        diagnostic = coverage.diagnostics.CLEAN[0].replace('#', '.')
+        for records in [[], [(diagnostic, 0)], [(coverage.evidence.SMOKE, 0), (diagnostic, 0)],
+                        [(coverage.evidence.SMOKE, 0), (coverage.evidence.SMOKE, 0)],
+                        [(coverage.evidence.SMOKE, -3)]]:
+            with self.subTest(records=records), self.assertRaises(e2e.Blocked):
+                self.android(android_protocol(records))
+            self.runtime['execute'].assert_not_called()
+
+    def test_inventory_drift_is_checked_before_installation(self):
+        self.c.unchanged = Mock(side_effect=e2e.Blocked('Android test source inventory changed'))
+        with self.assertRaisesRegex(e2e.Blocked, 'source inventory changed'):
+            self.c.android()
+        self.r.adb_command.assert_not_called()
+
+    def test_partition_drift_rejected_even_when_complete_inventory_is_unchanged(self):
+        self.c.unchanged = coverage.CoverageRun.unchanged.__get__(self.c)
+        self.c.frozen = {}; self.c.fingerprint = Mock(return_value={}); self.c.apks = {}
+        self.c.android_selection = dict(all=['A.a', 'A.b'], standard=['A.a'], diagnostics=['A.b'])
+        changed = dict(self.c.android_selection, standard=['A.b'], diagnostics=['A.a'])
+        with patch.object(coverage, 'android_selection', return_value=changed):
+            with self.assertRaisesRegex(e2e.Blocked, 'source inventory changed'):
+                self.c.unchanged()
+
+    def test_changed_source_after_execution_cannot_be_accepted(self):
+        self.c.unchanged = Mock(side_effect=[None, e2e.Blocked('source inventory changed')])
+        with self.assertRaisesRegex(e2e.Blocked, 'source inventory changed'):
+            self.android()
+        self.runtime['execute'].assert_not_called()
+
+
+class CoverageAuxiliaryProgressTests(unittest.TestCase):
+    setUp = CoverageRunnerTests.setUp
+    protocol = CoverageRunnerTests.protocol
+    command = CoverageRunnerTests.command
+    android = CoverageRunnerTests.android
+
+    def stream(self, code=0, complete=True):
+        from test_local_regression import ISOLATED_TEST, with_auxiliary
+        self.c.android_expected = {ISOLATED_TEST}
+        return with_auxiliary(android_protocol([(ISOLATED_TEST, code)], complete=complete))
+
+    def test_coverage_explicitly_accepts_known_progress_and_preserves_raw_output(self):
+        from test_local_regression import with_auxiliary, ISOLATED_TEST
+        self.c.android_expected = {ISOLATED_TEST}
+        output = with_auxiliary(self.protocol().replace(coverage.evidence.SMOKE.rsplit('.', 1)[0],
+            ISOLATED_TEST.rsplit('.', 1)[0]).replace('test=useAppContext',
+            'test=' + ISOLATED_TEST.rsplit('.', 1)[1]))
+        self.android(output)
+        self.assertEqual(1, self.c.result['android_tests'])
+        self.assertEqual('PASS', self.c.result['android_status'])
+        self.assertEqual(output, (self.r.out / 'coverage/instrumentation.log').read_text())
+        self.assertIn('notAnnotation', self.calls[0])
+
+    def test_auxiliary_does_not_hide_assertion_failure_or_incomplete_run(self):
+        with self.assertRaises(e2e.FunctionalFailure):
+            self.android(self.stream(code=-2), exit=255)
+        with self.assertRaises(e2e.Blocked):
+            self.android(self.stream(complete=False), exit=255)
+
+
+class WorkerCoverageEvidenceTests(unittest.TestCase):
+    """Synthetic metadata exercises rejection policy, never establishes real worker coverage."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.nonce = 'a' * 32
+        self.cls = 'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerCoverageTest'
+        self.test = self.cls + '.wrongTokensAndPageBoundsDoNotPoisonHealthyWorker'
+        self.capture = dict(run=self.nonce, worker_coverage=dict(format=1, nonce=self.nonce, test_class=self.cls, expected_snapshots={self.test: 1}),
+                            android_selection=dict(standard=[self.test]))
+        self.path = self.directory / '12345678-1234-1234-1234-123456789abc.ec'
+        self.path.write_bytes(b'not-real-jacoco: parser-must-authenticate-before-this-policy')
+        self.meta = dict(nonce=self.nonce, file=self.path.name, test=self.test, pid=123, appPid=321, uid=99001,
+                         appUid=10001, epoch='12345678-1234-1234-1234-123456789def', started=456,
+                         isolated=True, version=1, bytes=self.path.stat().st_size, sha256=pc.digest(self.path))
+        self.session = f"worker:{self.nonce}:123:99001:{self.meta['epoch']}"
+        self.meta['jacocoSession'] = self.session
+        self.parsed = dict(inputs=[dict(path=str(self.path), sessions=[dict(id=self.session)], records={
+            'com/abdev/partituraspdf/pdf/android/isolated/PdfWorkerService': dict(coveredProbes=1),
+            'com/abdev/partituraspdf/coverage/PdfCoverageWorkerService': dict(coveredProbes=1)})])
+
+    def check(self):
+        self.path.with_suffix('.json').write_text(json.dumps(self.meta))
+        return pc.check_worker_inputs(self.capture, self.parsed, self.directory)
+
+    def test_process_session_test_and_binary_bound_together(self):
+        self.assertEqual('isolated-worker', self.check()['origin'])
+
+    def test_wrong_nonce_pid_uid_epoch_and_test_are_rejected(self):
+        for field, value in [('nonce', 'b' * 32), ('appPid', 123), ('pid', 0), ('uid', 10001), ('appUid', 99001), ('uid', -1001), ('appUid', -10001),
+                             ('epoch', 'wrong'), ('test', self.cls + '.missing'), ('isolated', False),
+                             ('started', 0), ('version', 2), ('file', '../coverage.ec')]:
+            with self.subTest(field=field), patch.dict(self.meta, {field: value}):
+                with self.assertRaises(ValueError): self.check()
+
+    def test_binary_hash_size_and_session_mismatch_are_rejected(self):
+        for field, value in [('sha256', '0'*64), ('bytes', 1), ('jacocoSession', 'app-process')]:
+            with self.subTest(field=field), patch.dict(self.meta, {field: value}):
+                with self.assertRaises(ValueError): self.check()
+        self.parsed['inputs'][0]['sessions'][0]['id'] = 'different'
+        with self.assertRaisesRegex(ValueError, 'session'): self.check()
+
+    def test_missing_service_probes_never_become_worker_coverage(self):
+        self.parsed['inputs'][0]['records'].clear()
+        with self.assertRaisesRegex(ValueError, 'actual worker'): self.check()
+
+    def test_missing_snapshot_or_metadata_and_extra_files_are_rejected(self):
+        self.capture['worker_coverage']['expected_snapshots'][self.test] = 2
+        with self.assertRaisesRegex(ValueError, 'Missing worker'): self.check()
+        self.capture['worker_coverage']['expected_snapshots'][self.test] = 1
+        self.capture['android_selection']['standard'].append(self.cls + '.another')
+        with self.assertRaisesRegex(ValueError, 'snapshot requirements'): self.check()
+        self.capture['android_selection']['standard'].pop()
+        (self.directory / 'extra.ec').write_bytes(b'extra')
+        with self.assertRaisesRegex(ValueError, 'inventory'): self.check()
+
+    def test_symlink_input_and_duplicate_process_identity_are_rejected(self):
+        self.check()
+        second = self.directory / '87654321-1234-1234-1234-123456789abc.ec'
+        second.symlink_to(self.path)
+        with self.assertRaisesRegex(ValueError, 'inventory'): self.check()
+        second.unlink(); second.write_bytes(self.path.read_bytes())
+        duplicate = dict(self.meta, file=second.name)
+        second.with_suffix('.json').write_text(json.dumps(duplicate))
+        self.parsed['inputs'].append(dict(self.parsed['inputs'][0], path=str(second)))
+        with self.assertRaisesRegex(ValueError, 'Duplicate'): self.check()
+
+    def test_explicit_worker_argument_is_not_accepted_by_historical_selection(self):
+        command = ['adb', '-s', 'emulator-5580', 'shell', 'am', 'instrument', '-w', '-r',
+                   '-e', 'coverage', 'true', '-e', 'coverageFile', '/owned/coverage.ec',
+                   '-e', 'notAnnotation', coverage.diagnostics.ANNOTATION,
+                   '-e', 'workerCoverageRun', self.nonce, coverage.evidence.APP+'.test/'+coverage.evidence.NORMAL_RUNNER]
+        coverage.validate_android_selection(command, '/owned/coverage.ec', worker_run=self.nonce)
+        with self.assertRaises(ValueError): coverage.validate_android_selection(command, '/owned/coverage.ec')
+        with self.assertRaises(ValueError): coverage.validate_android_selection(command, '/owned/coverage.ec', worker_run='../bad')
+
+    def test_worker_capture_is_required_before_analysis(self):
+        source = (coverage.pc.ROOT / 'scripts/local_coverage.py').read_text()
+        self.assertIn("worker_coverage=dict(format=1", source)
+        self.assertIn('self.retrieve_workers()', source)
+        self.assertIn("pc.check_worker_inputs(capture, parsed, target)", source)
+        self.assertIn("run[\"workerCapture\"] = check_worker_inputs", (coverage.pc.ROOT / 'scripts/persistence_coverage.py').read_text())
+
+    def test_new_tests_are_ordinary_and_debug_export_is_absent_from_release_source(self):
+        root = coverage.pc.ROOT
+        selection = coverage.android_selection(root)
+        worker = {n for n in selection['standard'] if n.startswith(self.cls + '.')}
+        self.assertEqual(6, len(worker))
+        self.assertEqual(worker, set(coverage.WORKER_SNAPSHOTS))
+        self.assertEqual(17, sum(coverage.WORKER_SNAPSHOTS.values()))
+        self.assertFalse(worker & set(selection['diagnostics']))
+        self.assertEqual(14, len(selection['diagnostics']))
+        manifest = ET.parse(root / 'app/src/debug/AndroidManifest.xml').getroot()
+        ns = '{http://schemas.android.com/apk/res/android}'
+        service = manifest.find('application/service')
+        self.assertEqual('false', service.get(ns + 'exported'))
+        self.assertEqual('true', service.get(ns + 'isolatedProcess'))
+        self.assertNotIn('PdfCoverageWorkerService', (root / 'app/src/main/AndroidManifest.xml').read_text())
+        debug = (root / 'app/src/debug/java/com/abdev/partituraspdf/coverage/PdfCoverageWorkerService.kt').read_text()
+        self.assertIn('Binder.getCallingUid() == applicationInfo.uid', debug)
+        self.assertIn('getExecutionData', debug)
+        self.assertIn('if (code != SNAPSHOT) return native.transact(code, data, reply, flags)', debug)
+
+    def collector(self, listing):
+        r = Mock()
+        r.summary = {}
+        r.adb, r.serial = 'adb', 'emulator-5580'
+        r.out = self.directory / 'reports'; r.out.mkdir()
+        r.adb_command.return_value = listing
+        runtime = dict(ROOT=self.directory, Blocked=e2e.Blocked, FunctionalFailure=e2e.FunctionalFailure,
+                       execute=Mock())
+        c = coverage.CoverageRun(r, runtime)
+        (c.directory / 'inputs/android').mkdir(parents=True)
+        c.remote = 'files/local-coverage-' + self.nonce
+        c.args = Mock()
+        (c.directory / 'capture.json').write_text(json.dumps(self.capture))
+        return c, r, runtime
+
+    def test_worker_retrieval_rejects_paths_and_unpaired_files_before_binary_reads(self):
+        c, r, runtime = self.collector('../foreign.ec')
+        for listing in ['../foreign.ec', self.path.name, self.path.name + ' ' + self.path.name,
+                        'not-a-uuid.ec not-a-uuid.json', '']:
+            r.adb_command.return_value = listing
+            with self.subTest(listing=listing), self.assertRaises(e2e.Blocked): c.retrieve_workers()
+        runtime['execute'].assert_not_called()
+        r.identify.assert_called_with(boot=True)
+
+    def test_worker_retrieval_retains_raw_files_and_requires_real_java_validation(self):
+        self.check()
+        c, r, runtime = self.collector(self.path.name + ' ' + self.path.with_suffix('.json').name)
+        runtime['execute'].side_effect = lambda command, **kwargs: subprocess.CompletedProcess(command, 0,
+            (self.directory / command[-1].rsplit('/', 1)[-1]).read_bytes(), b'')
+        with patch.object(pc, 'java', side_effect=ValueError('Class ID mismatch')) as reader:
+            with self.assertRaisesRegex(ValueError, 'Class ID mismatch'): c.retrieve_workers()
+        self.assertEqual(self.path.read_bytes(), (c.directory / 'inputs/android/workers' / self.path.name).read_bytes())
+        self.assertEqual('validate', reader.call_args.args[1])
+        self.assertTrue(all(call.kwargs['binary'] for call in runtime['execute'].call_args_list))
+        self.assertTrue(all(call.args[0][-1].startswith(c.remote + '/workers/') for call in runtime['execute'].call_args_list))
 
 
 if __name__ == "__main__":

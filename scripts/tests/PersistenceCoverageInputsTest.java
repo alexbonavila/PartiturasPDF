@@ -112,6 +112,42 @@ public class PersistenceCoverageInputsTest {
                     write(android, true, new ExecutionData(sharedRecord.getId(), shared,
                         new boolean[sharedRecord.getProbes().length + 1]));
                     rejected(() -> PersistenceCoverageInputs.readInputs(all, new String[]{android.toString()}));
+                    var generated = PersistenceCoverageInputs.generatedInventory(Path.of(args[0]));
+                    String stub = "com/abdev/partituraspdf/pdf/android/isolated/IPdfWorker$Stub";
+                    if (!generated.containsKey(stub) || !Collections.disjoint(all.keySet(), generated.keySet()))
+                        throw new AssertionError("AIDL identities must be separate from Kotlin denominators");
+                    tests++;
+                    var original = PersistenceCoverageInputs.inventory(Path.of(args[0]));
+                    for (var item : generated.entrySet()) {
+                        @SuppressWarnings("unchecked") var entry = (Map<String, Object>) item.getValue();
+                        if (((Number)entry.get("probes")).intValue() <= 0) continue;
+                        ExecutionData aidl = record(generated, item.getKey(), 0);
+                        write(android, true, record(all, shared, 0), aidl);
+                        var accepted = PersistenceCoverageInputs.readInputs(all, Map.of(), generated, new String[]{android.toString()});
+                        @SuppressWarnings("unchecked") var result = (Map<String, Object>) accepted.get(0);
+                        @SuppressWarnings("unchecked") var recordsOnly = (Map<String, Object>) result.get("records");
+                        @SuppressWarnings("unchecked") var generatedOnly = (Map<String, Object>) result.get("generatedRecords");
+                        if (recordsOnly.containsKey(item.getKey()) || !generatedOnly.containsKey(item.getKey()))
+                            throw new AssertionError("AIDL execution entered handwritten records");
+                        tests++;
+                        write(android, true, record(all, shared, 0), record(generated, item.getKey(), 1));
+                        rejected(() -> PersistenceCoverageInputs.readInputs(all, Map.of(), generated, new String[]{android.toString()}));
+                        boolean[] wrongProbes = new boolean[aidl.getProbes().length + 1];
+                        wrongProbes[0] = true; // JaCoCo omits all-false records; actually exercise the count guard.
+                        write(android, true, record(all, shared, 0), new ExecutionData(aidl.getId(), aidl.getName(), wrongProbes));
+                        rejected(() -> PersistenceCoverageInputs.readInputs(all, Map.of(), generated, new String[]{android.toString()}));
+                        write(android, true, record(all, shared, 0), aidl, record(generated, item.getKey(), 1));
+                        rejected(() -> PersistenceCoverageInputs.readInputs(all, Map.of(), generated, new String[]{android.toString()}));
+                        write(android, true, record(all, shared, 0), aidl, new ExecutionData(aidl.getId(), stub + "$Unknown", aidl.getProbes()));
+                        rejected(() -> PersistenceCoverageInputs.readInputs(all, Map.of(), generated, new String[]{android.toString()}));
+                    }
+                    write(android, true, record(all, shared, 0), new ExecutionData(123, stub + "$Unknown", new boolean[]{true}));
+                    rejected(() -> PersistenceCoverageInputs.readInputs(all, Map.of(), generated, new String[]{android.toString()}));
+                    rejected(() -> PersistenceCoverageInputs.readInputs(all, generated, generated, new String[]{android.toString()}));
+                    rejected(() -> PersistenceCoverageInputs.generatedInventory(root.resolve("intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes")));
+                    if (!original.equals(PersistenceCoverageInputs.inventory(Path.of(args[0]))))
+                        throw new AssertionError("Generated validation changed Kotlin inventory/denominators");
+                    tests++;
                 } finally {
                     System.clearProperty("local.coverage.sources");
                 }

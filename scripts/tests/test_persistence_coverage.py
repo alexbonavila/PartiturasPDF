@@ -52,6 +52,24 @@ class CoveragePolicyTests(unittest.TestCase):
         ET.ElementTree(root).write(file)
         return file, classes
 
+    def test_local_provenance_binds_supplemental_generated_identities(self):
+        from argparse import Namespace
+        output = self.root / 'capture'; output.mkdir()
+        (output / 'capture.json').write_text('{}')
+        args = Namespace(local_output=output, gradle_version='9', agp_version='9',
+                         jdk_version='25', jacoco_version='0.8.14')
+        with patch.object(pc, 'ROOT', self.root), \
+                patch.object(pc.subprocess, 'check_output', return_value='same source'), \
+                patch.object(pc, 'java', side_effect=[{'AIDL': {'id': 'a'}}, {'AIDL': {'id': 'b'}}]) as reader:
+            before = pc.current_build(args)
+            after = pc.current_build(args)
+        self.assertEqual(before['sourceHashes'], after['sourceHashes'])
+        self.assertNotEqual(before['generatedClasses'], after['generatedClasses'])
+        reader.assert_called_with(args, 'generated-inventory')
+        run = dict(format=1, run='fixture', androidApi=26, started=self.started, build=before, classes={})
+        with self.assertRaisesRegex(ValueError, 'provenance'):
+            pc.check_provenance(run, after, {}, 26)
+
     def test_exact_thresholds_succeed(self):
         file, classes = self.report_fixture({"Owned.kt": (90, 100, 8, 10)})
         measured = pc.report(file, "metadata", classes)

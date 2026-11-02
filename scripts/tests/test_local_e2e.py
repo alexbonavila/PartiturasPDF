@@ -874,5 +874,94 @@ class LiveUiEvidenceTests(unittest.TestCase):
         self.assertEqual(self.runner.summary["diagnostics"], [])
 
 
+class PhaseJProfileTests(unittest.TestCase):
+    def test_profile_rejects_device_suites_before_sdk_or_runner(self):
+        for suite in ('android','saf','full','coverage','reader','library'):
+            with self.subTest(suite=suite), patch.object(e2e,'discover_sdk') as sdk, patch.object(e2e,'Runner') as runner:
+                with self.assertRaises(SystemExit):
+                    e2e.main(['run','--suite',suite,'--report-profile','phase-j'])
+                sdk.assert_not_called(); runner.assert_not_called()
+
+    def test_profile_doctor_never_uses_legacy_device_doctor(self):
+        with patch.object(e2e.evidence,'j_capture',return_value={'environment':{}}), \
+             patch.object(e2e,'discover_sdk',return_value=Path('.')), \
+             patch.object(e2e,'execute',return_value=Mock(returncode=0,stdout='JDK25',stderr='')) as command, \
+             patch.object(e2e,'doctor') as legacy:
+            self.assertEqual(0,e2e.main(['doctor','--report-profile','phase-j']))
+            self.assertEqual(['java','-version'],command.call_args.args[0]); legacy.assert_not_called()
+
+    def test_profile_host_wires_existing_runner_only(self):
+        with patch.object(e2e,'discover_sdk',return_value=Path('.')), patch.object(e2e,'Runner') as runner:
+            runner.return_value.run.return_value=0
+            self.assertEqual(0,e2e.main(['run','--suite','host','--report-profile','phase-j']))
+            self.assertEqual('phase-j',runner.call_args.kwargs['report_profile'])
+            self.assertEqual('host',runner.call_args.args[2])
+
+    def test_legacy_host_constructor_is_unchanged(self):
+        with patch.object(e2e,'discover_sdk',return_value=Path('.')), patch.object(e2e,'Runner') as runner:
+            runner.return_value.run.return_value=0
+            self.assertEqual(0,e2e.main(['run','--suite','host']))
+            self.assertEqual({},runner.call_args.kwargs)
+            self.assertEqual(4,len(runner.call_args.args))
+
+    def test_unique_run_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first=e2e.Runner(Path(tmp).resolve(),Path(tmp).resolve(),'host')
+            second=e2e.Runner(Path(tmp).resolve(),Path(tmp).resolve(),'host')
+            self.assertNotEqual(first.out,second.out)
+            self.assertTrue(first.out.is_dir()); self.assertTrue(second.out.is_dir())
+
+    def test_profile_rejects_symlink_report_directory_before_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp).resolve() / 'home'
+            home.mkdir()
+            outside = Path(tmp).resolve() / 'outside'
+            outside.mkdir()
+            try:
+                (home / 'reports').symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest('Symlinks unavailable')
+            with self.assertRaises(ValueError):
+                e2e.Runner(home, Path(tmp).resolve(), 'host', report_profile='phase-j')
+            self.assertEqual([], list(outside.iterdir()))
+
+    def test_missing_initial_capture_finalizes_blocked_without_device_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = e2e.Runner(Path(tmp).resolve(), Path(tmp).resolve(), 'host', report_profile='phase-j')
+            with patch.object(e2e, 'checked', return_value='identity'), \
+                 patch.object(e2e.evidence, 'j_capture', side_effect=ValueError('missing identity')), \
+                 patch.object(runner, 'workflow') as workflow, patch.object(runner, 'adb_command') as adb:
+                self.assertEqual(2, runner.run())
+                workflow.assert_not_called()
+                adb.assert_not_called()
+            report = json.loads((runner.out / 'phase-j/summary.json').read_text())
+            self.assertEqual('BLOCKED', report['status'])
+            self.assertFalse(report['complete'])
+
+    def test_rejected_projection_replaces_previously_green_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = e2e.Runner(Path(tmp).resolve(), Path(tmp).resolve(), 'host', report_profile='phase-j')
+            runner.j_capture = {'run': runner.run_id}
+            runner.j_complete = True
+            runner.summary.update(status='PASS', groups=[dict(name='host', status='PASS')])
+            with patch.object(e2e.evidence, 'j_capture', return_value={}), \
+                 patch.object(e2e.evidence, 'j_report', side_effect=ValueError('corrupt evidence')):
+                runner.group_reports()
+            self.assertEqual('BLOCKED', json.loads((runner.out / 'summary.json').read_text())['status'])
+            self.assertEqual('BLOCKED', json.loads((runner.out / 'phase-j/summary.json').read_text())['status'])
+            self.assertEqual('1', ET.parse(runner.out / 'junit.xml').getroot().get('errors'))
+            self.assertNotIn('PASS', (runner.out / 'phase-j/report.html').read_text())
+
+    def test_tier_a_workflow_has_no_device_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner=e2e.Runner(Path(tmp).resolve(),Path(tmp).resolve(),'host',report_profile='phase-j')
+            def host(): runner.summary['host_checks']=[]
+            with patch.object(runner,'workflow_host',side_effect=host), \
+                 patch.object(runner,'group_reports'), patch.object(runner,'adb_command') as adb, \
+                 patch.object(runner,'connect') as connect, patch.object(runner,'stage') as stage:
+                runner.workflow()
+                adb.assert_not_called(); connect.assert_not_called(); stage.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

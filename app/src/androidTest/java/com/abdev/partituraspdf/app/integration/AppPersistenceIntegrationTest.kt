@@ -392,4 +392,36 @@ class AppPersistenceIntegrationTest {
             reopened.close()
         }
     }
+    /** All six combinations are read through a fresh file owner, never a second active store. */
+    @Test fun everyThemeAndFitSurvivesJoinedStoreAndRoomReinitialization() {
+        runBlocking(Dispatchers.IO) {
+            withTimeout(60_000) {
+                var owner = compose()
+                var graph = owner.graph
+                val registered = graph.registry.register(document, location).value()
+                assertEquals(success, graph.metadata.setFavorite(document, true))
+                for (theme in ThemeSelection.entries) for (fit in PageFit.entries) {
+                    assertEquals(success, graph.preferences.update(PreferenceChange.Theme(theme)))
+                    assertEquals(success, graph.preferences.update(PreferenceChange.Fit(fit)))
+                    val expected = AppPreferences(theme = theme, reader = ReaderPreferences(fit))
+                    assertEquals(expected, loaded(graph.preferences.observe()))
+                    val oldGraph = graph
+                    val oldStore = store
+                    owner.close()
+                    assertTrue(storeOwners.last().isActive) // Borrowed store outlives its Room graph.
+                    storeOwners.last().cancelAndJoin()
+                    createStore()
+                    assertNotSame(oldStore, store)
+                    owner = compose()
+                    graph = owner.graph
+                    assertNotSame(oldGraph, graph)
+                    assertEquals(expected, loaded(graph.preferences.observe()))
+                    assertEquals(registered, graph.registry.resolve(document).value())
+                    assertEquals(DocumentMetadata(true), loaded(graph.metadata.observe(document)))
+                }
+                owner.close()
+            }
+        }
+    }
+
 }

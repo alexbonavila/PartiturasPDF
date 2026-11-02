@@ -125,7 +125,18 @@ class DiagnosticEvidenceTests(unittest.TestCase):
         self.assertFalse(SETTINGS_TESTS & set(inv['assigned']))
         self.assertFalse(set(inv['standard']) & set(inv['assigned']))
         self.assertEqual(29, len(ev.invocation_plan(runner.SCENARIOS)))
-        self.assertEqual(24, sum('.pdf.android.isolated.' in name for name in inv['standard']))
+        # Preserve the original 19 engine + 5 protocol cases; new ordinary Binder
+        # coverage tests extend this namespace without becoming process diagnostics.
+        original = {name for name in inv['standard'] if name.split('#')[0] in ev.ISOLATED}
+        self.assertEqual(24, len(original))
+        added = {name for name in inv['standard'] if name.split('#')[0] in {
+            'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerCoverageTest',
+            'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerCallbackTest',
+            'com.abdev.partituraspdf.pdf.android.isolated.PdfWorkerReplyTest'}}
+        self.assertEqual(13, len(added))
+        self.assertFalse(added & set(inv['assigned']))
+        self.assertEqual(original | added,
+                         {name for name in inv['standard'] if '.pdf.android.isolated.' in name})
 
     def test_settings_cases_are_required_in_complete_standard_junit(self):
         inventory = ev.test_inventory(ROOT, runner.SCENARIOS)

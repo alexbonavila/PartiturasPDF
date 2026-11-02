@@ -6,5 +6,8 @@
             android:name="com.abdev.partituraspdf.storage.saf.SafGrantAcceptanceActivity"
             android:exported="true"
             android:label="@string/saf_accept_title" />
+        <!-- Opt-in probe export only; executes the unchanged native worker implementation. -->
+        <service android:name="com.abdev.partituraspdf.coverage.PdfCoverageWorkerService"
+            android:exported="false" android:isolatedProcess="true" android:process=":pdfCoverage" />
     </application>
 </manifest>

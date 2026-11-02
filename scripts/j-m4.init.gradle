@@ -1,0 +1,11 @@
+// Opt-in source registration only; no dependencies, task execution, coverage or CI changes.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.extensions.getByName('androidComponents').finalizeDsl { android ->
+                android.sourceSets.getByName('androidTest').kotlin.srcDir(
+                    project.rootProject.file('scripts/j-m4/androidTest'))
+            }
+        }
+    }
+}

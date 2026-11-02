@@ -72,4 +72,61 @@ class ReaderInteractionTest {
             assertFalse(g.isTap())
         }
     }
+
+    @Test fun exactQuarterZonesExcludeEndpointAndKeepLegacyClassifierUnchanged() {
+        for (width in listOf(1, 2, 3, 40, 200, 1000, 1000000, Int.MAX_VALUE)) {
+            val w = width.toFloat()
+            assertEquals(ReaderTapZone.PREVIOUS, readerTapZone(0f, width))
+            val quarter = w * .25f; val threeQuarters = w * .75f
+            if (width != Int.MAX_VALUE) {
+                assertEquals(ReaderTapZone.PREVIOUS, readerTapZone(Math.nextDown(quarter), width))
+                assertEquals(ReaderTapZone.CONTROLS, readerTapZone(quarter, width))
+                assertEquals(ReaderTapZone.CONTROLS, readerTapZone(Math.nextDown(threeQuarters), width))
+                assertEquals(ReaderTapZone.NEXT, readerTapZone(threeQuarters, width))
+            }
+            assertEquals(ReaderTapZone.CONTROLS, readerTapZone(w * .5f, width))
+            assertEquals(ReaderTapZone.NEXT, readerTapZone(Math.nextDown(w), width))
+            assertNull(readerTapZone(w, width))
+        }
+        assertEquals(1, readerEdgeStep(1000f, 1000)) // Legacy adapter deliberately unchanged.
+    }
+    @Test fun proportionalClassifierRejectsInvalidInput() {
+        for (x in listOf(-1f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY, 100f, 101f))
+            assertNull(readerTapZone(x, 100))
+        for (width in listOf(0, -1, Int.MIN_VALUE)) assertNull(readerTapZone(0f, width))
+    }
+    @Test fun gestureCompletionIsSingleUseAndCancellationIsTerminal() {
+        val untouched = ReaderGestureGate(8f)
+        assertFalse(untouched.finishTap())
+        val tap = ReaderGestureGate(8f)
+        tap.update(1, 0f, 0f, 1f, false)
+        tap.update(0, 0f, 0f, 1f, false)
+        assertTrue(tap.finishTap()); assertFalse(tap.finishTap()); assertFalse(tap.isTap())
+        assertFalse(tap.update(1, 0f, 0f, 1f, false))
+        val canceled = ReaderGestureGate(8f)
+        canceled.update(1, 0f, 0f, 1f, false); canceled.cancel(); canceled.cancel()
+        assertFalse(canceled.update(1, 0f, 0f, 1f, false)); assertFalse(canceled.finishTap())
+    }
+    @Test fun invalidSamplesSlopAndPointerHistoryCannotRecoverIntoTap() {
+        for (slop in listOf(-1f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            val gate = ReaderGestureGate(slop); gate.update(1, 0f, 0f, 1f, false); assertFalse(gate.finishTap())
+        }
+        for (sample in listOf(floatArrayOf(Float.NaN,0f,1f), floatArrayOf(0f,Float.POSITIVE_INFINITY,1f),
+            floatArrayOf(0f,0f,Float.NaN), floatArrayOf(0f,0f,0f), floatArrayOf(0f,0f,-1f))) {
+            val gate = ReaderGestureGate(8f)
+            gate.update(1,sample[0],sample[1],sample[2],false); gate.update(0,0f,0f,1f,false)
+            assertFalse(gate.finishTap())
+        }
+        for (mode in 0..4) {
+            val gate = ReaderGestureGate(8f)
+            gate.update(1,0f,0f,1f,false)
+            gate.update(if (mode==0) -1 else if (mode==1) 2 else 1,
+                if (mode==2) 9f else 0f,0f,if (mode==3) 1.1f else 1f,mode==4)
+            gate.update(0,0f,0f,1f,false); assertFalse(gate.finishTap()); assertFalse(gate.finishTap())
+        }
+        val boundary = ReaderGestureGate(8f)
+        boundary.update(1,8f,0f,1f,false); assertTrue(boundary.finishTap())
+        val zero = ReaderGestureGate(0f)
+        zero.update(1,0f,0f,1f,false); assertTrue(zero.finishTap())
+    }
 }

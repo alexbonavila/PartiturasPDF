@@ -16,10 +16,6 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.matcher.ViewMatchers.isRoot
-import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -88,10 +84,11 @@ class ReaderScreenTest {
     private var renderGate:CompletableDeferred<Unit>?=null
     private var openGate:CompletableDeferred<Unit>?=null
     private var portraitHeight=900
+    private var pageCount=8
     private var ready:ReaderReady?=null
     private var request:DocumentOpenRequest=DocumentOpenRequest.Transient(StorageDocumentRef("ui-synthetic","pdf"))
     private val session=object:PdfReadSession {
-        override val info=ReadSessionInfo(ReadSessionId("ui-session"),0,8)
+        override val info get()=ReadSessionInfo(ReadSessionId("ui-session"),0,pageCount)
         override val renderLimits=RenderLimits(4096,4_194_304)
         override suspend fun displayInfo(page:ReadPageRef):Outcome<PageDisplayInfo> =
             Outcome.Success(PageDisplayInfo(page,if(page.page.value%2==0)600 else 900,if(page.page.value%2==0)portraitHeight else 600))
@@ -624,176 +621,80 @@ class ReaderScreenTest {
         compose.onNodeWithTag("reader_toolbar").assertIsDisplayed()
     }
 
-    private fun assertDialogPan() {
-        onView(isRoot()).inRoot(isDialog()).check { view, missing ->
-            if(missing!=null)throw missing
-            val attrs=view.rootView.layoutParams as WindowManager.LayoutParams
-            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN,
-                attrs.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)
+    private fun seekTo(value:Float) {
+        compose.onNodeWithTag("reader_seek_slider").performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(value)) }
+    }
+    @Test fun seekChromeTogglePreservesFrameViewportAndRendering() {
+        start();visible();val before=controller.state.value;val view=surface();val renders=requests.size
+        repeat(3) {
+            compose.onNodeWithTag("reader_seek").assertIsDisplayed()
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
+            compose.onNodeWithTag("reader_seek").assertDoesNotExist()
+            compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.5f,height*.5f)) }
         }
+        assertSame(before.frame,controller.state.value.frame);assertSame(view,surface())
+        assertEquals(before.viewport,controller.state.value.viewport);assertEquals(before.viewportGeneration,controller.state.value.viewportGeneration)
+        assertEquals(renders,requests.size);assertEquals(1,opens.get());assertEquals(listOf(PageIndex(0)),acknowledged)
     }
-    private fun openJump() {
-        trace("jump-open-before")
-        compose.onNodeWithTag("reader_page_counter").performScrollTo().assertIsEnabled().performClick()
-        compose.onNodeWithTag("reader_jump_dialog").assertIsDisplayed()
-        compose.onNodeWithTag("reader_jump_input").assertIsFocused()
-        assertDialogPan()
-    }
-    private fun jumpInput(value: String) {
-        compose.onNodeWithTag("reader_jump_input").performTextReplacement(value)
-        compose.waitForIdle()
-        assertDialogPan()
-    }
-    private fun jumps() = actions.filterIsInstance<ReaderAction.PageIfCurrent>()
-
-    @Test fun pageJumpOpensOnlyForAcknowledgedPresentedPage() {
-        openGate=CompletableDeferred();start()
-        compose.onNodeWithTag("reader_page_counter").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
-        compose.runOnIdle { openGate!!.complete(Unit) };visible()
-        openJump()
-        compose.onNodeWithTag("reader_jump_input").assertTextContains("1")
-        compose.onNodeWithText(text(R.string.reader_jump_total,8)).assertIsDisplayed()
-        assertTrue(jumps().isEmpty())
-    }
-
-    @Test fun pageJumpFirstLastAndTrimmedInputDispatchExactlyOnce() {
-        start();visible();openJump();jumpInput(" 8 ")
-        compose.onNodeWithText(text(R.string.reader_jump_confirm)).performClick();visible(7)
-        assertEquals(listOf(7),jumps().map { it.index })
-        assertEquals(controller.state.value.intent,jumps().single().expectedIntent)
-        assertEquals(controller.state.value.session,jumps().single().expectedSession)
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
-        compose.onNodeWithTag("reader_toolbar").assertExists()
-        openJump();jumpInput("1")
-        compose.onNodeWithText(text(R.string.reader_jump_confirm)).performClick();visible(0)
-        assertEquals(listOf(7,0),jumps().map { it.index })
-        assertTrue(actions.filterIsInstance<ReaderAction.Page>().isEmpty())
-        trace("jump-first-last-before-ack-assertion")
-        assertEquals(listOf(PageIndex(0),PageIndex(7),PageIndex(0)),acknowledged.toList())
+    @Test fun seekFirstLastUsesExactlyTwoGuardedActionsAndThreeAcknowledgments() {
+        start();visible();seekTo(1f);visible(7);seekTo(0f);visible(0)
+        assertEquals(listOf(7,0),actions.filterIsInstance<ReaderAction.PageIfCurrent>().map { it.index })
+        assertTrue(actions.filterIsInstance<ReaderAction.Page>().isEmpty());assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
+        assertEquals(listOf(PageIndex(0),PageIndex(7),PageIndex(0)),acknowledged)
         assertEquals(3,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
     }
-
-    @Test fun pageJumpInvalidSyntaxAndRangeCannotDispatch() {
-        start();visible();openJump()
-        for(value in listOf("", " ", "-1", "1.5", "2147483648", "١", "１２", "0", "9")) {
-            jumpInput(value)
-            compose.onNodeWithText(text(R.string.reader_jump_confirm)).assertIsNotEnabled()
-            val error=if(value=="0"||value=="9") text(R.string.reader_jump_out_of_range,8) else text(R.string.reader_jump_invalid_number)
-            compose.onNodeWithText(error).assertExists()
-            compose.onNodeWithTag("reader_jump_input").performImeAction()
-            assertTrue(jumps().isEmpty());assertEquals(PageIndex(0),controller.state.value.requestedPage)
-        }
-        jumpInput("2");compose.onNodeWithText(text(R.string.reader_jump_confirm)).assertIsEnabled()
-        compose.onNodeWithTag("reader_jump_input").performImeAction();visible(1)
-        assertEquals(1,jumps().size)
+    @Test fun seekDragOnlyPreviewsUntilReleaseAndConsumesPointer() {
+        start();visible();val before=controller.state.value;val renders=requests.size
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(12f,height/2f));moveTo(Offset(width-1f,height/2f)) }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_seek_preview,8,8))
+        assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
+        assertSame(before.frame,controller.state.value.frame);assertEquals(renders,requests.size);assertEquals(listOf(PageIndex(0)),acknowledged)
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { up() };visible(7)
+        assertEquals(1,actions.filterIsInstance<ReaderAction.PageIfCurrent>().size);assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
     }
-
-    @Test fun pageJumpCancelBackAndEscapeKeepViewportFrameZoomAndToolbar() {
-        start(PageFit.WIDTH);visible()
-        keyboardFocus(compose.onNodeWithTag("reader_page")).performKeyInput { pressKey(Key.Plus) }
-        val before=controller.state.value;val renders=requests.size;val opened=opens.get();val view=surface()
-        val zoom=compose.onNodeWithTag("reader_page").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
-        openJump();jumpInput("7");trace("cancel-before");compose.onNodeWithText(text(R.string.reader_jump_cancel)).performClick();trace("cancel-after")
-        openJump();jumpInput("6");trace("back-before");pressBack();trace("back-after")
-        // If an IME consumes the first Back, it must still not navigate the Reader.
-        if(compose.onAllNodesWithTag("reader_jump_dialog").fetchSemanticsNodes().isNotEmpty()) pressBack()
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
-        openJump();trace("escape-before");compose.onNodeWithTag("reader_jump_input").performKeyInput { pressKey(Key.Escape) };trace("escape-after")
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
-        compose.onNodeWithTag("reader_toolbar").assertExists()
-        assertEquals(0,backs.get());assertTrue(jumps().isEmpty())
-        trace("jump-dismiss-before-frame-assertion")
-        assertSame(before.frame,controller.state.value.frame);assertSame(view,surface());assertTrue(view.isAttachedToWindow)
-        assertEquals(before.viewport,controller.state.value.viewport);assertEquals(before.viewportGeneration,controller.state.value.viewportGeneration)
-        assertEquals(before.fit,controller.state.value.fit);assertEquals(before.presentedPage,controller.state.value.presentedPage)
-        compose.onNodeWithTag("reader_page").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,zoom))
-        assertEquals(renders,requests.size);assertEquals(opened,opens.get());assertEquals(1,maximumLeases.get())
+    @Test fun seekCancelPreservesPageFitZoomAndFrame() {
+        start(PageFit.WIDTH);visible();val before=controller.state.value
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(12f,height/2f));moveTo(Offset(width-1f,height/2f));cancel() }
+        compose.waitForIdle()
+        assertSame(before.frame,controller.state.value.frame);assertEquals(before.viewport,controller.state.value.viewport)
+        assertEquals(before.fit,controller.state.value.fit);assertEquals(1,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
+        assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
     }
-
-    @Test fun pageJumpModalOwnsTouchAndKeyboardWithoutUnderlyingNavigation() {
-        start();visible();openJump()
-        // Attempt a page edge through the Activity window; the separate modal window owns input.
-        compose.onNodeWithTag("reader_page").performTouchInput { click(Offset(width*.9f,height*.7f)) }
-        assertEquals(PageIndex(0),controller.state.value.requestedPage)
-        assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
-        // Outside touch may dismiss by standard Dialog behavior; reopen before testing its editor.
-        if(compose.onAllNodesWithTag("reader_jump_dialog").fetchSemanticsNodes().isEmpty()) openJump()
-        jumpInput("2")
-        compose.onNodeWithTag("reader_jump_input").performKeyInput { pressKey(Key.DirectionLeft);pressKey(Key.DirectionRight);pressKey(Key.C);pressKey(Key.Plus);pressKey(Key.Zero) }
-        assertEquals(PageIndex(0),controller.state.value.requestedPage)
-        assertTrue(jumps().isEmpty());assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
-        compose.onNodeWithText(text(R.string.reader_jump_cancel)).performClick()
-        compose.onNodeWithTag("reader_toolbar").assertExists()
-    }
-
-    @Test fun pageJumpReplacementAndIneligibleLifecycleDismissWithoutRetargeting() {
-        start();visible();openJump();jumpInput("8")
-        val old=controller.state.value
-        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible()
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist();assertTrue(jumps().isEmpty())
-        compose.runOnUiThread { controller.dispatch(ReaderAction.PageIfCurrent(7,old.intent!!,old.session!!)) }
-        assertEquals(PageIndex(0),controller.state.value.requestedPage)
-        openJump();jumpInput("8")
-        compose.runOnIdle { phase.value=ReaderPhase.QUIESCED }
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist();assertTrue(jumps().isEmpty())
-        compose.runOnIdle { phase.value=null }
-        compose.onNodeWithTag("reader_toolbar").assertExists()
-    }
-
-    @Test fun pageJumpRequestedTargetWaitsForPresentationAndCheckpoint() {
-        request=DocumentOpenRequest.Registered(DocumentRef(DocumentId("jump-registered")))
-        start();visible();openJump();jumpInput("8")
-        val before=acknowledged.toList();val gate=CompletableDeferred<Unit>()
-        compose.runOnIdle { renderGate=gate }
-        compose.onNodeWithText(text(R.string.reader_jump_confirm)).performClick()
-        compose.waitUntil(10_000) { controller.state.value.requestedPage==PageIndex(7) }
-        assertEquals(before,acknowledged.toList());assertNotEquals(PageIndex(7),controller.state.value.presentedPage)
-        compose.onNodeWithTag("reader_page_counter").performScrollTo().assertIsNotEnabled()
+    @Test fun seekPendingRequestDoesNotClaimPresentation() {
+        start();visible();val gate=CompletableDeferred<Unit>();compose.runOnIdle { renderGate=gate }
+        seekTo(1f);compose.waitUntil(10_000) { controller.state.value.requestedPage==PageIndex(7) }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_unpresented))
+        assertEquals(listOf(PageIndex(0)),acknowledged)
         compose.runOnIdle { gate.complete(Unit) };visible(7)
-        assertEquals(before+PageIndex(7),acknowledged.toList())
-        assertEquals(1,jumps().size)
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_counter,8,8))
     }
-
-    @Test fun pageJumpLargeFontDarkDialogRemainsEditableAndDismissible() {
-        narrow.value=true;large.value=true;start(dark=true);visible();openJump()
-        compose.onNodeWithTag("reader_jump_input").performScrollTo().assertIsDisplayed()
-        jumpInput("0");compose.onNodeWithText(text(R.string.reader_jump_out_of_range,8)).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(text(R.string.reader_jump_confirm)).assertIsNotEnabled()
-        compose.onNodeWithText(text(R.string.reader_jump_cancel)).assertIsDisplayed().performClick()
-        compose.onNodeWithTag("reader_toolbar").assertExists()
+    @Test fun seekReplacementCancelsDragAndCannotNavigateNewIntent() {
+        start();visible()
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { down(Offset(12f,height/2f));moveTo(Offset(width-1f,height/2f)) }
+        compose.runOnUiThread { controller.open(ReaderOpenIntent(2,request)) };visible()
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { up() };compose.waitForIdle()
+        assertEquals(PageIndex(0),controller.state.value.requestedPage)
+        assertTrue(actions.filterIsInstance<ReaderAction.PageIfCurrent>().isEmpty())
     }
-
-    @Test fun pageJumpPolicyDoesNotFreezeGenuineContentResize() {
-        start();visible();openJump()
-        val before=controller.state.value;val renders=requests.size
-        compose.runOnIdle { resizeHeightPx=(before.viewport!!.heightPx/2).coerceAtLeast(2);shortViewport.value=true }
-        compose.waitUntil(10_000) { controller.state.value.viewport!=before.viewport }
-        visible()
-        assertTrue(controller.state.value.viewportGeneration>before.viewportGeneration)
-        assertTrue(requests.size>renders);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
-        assertDialogPan()
-        compose.onNodeWithTag("reader_jump_input").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(text(R.string.reader_jump_cancel)).assertIsDisplayed().performClick()
-        compose.onNodeWithTag("reader_jump_dialog").assertDoesNotExist()
+    @Test fun seekLargeFontAndRealResizeRemainUsable() {
+        narrow.value=true;large.value=true;start(dark=true);visible();val before=controller.state.value.viewport
+        compose.onNodeWithTag("reader_seek_slider").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        compose.runOnIdle { resizeHeightPx=(before!!.heightPx/2).coerceAtLeast(2);shortViewport.value=true }
+        compose.waitUntil(10_000) { controller.state.value.viewport!=before };visible()
+        compose.onNodeWithTag("reader_seek_slider").assertIsDisplayed()
+        seekTo(1f);visible(7);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
     }
-
-    @Test fun dialogPolicyReappliesAdjustmentAndRestoresOnlyItsOwnedBits() {
-        compose.runOnUiThread {
-            val dialog=android.app.Dialog(compose.activity)
-            val window=dialog.window!!
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            val originalCallback=window.callback
-            val policy=ReaderDialogImePolicy(window)
-            try {
-                assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN, window.attributes.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)
-                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED)
-                assertEquals(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN,window.attributes.softInputMode)
-            } finally { policy.close() }
-            assertSame(originalCallback,window.callback)
-            assertEquals(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,window.attributes.softInputMode)
-            policy.close();assertSame(originalCallback,window.callback)
-        }
+    @Test fun seekKeyboardStaysBounded() {
+        start();visible()
+        keyboardFocus(compose.onNodeWithTag("reader_seek_slider")).performKeyInput { pressKey(Key.MoveEnd) }
+        visible(7);assertTrue(actions.filterIsInstance<ReaderAction.Step>().isEmpty())
+        assertEquals(1,actions.filterIsInstance<ReaderAction.PageIfCurrent>().size)
+    }
+    @Test fun onePageSeekIsDisabledWithoutExtraWork() {
+        pageCount=1;start();visible()
+        compose.onNodeWithTag("reader_seek_slider").assertIsNotEnabled()
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(text(R.string.reader_page_counter,1,1))
+        assertEquals(1,requests.size);assertEquals(1,opens.get());assertEquals(1,maximumLeases.get())
     }
 
 }

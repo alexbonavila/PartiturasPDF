@@ -10,22 +10,6 @@ class ReaderPageNavigationTest {
     private fun state() = ReaderUiState(phase = ReaderPhase.VISIBLE,
         intent = ReaderOpenIntent(1, DocumentOpenRequest.Transient(StorageDocumentRef("test", "one"))),
         session = ReadSessionInfo(ReadSessionId("session"), 7, 100))
-    @Test fun validAsciiNumbersConvertWithoutOverflow() {
-        for (count in listOf(1,2,10,50,100,Int.MAX_VALUE)) {
-            assertEquals(ReaderPageInput.Valid(0),validateReaderPageNumber(" 1 ",count))
-            assertEquals(ReaderPageInput.Valid(count-1),validateReaderPageNumber(count.toString(),count))
-        }
-        assertEquals(ReaderPageInput.Valid(11),validateReaderPageNumber("0012",100))
-        assertEquals(ReaderPageInput.Valid(11),validateReaderPageNumber("\t12\n",100))
-    }
-    @Test fun invalidSyntaxAndOverflowAreNotOutOfRange() {
-        for (text in listOf("", "  ", "-1", "+1", "1.0", "1e2", "1 2", "a", "١", "１２", "2147483648", "999999999999999999999999"))
-            assertEquals(text,ReaderPageInput.InvalidNumber,validateReaderPageNumber(text,100))
-    }
-    @Test fun zeroOutsideCountAndUnavailableCountsAreOutOfRange() {
-        for (count in listOf(null,0,-1,Int.MIN_VALUE)) assertEquals(ReaderPageInput.OutOfRange,validateReaderPageNumber("1",count))
-        for (text in listOf("0","000","101")) assertEquals(ReaderPageInput.OutOfRange,validateReaderPageNumber(text,100))
-    }
     @Test fun onlyActiveKnownIntentAndSessionHaveNavigationContext() {
         val state=state()
         for (phase in ReaderPhase.entries) {

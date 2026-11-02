@@ -271,3 +271,27 @@ entries remain unchanged. Raw campaign files were not independently audited in t
 documentation task. Long-duration memory stability/endurance belongs to **M5**, which
 has not started. M5–M7, J14/J15 and formal Phase J acceptance remain outstanding.
 **J08 remains DEFERRED TO PHASE R.** No next milestone starts automatically.
+
+
+## M5-A bounded native endurance completion — 2026-11-02
+
+[M5-A evidence and limitations](J_M5_A_ENDURANCE.md#2026-11-02--native-campaign-evidence-and-scoped-completion)
+record owner-verified campaign `20261102T090554Z-cd4efb338aa34be1a14c1ef300e4bb9a`
+at `43401566a7c3944c1b4faa9256ccf235e723db10`: **PASS**, complete evidence,
+3 cycles / 9 native PDF journeys, 1 JUnit PASS, retained main PID, 9 distinct worker
+PIDs, 37 PSS samples (24 paired), all per-journey resource/integrity checks and host
+cleanup PASS. Artifact hashes were verified by the owner; no raw archive was
+independently audited in this documentation task.
+
+**M5-A's authorized three-cycle API26 emulator endurance scope is CLOSED by
+owner approval on 2026-11-02.** The post-close PSS increases and `review_required=true`
+remain unresolved observations, not a confirmed leak or functional failure.
+Prolonged stability, leak-free operation, physical-device calibration and quantitative
+budgets are not accepted. M4's existing scoped closure is unchanged; earlier NOT RUN
+statements retain their historical attribution.
+
+M5-B recovery planning/implementation requires separate authorization and should
+reuse existing recovery tests, adding only demonstrated gaps. Longer endurance,
+destructive recovery/device operations, backup/D2D and production fixes are not
+implicitly authorized. M5-B, remaining M5/M6/M7 work, J14/J15 and formal Phase J
+acceptance remain outstanding. **J08 remains DEFERRED TO PHASE R.**

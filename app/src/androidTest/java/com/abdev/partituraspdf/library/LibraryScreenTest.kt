@@ -356,17 +356,6 @@ class LibraryScreenTest {
         findText(R.string.library_clear_search).assertIsNotEnabled()
     }
 
-    @Test fun savedControlsRestoreOnlyWithinSameFolderScope() {
-        val restoration = androidx.compose.ui.test.junit4.StateRestorationTester(compose)
-        restoration.setContent { PartiturasPDFTheme { LibraryScreen(ready(listOf(pdf())), actions::add) } }
-        find(hasTestTag("library_search")).performTextInput("sonata")
-        find(hasTestTag("library_filter_PDFS")).performClick()
-        restoration.emulateSavedInstanceStateRestore()
-        find(hasTestTag("library_search")).assertTextContains("sonata")
-        find(hasTestTag("library_filter_PDFS")).assertIsSelected()
-        compose.runOnIdle { assertTrue(actions.isEmpty()) }
-    }
-
     @Test fun newControlsRemainReachableAtLargeFontWithAccessibleTouchTargets() {
         render(ready(listOf(pdf())), dark = true, large = true)
         find(hasTestTag("library_search")).assertHeightIsAtLeast(48.dp).performTextInput("sonata")

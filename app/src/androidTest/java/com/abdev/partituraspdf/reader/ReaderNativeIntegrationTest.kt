@@ -565,4 +565,27 @@ class ReaderNativeIntegrationTest {
         compose.onNodeWithText(compose.activity.getString(R.string.reader_next)).performScrollTo().performTouchInput { click() };visible(1)
         assertEquals(PageIndex(1),controller.state.value.requestedPage)
     }
+    @Test fun g_hundredPageTransientSeekPreviewsWithoutNativeRenderAndCommitsOnce() {
+        open(fixtures().single { it.getString("id")=="05" });visible(0)
+        awaitCheckpoint(controller.state.value.frame!!)
+        val before=controller.state.value;val rendered=leases.size;val view=surface()
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput {
+            down(androidx.compose.ui.geometry.Offset(width*.05f,height/2f))
+            for(fraction in listOf(.15f,.35f,.6f,.85f,1f)) {
+                advanceEventTime(16L);moveTo(androidx.compose.ui.geometry.Offset((width-1f)*fraction,height/2f))
+            }
+        }
+        compose.onNodeWithTag("reader_seek_position").assertTextEquals(instrumentation.targetContext.getString(R.string.reader_seek_preview,100,100))
+        assertSame(before.frame,controller.state.value.frame);assertEquals(rendered,leases.size)
+        assertEquals(PageIndex(0),controller.state.value.requestedPage);assertEquals(listOf(0),displayed.map { it.second.value })
+        compose.onNodeWithTag("reader_seek_slider").performTouchInput { up() };visible(99)
+        awaitCheckpoint(controller.state.value.frame!!)
+        assertEquals(listOf(0,99),displayed.map { it.second.value })
+        assertEquals(rendered+1,leases.size);assertSame(view,surface())
+        assertEquals(1,opens.get());assertEquals(1,maximumRenders.get());assertEquals(1,maximumRetained.get())
+        assertTrue(controller.state.value.intent!!.request is DocumentOpenRequest.Transient)
+        // Route displayed is scheduling evidence only; this test route has no durable metadata.
+        // Existing @After proves recycling, descriptor closure and original PDF hash integrity.
+    }
+
 }

@@ -108,4 +108,26 @@ class PrivateJournalTest {
         assertThrows(IOException::class.java) { budget.root.check(File(budget.root.directory, "../escape")) }
         assertTrue(outside.exists())
     }
+    private suspend fun missingArtifactIsBlocked(missing: String) {
+        val (budget, _) = setup()
+        val id = TransactionId(UUID.randomUUID().toString())
+        val journal = PrivateJournal(budget, Dispatchers.Unconfined)
+        journal.appendPrivate(id, TransactionState.PREPARING)
+        val tx = File(budget.root.directory, "tx-${id.value}")
+        val source = File(tx, "source.sealed").apply { writeBytes(byteArrayOf(1)) }
+        val output = File(tx, "output.sealed").apply { writeBytes(byteArrayOf(2)) }
+        val sourceEvidence = digest(source)
+        val outputEvidence = digest(output)
+        assertTrue(journal.appendPrivate(id, TransactionState.PRIVATE_INPUT_SEALED, sourceEvidence) is CheckpointResult.Durable)
+        assertTrue(journal.appendPrivate(id, TransactionState.PRIVATE_OUTPUT_SEALED, sourceEvidence, outputEvidence) is CheckpointResult.Durable)
+        val before = PrivateRecovery(budget, Dispatchers.Unconfined).scan() as RecoveryScan.Complete
+        assertEquals(RecoveryClassification.PRIVATE_OUTPUT_UNVALIDATED, before.transactions.single().classification)
+        assertTrue(File(tx, missing).delete())
+        val after = PrivateRecovery(budget, Dispatchers.Unconfined).scan() as RecoveryScan.Complete
+        assertEquals(RecoveryClassification.BLOCKED, after.transactions.single().classification)
+        assertTrue(File(tx, if (missing == "source.sealed") "output.sealed" else "source.sealed").exists())
+    }
+    @Test fun missingMandatorySourceBlocksRecovery() = runTest { missingArtifactIsBlocked("source.sealed") }
+    @Test fun missingMandatoryOutputBlocksRecovery() = runTest { missingArtifactIsBlocked("output.sealed") }
+
 }

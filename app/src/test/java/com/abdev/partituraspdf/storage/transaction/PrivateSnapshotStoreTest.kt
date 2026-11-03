@@ -14,6 +14,17 @@ class PrivateSnapshotStoreTest {
     @get:Rule val temporary = TemporaryFolder()
     private class Io : PrivateIo {
         var deletesFail = false
+        var createFault: String? = null
+        var absenceUnknown = false
+        override fun conclusivelyAbsent(file: File): Boolean =
+            if (absenceUnknown) false else java.nio.file.Files.notExists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        override fun create(file: File): Boolean {
+            if (createFault == "absent") throw IOException("Injected before creation")
+            if (createFault == "present") {
+                file.writeBytes(byteArrayOf(1)); throw IOException("Injected after possible creation")
+            }
+            return file.createNewFile()
+        }
         var syncFails = false
         var closes = 0
         var outputFault: String? = null
@@ -93,7 +104,7 @@ class PrivateSnapshotStoreTest {
             }
             fail("Cancellation must propagate")
         } catch (caught: CancellationException) {
-            assertSame(cancel, caught); assertTrue(caught.suppressed.isNotEmpty())
+            assertSame(cancel, caught); assertTrue(caught.suppressed.any { it is SnapshotCleanupPendingException })
         }
         assertTrue(budget.used() > 0)
         assertEquals(1, boundedFiles(budget.root).size)
@@ -146,6 +157,42 @@ class PrivateSnapshotStoreTest {
         } catch (caught: IllegalStateException) {
             assertSame(primary, caught); assertTrue(caught.suppressed.isNotEmpty())
         }
+    }
+
+    @Test fun failedCreationReleasesReservationOnlyAfterPositiveAbsence() = runTest {
+        val io = Io().apply { createFault = "absent" }
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
+        val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
+        repeat(2) {
+            val result = store.stage(TransactionId(UUID.randomUUID().toString())) { fail("No writer expected") }
+                as SnapshotCaptureResult.Rejected
+            assertEquals(SnapshotCleanupStatus.COMPLETE, result.cleanup)
+            assertEquals(0L, budget.used())
+        }
+    }
+    @Test fun ambiguousCreationAndUnknownAbsenceRetainReservationsAndReportPending() = runTest {
+        for (mode in listOf("present", "unknown")) {
+            val io = Io().apply { createFault = if (mode == "present") "present" else "absent"; absenceUnknown = mode == "unknown" }
+            val root = PrivateRoot(File(temporary.root.canonicalFile, mode), io)
+            val budget = MStorageBudget(root)
+            val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
+            val result = store.stage(TransactionId(UUID.randomUUID().toString())) { fail("No writer expected") }
+                as SnapshotCaptureResult.Rejected
+            assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
+            assertTrue(budget.used() > 0)
+            if (mode == "present") assertEquals(1, boundedFiles(root).size)
+        }
+    }
+    @Test fun expectedPrimaryRejectionExposesRetainedCleanupWithoutReplacingReason() = runTest {
+        val io = Io()
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io), MStoragePolicy(output = 1))
+        val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
+        val result = store.stage(TransactionId(UUID.randomUUID().toString())) {
+            it.write(byteArrayOf(1)); io.deletesFail = true; it.write(byteArrayOf(2))
+        } as SnapshotCaptureResult.Rejected
+        assertEquals(SnapshotFailure.InputLimitExceeded, result.reason)
+        assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
+        assertTrue(budget.used() > 0)
     }
 
 }

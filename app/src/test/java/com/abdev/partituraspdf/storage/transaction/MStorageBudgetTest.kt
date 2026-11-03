@@ -12,8 +12,10 @@ import java.io.*
 class MStorageBudgetTest {
     @get:Rule val temporary = TemporaryFolder()
     private var free = Long.MAX_VALUE
+    private var observedSize: Long? = null
     private val io = object : PrivateIo {
         override fun freeBytes(root: File) = free
+        override fun size(file: File): Long = observedSize ?: file.length()
         override fun syncFile(stream: FileOutputStream) = Unit
         override fun syncDirectory(directory: File) = Unit
         override fun renameNew(from: File, to: File) = error("Unused")
@@ -58,4 +60,39 @@ class MStorageBudgetTest {
         val budget = MStorageBudget(root)
         assertThrows(StorageFault::class.java) { budget.reserve(File(root.directory, "new.part"), 1) }
     }
+    @Test fun extremeObservedSizesRejectAdmissionWithTypedFailureNotArithmeticException() {
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
+        val tx = root.newTransaction()
+        File(tx, "a.part").writeBytes(byteArrayOf(1))
+        File(tx, "b.part").writeBytes(byteArrayOf(1))
+        observedSize = Long.MAX_VALUE // Injected observations, no huge allocation or disk usage.
+        val budget = MStorageBudget(root)
+        val fault = assertThrows(StorageFault::class.java) { budget.reserve(File(tx, "new.part"), 1) }
+        assertEquals(com.abdev.partituraspdf.storage.api.SnapshotFailure.PrivateStorageUnavailable, fault.reason)
+        assertThrows(StorageFault::class.java) { budget.used() }
+    }
+    @Test fun inconsistentNegativeObservationAndFreeSpaceFailClosed() {
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
+        val tx = root.newTransaction()
+        File(tx, "a.part").writeBytes(byteArrayOf(1))
+        observedSize = -1
+        val budget = MStorageBudget(root)
+        assertThrows(StorageFault::class.java) { budget.reserve(File(tx, "new.part"), 1) }
+        observedSize = null
+        val valid = MStorageBudget(root)
+        free = -1
+        val fault = assertThrows(StorageFault::class.java) { valid.reserve(File(tx, "new.part"), 1) }
+        assertEquals(com.abdev.partituraspdf.storage.api.SnapshotFailure.PrivateStorageUnavailable, fault.reason)
+    }
+    @Test fun failedRefreshLatchesBlockedAccountingRatherThanReusingOldOccupancy() {
+        val root = PrivateRoot(File(temporary.root.canonicalFile, "root"), io)
+        val tx = root.newTransaction()
+        File(tx, "a.part").writeBytes(byteArrayOf(1))
+        val budget = MStorageBudget(root)
+        observedSize = -1
+        assertThrows(StorageFault::class.java) { budget.refreshOccupancy() }
+        observedSize = null
+        assertThrows(StorageFault::class.java) { budget.reserve(File(tx, "new.part"), 1) }
+    }
+
 }

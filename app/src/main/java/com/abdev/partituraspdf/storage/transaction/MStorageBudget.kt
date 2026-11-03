@@ -28,20 +28,56 @@ internal class MStorageBudget(val root: PrivateRoot, val policy: MStoragePolicy 
     private var blocked = false
     init {
         try {
-            for (file in boundedFiles(root)) charges[file] = file.length()
+            for (file in boundedFiles(root)) charges[file] = observedSize(file)
         } catch (_: java.io.IOException) { blocked = true }
     }
     fun refreshOccupancy() {
-        val observed = boundedFiles(root).associateWith { it.length() }
+        val observed = try { boundedFiles(root).associateWith { observedSize(it) } }
+        catch (t: java.io.IOException) { synchronized(this) { blocked = true }; throw StorageFault(SnapshotFailure.PrivateStorageUnavailable) }
         synchronized(this) {
             for ((file, bytes) in observed) charges[file] = maxOf(charges[file] ?: 0L, bytes)
         }
     }
-    @Synchronized fun used(): Long = charges.values.fold(0L) { a, b -> Math.addExact(a, b) }
+    private fun observedSize(file: File): Long {
+        val size = root.io.size(root.check(file))
+        if (size < 0) throw StorageFault(SnapshotFailure.PrivateStorageUnavailable)
+        return size
+    }
+    private fun accountingFailure(): Nothing {
+        blocked = true
+        throw StorageFault(SnapshotFailure.PrivateStorageUnavailable)
+    }
+    private fun sumChecked(values: Collection<Long>): Long {
+        var total = 0L
+        for (value in values) {
+            if (value < 0 || value > Long.MAX_VALUE - total) accountingFailure()
+            total += value
+        }
+        return total
+    }
+    @Synchronized fun used(): Long {
+        if (blocked) throw StorageFault(SnapshotFailure.PrivateStorageUnavailable)
+        return sumChecked(charges.values)
+    }
+    /** Caller owns an unmaterialized reservation and serializes creation with root.mutations.
+     * NOFOLLOW notExists is positive absence evidence; exists()==false is insufficient.
+     */
+    fun releaseAbsentReservation(file: File): Boolean {
+        val absent = try { root.io.conclusivelyAbsent(root.check(file)) }
+        catch (_: java.io.IOException) { false }
+        catch (_: SecurityException) { false }
+        if (!absent) return false
+        synchronized(this) {
+            if (reservations.remove(file) != null) charges.remove(file)
+        }
+        return true
+    }
     fun reserve(file: File, capacity: Long) {
         root.check(file)
         if (capacity <= 0) throw StorageFault(SnapshotFailure.InputLimitExceeded)
-        val free = root.io.freeBytes(root.directory)
+        val free = try { root.io.freeBytes(root.directory) }
+        catch (_: java.io.IOException) { throw StorageFault(SnapshotFailure.PrivateStorageUnavailable) }
+        if (free < 0) throw StorageFault(SnapshotFailure.PrivateStorageUnavailable)
         synchronized(this) {
             if (blocked) throw StorageFault(SnapshotFailure.PrivateStorageUnavailable)
             check(!charges.containsKey(file))
@@ -51,7 +87,7 @@ internal class MStorageBudget(val root: PrivateRoot, val policy: MStoragePolicy 
                 throw StorageFault(SnapshotFailure.InsufficientPrivateSpace)
             }
             // Other reservations may not yet have materialized on disk.
-            val reserved = reservations.values.sum()
+            val reserved = sumChecked(reservations.values)
             if (reserved > free - policy.margin - capacity) throw StorageFault(SnapshotFailure.InsufficientPrivateSpace)
             charges[file] = capacity
             reservations[file] = capacity

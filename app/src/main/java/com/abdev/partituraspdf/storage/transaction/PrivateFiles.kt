@@ -15,6 +15,14 @@ import java.nio.file.Files
 /** Small fault seam: all paths must already be confined by PrivateRoot. */
 internal interface PrivateIo {
     fun freeBytes(root: File): Long
+    fun create(file: File): Boolean = file.createNewFile()
+    fun conclusivelyAbsent(file: File): Boolean = Files.notExists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+    fun size(file: File): Long {
+        val attributes = Files.readAttributes(file.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        if (!attributes.isRegularFile) throw IOException("Inconsistent artifact")
+        return attributes.size()
+    }
     fun output(file: File): FileOutputStream = FileOutputStream(file)
     fun evidence(file: File): com.abdev.partituraspdf.core.document.SnapshotEvidence = digest(file)
     fun syncFile(stream: FileOutputStream)
@@ -96,7 +104,7 @@ internal class PrivateRoot(val directory: File, val io: PrivateIo) {
     }
     fun create(file: File) {
         check(file)
-        if (!file.createNewFile()) throw IOException("Artifact already exists")
+        if (!io.create(file)) throw IOException("Artifact already exists")
     }
 }
 
@@ -129,3 +137,6 @@ internal fun boundedChildren(root: PrivateRoot, directory: File, maximum: Int): 
     }
     return entries
 }
+
+/** Sanitized typed secondary diagnostic; never replaces cancellation or a primary defect. */
+internal class SnapshotCleanupPendingException : IOException("Private artifact cleanup pending")

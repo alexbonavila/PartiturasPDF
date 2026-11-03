@@ -29,6 +29,7 @@ internal class PrivateSnapshotStore(
         private val stream: FileOutputStream,
     ) {
         private var terminal = false
+        private var closeUnconfirmed = false
         private var count = 0L
         private val hash = MessageDigest.getInstance("SHA-256")
         suspend fun write(bytes: ByteArray, offset: Int = 0, length: Int = bytes.size) {
@@ -55,6 +56,7 @@ internal class PrivateSnapshotStore(
             try { store.root.io.syncFile(stream) }
             catch (t: Throwable) { primary = t; throw t }
             finally { try { stream.close() } catch (t: Throwable) {
+                closeUnconfirmed = true
                 if (primary != null) primary.addSuppressed(t) else throw t
             } }
             if (count == 0L) throw StorageFault(SnapshotFailure.SealFailure)
@@ -76,15 +78,19 @@ internal class PrivateSnapshotStore(
                 WorkingSnapshot(store.Owner(file, origin, expected))
             }
         }
-        internal fun discard(primary: Throwable?) {
+        internal fun discard(primary: Throwable?): Boolean {
             if (!terminal) {
                 terminal = true
-                try { stream.close() } catch (t: Throwable) { primary?.addSuppressed(t) }
+                try { stream.close() } catch (t: Throwable) {
+                    closeUnconfirmed = true
+                    primary?.addSuppressed(t)
+                }
             }
-            try { store.budget.deleteOwned(file) }
+            if (closeUnconfirmed) return true // Retain bytes/charge while resource release is uncertain.
+            return try { store.budget.deleteOwned(file); false }
             catch (t: Throwable) {
-                // Disk artifact remains charged; recovery discovers it as retained, never sealed authority.
                 if (primary != null) primary.addSuppressed(t) else throw t
+                true
             }
         }
     }
@@ -107,8 +113,11 @@ internal class PrivateSnapshotStore(
             created = true
             return Writer(this, part, maximum, root.io.output(part))
         } catch (t: Throwable) {
-            // A reservation is released only through confirmed deletion of its own file.
-            if (created) try { budget.deleteOwned(part) } catch (c: Throwable) { t.addSuppressed(c) }
+            // Never delete a file whose creation/ownership was not confirmed.
+            val pending = if (created) {
+                try { budget.deleteOwned(part); false } catch (c: Throwable) { t.addSuppressed(c); true }
+            } else !budget.releaseAbsentReservation(part)
+            if (pending) t.addSuppressed(SnapshotCleanupPendingException())
             throw t
         }
     }
@@ -127,6 +136,8 @@ internal class PrivateSnapshotStore(
         var snapshot: WorkingSnapshot? = null
         var handedOff = false
         var primary: Throwable? = null
+        var rejection: SnapshotFailure? = null
+        var cleanupPending = false
         try {
             val result = withContext(dispatcher) {
                 val owned = sealMutex.withLock { createWriter(maximum, prefix, origin) }.also { writer = it }
@@ -139,13 +150,14 @@ internal class PrivateSnapshotStore(
             return SnapshotCaptureResult.Captured(result)
         } catch (t: Throwable) {
             primary = t
-            return when (t) {
+            cleanupPending = t.suppressed.any { it is SnapshotCleanupPendingException }
+            rejection = when (t) {
                 is CancellationException -> throw t
-                is StorageFault -> SnapshotCaptureResult.Rejected(t.reason)
-                is android.system.ErrnoException -> SnapshotCaptureResult.Rejected(
+                is StorageFault -> t.reason
+                is android.system.ErrnoException ->
                     if (t.errno == android.system.OsConstants.ENOSPC) SnapshotFailure.InsufficientPrivateSpace
-                    else SnapshotFailure.SealFailure)
-                is IOException -> SnapshotCaptureResult.Rejected(SnapshotFailure.SealFailure)
+                    else SnapshotFailure.SealFailure
+                is IOException -> SnapshotFailure.SealFailure
                 else -> throw t
             }
         } finally {
@@ -153,10 +165,15 @@ internal class PrivateSnapshotStore(
                 val owner = snapshot
                 if (owner != null) {
                     owner.requestClose()
-                    owner.awaitReleased()
-                } else writer?.discard(primary)
+                    cleanupPending = owner.awaitReleased() is SnapshotReleaseResult.CleanupPending || cleanupPending
+                } else cleanupPending = (writer?.discard(primary) ?: false) || cleanupPending
+                if (cleanupPending && primary?.suppressed?.none { it is SnapshotCleanupPendingException } == true) {
+                    primary?.addSuppressed(SnapshotCleanupPendingException())
+                }
             }
         }
+        return SnapshotCaptureResult.Rejected(checkNotNull(rejection),
+            if (cleanupPending) SnapshotCleanupStatus.PENDING else SnapshotCleanupStatus.COMPLETE)
     }
 
     private inner class Owner(

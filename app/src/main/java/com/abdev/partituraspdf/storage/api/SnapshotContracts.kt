@@ -38,9 +38,11 @@ sealed interface SnapshotFailure {
     data object Closed : SnapshotFailure
     data object CleanupFailure : SnapshotFailure
 }
+enum class SnapshotCleanupStatus { COMPLETE, PENDING }
+
 sealed interface SnapshotCaptureResult {
     data class Captured(val snapshot: WorkingSnapshot) : SnapshotCaptureResult
-    data class Rejected(val reason: SnapshotFailure) : SnapshotCaptureResult
+    data class Rejected(val reason: SnapshotFailure, val cleanup: SnapshotCleanupStatus = SnapshotCleanupStatus.COMPLETE) : SnapshotCaptureResult
 }
 sealed interface SnapshotLeaseResult {
     data class Acquired(val lease: SealedSnapshotLease) : SnapshotLeaseResult

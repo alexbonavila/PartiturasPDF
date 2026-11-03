@@ -36,6 +36,10 @@ internal class PrivateRecovery(private val budget: MStorageBudget,
                         val children = boundedChildren(root, tx, 260)
                         val chain = readChain(root, tx, id)
                         val record = chain.lastOrNull()?.first ?: throw JournalFormatException()
+                        // Evidence in a checkpoint makes the corresponding sealed artifact mandatory.
+                        for ((name, evidence) in listOf("source.sealed" to record.source, "output.sealed" to record.output)) {
+                            if (evidence != null && children.none { it.name == name && it.isFile }) throw JournalFormatException()
+                        }
                         // Unknown or partial files never become automatic cleanup authority.
                         for (child in children) {
                             val expected = when (child.name) {

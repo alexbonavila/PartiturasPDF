@@ -20,7 +20,8 @@ Under `com.abdev.partituraspdf.storage.api`, new files only:
 | SnapshotOrigin | sealed; `Source(val source: SnapshotSource)`, `Produced(val transactionId: TransactionId)` |
 | SnapshotCaptureLimits | `data class SnapshotCaptureLimits(val maxInputBytes: Long)`; 1 through 64 MiB |
 | SnapshotFailure | sealed data objects AccessDenied, AccessRevoked, SourceUnavailable, SourceReadFailure, InputLimitExceeded, InsufficientPrivateSpace, PrivateStorageUnavailable, SealFailure, Closing, Closed, CleanupFailure |
-| SnapshotCaptureResult | sealed; `Captured(val snapshot: WorkingSnapshot)`, `Rejected(val reason: SnapshotFailure)` |
+| SnapshotCaptureResult | sealed; `Captured(val snapshot: WorkingSnapshot)`, `Rejected(val reason: SnapshotFailure, val cleanup: SnapshotCleanupStatus = SnapshotCleanupStatus.COMPLETE)` |
+| SnapshotCleanupStatus | enum COMPLETE / PENDING; primary rejection and cleanup outcome are independent |
 | SnapshotLeaseResult | sealed; `Acquired(val lease: SealedSnapshotLease)`, `Rejected(val reason: SnapshotFailure)` |
 | SnapshotReleaseResult | sealed; Released; `CleanupPending(val reason: SnapshotFailure.CleanupFailure)` |
 | SnapshotCapturer | `suspend fun capture(source: SnapshotSource, limits: SnapshotCaptureLimits): SnapshotCaptureResult` |
@@ -70,8 +71,10 @@ this can reject some physically feasible concurrent operations. ENOSPC races
 still reject. A charge is removed only after confirmed owned deletion.
 
 Unknown/recovery/partial/checkpoint files are retained and charged, including on
-restart. Scan errors block admission. Failed creation may retain a conservative
-in-memory reservation until the next reconstructed ledger. Empty transaction
+restart. Scan errors block admission. Failed creation releases its reservation only after a positive NOFOLLOW absence
+observation. Present or uncertain artifacts retain their charge and are reported
+as cleanup pending. Invalid/overflowing observations reject with a typed storage
+failure; arithmetic never wraps or escapes as an accounting ArithmeticException. Empty transaction
 directories are retained, not recursively swept; the bounded discovery limit can
 therefore require later explicitly reviewed housekeeping, not arbitrary deletion.
 
@@ -110,7 +113,8 @@ PrivateRecovery.scan returns Complete(classifications, chargedBytes) or Blocked.
 Complete means the scan classified entries, **not successful transactions**.
 Unfinished/private-output-unvalidated/cleanup-pending/blocked classifications
 never authorize external effects. Unbound/unknown/partial files and malformed
-journals remain retained. Recognized sealed children must match journal evidence.
+journals remain retained. Every sealed artifact required by checkpoint evidence must exist and match that
+evidence; checking only the files that happen to be present is insufficient.
 No descriptor count is reconstructed. No external inspector is implemented.
 Only the live, known snapshot/writer owner can delete its own private artifact;
 recovery has no destructive sweep API. Future unknown destinations require
@@ -132,3 +136,15 @@ read-only reconciliation using existing authority; no new grants or writes.
 | S-04 | Independent PFD opens and transfer; parser adapter intentionally deferred |
 
 BUILD/TESTS/LINT/CI/COVERAGE/INSTRUMENTATION: **NOT RUN**.
+
+## Block 1 correction review — 2026-11-03
+
+At baseline `b06fcebe7e07b2fdd0a36e319118654253184cc5`, four source defects were
+confirmed: incomplete artifact enumeration, absent-file reservation retention,
+hidden cleanup failures in ordinary rejections, and unchecked accounting overflow.
+The correction adds Rejected.cleanup (typed COMPLETE/PENDING), retaining the
+original reason; cancellation/programmer defects still propagate with a sanitized
+SnapshotCleanupPendingException secondary diagnostic. No Throwable/path/message
+is placed in public result values. A close whose completion is uncertain retains
+the file and charge instead of claiming clean release. Shared Outcome/AppError
+and all H/S decisions remain unchanged. Validation remains NOT RUN.

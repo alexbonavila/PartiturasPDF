@@ -210,3 +210,48 @@ production integration. Block 2 requires engine comparison/license/security/API2
 approval, independent output validation, evidence-bound provider/picker/journal
 contracts and separately authorized host integration. No PR, merge, rebase, tag,
 release or Block 2 implementation performed.
+
+## Four-finding correction — local source review, 2026-11-03
+
+Correction baseline: `b06fcebe7e07b2fdd0a36e319118654253184cc5`. This addendum
+supersedes the earlier note about absent-file reservations requiring restart.
+It does not change earlier NOT RUN results or imply acceptance of Block 1.
+
+- PrivateRecovery now requires source.sealed/output.sealed whenever the latest
+  valid checkpoint contains their evidence. Missing files block classification;
+  present mandatory files still pass the existing exact length/digest checks.
+- MStorageBudget.releaseAbsentReservation uses positive NOFOLLOW notExists
+  evidence under the creation owner's serialization. A false exists check is not
+  proof. Creation that leaves a file, or an inconclusive absence probe, remains
+  charged; the store never deletes an unconfirmed creation.
+- SnapshotCaptureResult.Rejected keeps its primary reason and now reports typed
+  SnapshotCleanupStatus.COMPLETE/PENDING. Cleanup runs before that result is
+  returned. Cancellation/programmer defects retain their identity with a sanitized
+  typed suppressed diagnostic when cleanup remains pending. Uncertain close
+  completion retains the file/charge. No shared error contracts changed.
+- Occupancy and outstanding reservations use checked nonnegative accumulation;
+  inconsistent sizes and overflow block admission through
+  SnapshotFailure.PrivateStorageUnavailable. Size observations are injectable
+  for huge-value tests without huge files/buffers. Failed refresh latches blocked
+  accounting; no partial old scan can authorize new capacity.
+
+Eight additional JVM regressions (NOT RUN), for 36 JVM methods in the current
+Block 1 test source; the four Android methods remain unchanged and NOT RUN:
+
+| Class | Added regression methods |
+| --- | --- |
+| PrivateJournalTest | missingMandatorySourceBlocksRecovery; missingMandatoryOutputBlocksRecovery — valid complete baseline first, then deletion of exactly one required file must block and preserve the other |
+| PrivateSnapshotStoreTest | failedCreationReleasesReservationOnlyAfterPositiveAbsence; ambiguousCreationAndUnknownAbsenceRetainReservationsAndReportPending; expectedPrimaryRejectionExposesRetainedCleanupWithoutReplacingReason |
+| MStorageBudgetTest | extremeObservedSizesRejectAdmissionWithTypedFailureNotArithmeticException; inconsistentNegativeObservationAndFreeSpaceFailClosed; failedRefreshLatchesBlockedAccountingRatherThanReusingOldOccupancy |
+
+The existing cancellation-with-cleanup test is strengthened to require the typed
+pending diagnostic while preserving the exact CancellationException instance.
+Existing tests/assertions remain enabled. No dependency, build/tooling, policy,
+SAF, core, Reader, host or K/L changes. Only new Phase M production/test files and
+these two implementation documents are modified. Full diff and git diff --check
+review are performed; no source compilation or test result is claimed.
+
+BUILD / JVM TESTS / ANDROID INSTRUMENTATION / LINT / COVERAGE / CI / VALIDATORS:
+**NOT RUN**. API26/fsync/provider behavior and coverage-scope limitations from
+the original delivery remain pending. This correction is committed locally only;
+publication requires a separate explicit owner authorization. No Block 2 work.

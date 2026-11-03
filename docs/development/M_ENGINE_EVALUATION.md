@@ -66,3 +66,61 @@ These are a proposal, not a recommendation to approve the old candidate unchange
 No transitive overrides, optional JPX dependency, repository expansion or dependency
 license changes are implicitly approved. The owner engine gate remains OPEN;
 there is no verified safe pinned recommendation to install automatically.
+
+## Owner-supplied research update — 2026-11-03 (not independently re-fetched here)
+
+The approved continuation brief supplies external facts unavailable to the prior
+restricted requests. Its primary references are retained below. They supplement,
+not retroactively replace, the earlier recorded HTTP 403 evidence gap.
+
+- BC Java CVE-2023-33202: <=1.72 affected, fixed 1.73, crafted PEM/ASN.1 OOM.
+- CVE-2026-5598 / GHSA-p93r-85wp-75v3: bcprov-jdk15to18 1.71–<1.80.2,
+  fixed 1.80.2; described FrodoKEM context, reachability in PDF operation unproven.
+- CVE-2024-34447 / GHSA-4h8f-2wvx-gg5w: <1.78, TLS hostname validation;
+  dependency affected does not establish exploitability in an offline PDF path.
+- Apache's 2026 ExtractEmbeddedFiles path-traversal advisories concern the example
+  module; do not label these as demonstrated core-parser vulnerabilities.
+  Malformed PDF CPU/OOM/infinite-loop availability risks still matter to this app.
+- Public PdfRenderer.write is API35, unsuitable for mandatory API26 editing;
+  PdfDocument Canvas recreation/rasterization is not object-preserving editing.
+  PDFium/viewer reordering alone does not establish a maintained editing/save port.
+
+Owner research references:
+https://github.com/bcgit/bc-java/wiki/CVE%E2%80%902023%E2%80%9033202
+https://github.com/advisories/GHSA-p93r-85wp-75v3
+https://github.com/advisories/GHSA-4h8f-2wvx-gg5w
+https://pdfbox.apache.org/security.html
+https://developer.android.com/reference/android/graphics/pdf/PdfRenderer
+https://developer.android.com/reference/android/graphics/pdf/PdfDocument
+https://github.com/barteksc/PdfiumAndroid
+
+## One specific owner decision: confined test-only dependency spike
+
+Recommend continuing rejecting production engine defaults (Option B) while asking
+approval for Option A: **test-only Android compatibility/security/fidelity spike**
+for com.tom-roush:pdfbox-android:2.0.27.0, not production engine acceptance.
+The exact catalog proposal above would be paired with ONLY:
+
+```kotlin
+androidTestImplementation(libs.pdfbox.android)
+```
+
+This supersedes `implementation(...)` for the proposed spike ONLY; production
+installation/minting would need later separate approval after evidence. No build
+file is changed now. No coordinated BC upgrade, exclusions, JCenter, JP2/JBIG2
+codec, native PDFium, production UI or parser fallback is bundled into approval.
+
+Bill of materials: one Android AAR 2.0.27.0 + bcprov-jdk15to18 1.72,
+bcpkix-jdk15to18 1.72, bcutil-jdk15to18 1.72 as published. Resolve/record complete
+transitives and hashes in the owner-run spike, audit BC license/attribution and
+exact reachable algorithms, reject JPX before transformations, no silent omission.
+API19+ is a vendor claim, not proof of our API26/API27 resource/fidelity behavior.
+No new native ABI artifact is proposed; investigate optional image codec/native
+requirements instead of installing them. Heap/CPU/input-compression limits,
+source/lease/native close ownership and temp allocation charges need measurement.
+
+Owner-run acceptance matrix: fixtures 02/08/09/10/11/12/13 plus rejection 14/15,
+independent reparse/object/page/resource/annotation expectations and deliberately
+mutated outputs, 50/100-page resource trials, API26/27/36 and physical Android8.1
+as applicable. No operation publicly enabled; no main engine token minting until
+that evidence is reviewed. Tests/builds/CI remain owner-executed, NOT RUN here.

@@ -138,3 +138,134 @@ BUILD / JVM TESTS / INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE-MANUAL:
 **NOT RUN**. Coverage additionally BLOCKED pending separately approved exact
 M-scoped build configuration; see M_BLOCK2_COVERAGE_PROPOSAL.md.
 No tests, SDK tooling or GitHub Actions were executed or dispatched by Codex.
+
+## Approved continuation increment — 2026-11-03
+
+Baseline 61951a84a1da6e221e9e80d89149ed4b7075504e. Prior partial-scope statements
+remain historical. R1–R4 now have explicit source corrections: owner-controlled
+uncertainty disposition; durable cleanup authorization/completion; verified
+publication + independent cleanup status; late construction of truthful preparation
+rejections. R6 has additional strict legacy/v2 recovery and journal fault source.
+R5 now includes a real negative resolver boundary, not claimed positive OS grants.
+
+Changed implementation: MTransactionCoordinator, MPublicationContracts,
+MPublicationJournal, MPublisher, MReadOnlyReconciler, TransactionSnapshotCapturer.
+The capturer implements internal MSourceCapturer so the actual coordinator can
+be exercised without Android FD stubs in JVM tests. Production still uses actual
+Block 1 openRead/capture; no replacement runtime host wiring. Native lease copying
+remains the production default, with internal MLeaseCopier used by explicit tests.
+No production semantic token mint was added. Test validator minting is TEST ONLY
+byte-plumbing and is NOT evidence that any PDF is semantically preserved.
+
+New test files/helpers: MTransactionLifecycleTest, MJournalRecoveryTest, MTestRig.
+Updated MDocumentsProviderTest and testprovider/MNewDocumentProvider. No other
+phase/core/SAF/Reader/host/DI/Gradle/CI/policy/fixture edits. No manifest change
+in this increment: prior test-only registration retains MANAGE_DOCUMENTS.
+Documentation changed: this ledger, contracts/state machine, engine evaluation.
+
+### New JVM methods (26; all NOT RUN)
+
+MTransactionLifecycleTest (14):
+- verifiedCleanupIsDurableAndAdmissionReopens
+- verifiedWithPendingCleanupStillReleasesAdmissionAndRetainsCharge
+- expectedPreparationRejectionReportsActualCleanupDebt
+- unexpectedPreparationCleanupIsVisibleWithoutReplacingReason
+- missingCallbackNeedsExplicitDurableOwnerAcknowledgement
+- staleAndDuplicateTokensNeverWriteTwice
+- resolutionWaitsForActiveWriterAndCannotEnableReplay
+- cancellationKeepsExactIdentityAndRequiresResolutionAfterWriterStops
+- publicFaultsNeverReturnVerifiedOrRetryAndCanBeExplicitlyResolved
+- failedFinalAckStaysUnverifiedAndExplicitResolutionDisclosesUnconfirmedRecord
+- simultaneousDuplicateCallbacksHaveExactlyOneWrite
+- productionEngineGateRejectsWithoutPickerAndReturnsAdmission
+- primaryValidatorExceptionSurvivesAllCleanupDefects
+- mismatchedOperationSourceAliasAndRevocationBeforeOpenNeverWrite
+
+MJournalRecoveryTest (12):
+- everyStateReconstructsConservativelyWithoutWriteOrReplay
+- preterminalMissingFilesBlockButAuthorizedPartialCleanupRemainsVerified
+- legacyChainRemainsReadableAndV2AnchorTamperingBlocks
+- syncRenameCloseAndWriteFaultsNeverAcknowledgeAndRetainOldRecord
+- tornTemporaryGapReorderedAndChecksumChangedRecordsBlockWithoutDeletion
+- metadataLimitsUnknownVersionAndPredecessorMutationReject
+- rereadTamperingNeverAcknowledgesNewRecord
+- legacyScannerCannotTreatV2TransactionAsOrdinaryPrivateSuccess
+- cancellationDuringCheckpointNeverReturnsDurableAcknowledgement
+- absentRightsAndMismatchedReadbackNeverUpgradeVerifiedHistory
+- authenticatedPredecessorRewriteStillFailsChainBinding
+- unexpectedSidecarAndSymbolicLinkBlockBeforeProviderRead
+
+Loops exercise each state and multiple faults explicitly; method count is not a
+coverage percentage. Filesystem fault source covers write/fsync/close/rename/
+directory/reread, sequence/anchor/torn/temp/metadata tampering and original record
+survival. Object reconstruction is NOT real OS process death or power-loss proof.
+New helpers use actual bounded private files and hashes with injected filesystem
+barriers and native-descriptor seam. Real PFD/Android fsync remain instrumentation.
+
+### Android provider methods / exact capability
+
+MDocumentsProviderTest retains its same-name one-shot direct provider method and
+adds three NOT RUN methods:
+- providerRefusalAndCorruptReadbackAreExplicitNotOsGrantClaims
+- reliablePipePartialAndCloseErrorHaveDeterministicErrorSignal
+- realResolverWithoutManageDocumentsOrUriGrantCannotWriteTestProvider
+
+Direct attachInfo metadata now matches framework DocumentsProvider requirements:
+exported/grant-enabled and MANAGE_DOCUMENTS read/write permission. This corrects
+the initial source's unsupported exported=false/missing-permission metadata; no
+claim the prior test had executed. Provider fault modes include create/write/read
+refusal, corruption, reliable pipe, partial write and error-on-peer-close. The
+owned worker reports bounded signals and closes/joins its own resources; provider
+namespace is disposable/test APK only, never a user's existing document.
+
+The resolver test genuinely attempts an OS-permission-protected open without
+adopting shell identity or acquiring a grant. Positive resolver create/write,
+true URI grant/revocation and real system picker flow require separately authorized
+host/system-owned grant execution. They remain DEFERRED TO HOST, not simulated as
+PASS. Android provider errors represent controlled failure, not real network/OS
+death. Unresponsive third-party provider blocking remains a platform limitation.
+
+Current Block 2 inventory: 33 JVM methods plus four Android methods written. All
+are NOT RUN; prior Block 1 test counts/CI remain separate. None proves coverage.
+
+### Updated M-T01–M-T20 source allocation (no executed PASS)
+
+| ID | Continuation source/proof status |
+| --- | --- |
+| M-T01 | IMPLEMENTED TEST SOURCE — lifecycle verified/cleanup tests reuse sealed real byte hashes; Android canonical source test remains Block 1 |
+| M-T02 | IMPLEMENTED TEST SOURCE — existing observed-byte and budget boundary tests unchanged; native ceiling execution pending |
+| M-T03 | IMPLEMENTED TEST SOURCE — cancellationKeepsExactIdentityAndRequiresResolutionAfterWriterStops; true provider rights deferred |
+| M-T04 | BLOCKED semantic-current-provider/engine proof; captured snapshot remains byte-only identity |
+| M-T05 | IMPLEMENTED TEST SOURCE — expected/unexpected preparation cleanup tests, existing staging faults |
+| M-T06 | BLOCKED — genuine corrupt/protected parser decision requires approved engine |
+| M-T07 | BLOCKED — genuine page/rotation/content/annotation fidelity requires independent semantic validator |
+| M-T08 | IMPLEMENTED TEST SOURCE — verifiedCleanupIsDurableAndAdmissionReopens uses privileged TEST-ONLY validator/destination/copier; not real PDF/grant acceptance |
+| M-T09 | IMPLEMENTED TEST SOURCE — publicFaults... denied/revalidate/open; real negative resolver test; positive OS rights deferred |
+| M-T10 | IMPLEMENTED TEST SOURCE — existing distinct IDs/same name and duplicate callback tests; provider-general alias proof remains gated |
+| M-T11 | IMPLEMENTED TEST SOURCE — partial/close/readback corrupt/short faults, reliable pipe error source; not real network loss |
+| M-T12 | IMPLEMENTED TEST SOURCE — cancellation at active writer and checkpoint, duplicate/late owner disposition; no rollback/retry |
+| M-T13 | IMPLEMENTED TEST SOURCE — everyStateReconstructs..., legacy/v2 anchor, every durability seam, cleaned terminal and mandatory missing files |
+| M-T14 | IMPLEMENTED TEST SOURCE / DEFERRED TO HOST — simulated revalidation/refusal and negative resolver permission, genuine grant transitions not run |
+| M-T15 | IMPLEMENTED TEST SOURCE — no registry calls, source registration/checkpoint APIs unchanged; no new logical output ID |
+| M-T16 | IMPLEMENTED TEST SOURCE — retained quota, cleanup debt/admission separation, prior extreme sizes; engine heap/CPU still BLOCKED |
+| M-T17 | IMPLEMENTED TEST SOURCE / DEFERRED TO HOST — test provider + real resolver denial; positive resolver/picker permission acceptance not fabricated |
+| M-T18 | BLOCKED execution — no-backup/private/test-only placement preserved; release packaging/backup validators NOT RUN |
+| M-T19 | IMPLEMENTED TEST SOURCE — primary/cancel identity and cleanup fault paths, repeat owner resolution, no false COMPLETE |
+| M-T20 | IMPLEMENTED TEST SOURCE — explicit tests never retry callback/public writes; no host/UI/root-WRITE/registry/delete production path |
+
+All 15 original PDF fixtures/manifest remain unchanged. The supplied research is
+recorded with its owner-provided provenance in M_ENGINE_EVALUATION.md, including
+BC CVEs and reachability limitations; no automatic transitive override or engine
+approval inferred. One test-only engine-spike decision sheet is ready for owner
+review; production engine/semantic fidelity remains BLOCKED.
+
+Coverage measurement for M implementations remains NOT CONFIGURED / BLOCKED.
+The existing proposal lists source packages/public class names; an ACTUAL COMPILED
+JaCoCo class denominator cannot be asserted without owner compilation and separate
+build-only approval. No 90%/80% PASS or arbitrary generated exclusions are claimed.
+
+Full diff/whitespace/scope inspection only. BUILD / JVM TESTS / INSTRUMENTATION /
+LINT / COVERAGE / CI / DEVICE-MANUAL / VALIDATORS: **NOT RUN**. Owner should first
+run the existing build/lint/full JVM/CI against the new exact SHA, then separately
+owned API26/27/36 and relevant physical acceptance. The prior SHA's CI does not
+substitute for this revision. No PR, merge, tag, release or production host wiring.

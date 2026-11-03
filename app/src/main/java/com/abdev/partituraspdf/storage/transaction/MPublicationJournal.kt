@@ -10,7 +10,7 @@ internal enum class MState {
     PREPARING, PRIVATE_INPUT_SEALED, PRIVATE_OUTPUT_SEALED, PRIVATE_OUTPUT_VALIDATED,
     PREPARED_FOR_PICKER, PICKER_MAY_HAVE_LAUNCHED, DESTINATION_UNKNOWN,
     DESTINATION_OBSERVED, DESTINATION_BOUND, PUBLISHING, PUBLISHED_UNVERIFIED,
-    READBACK_OBSERVED, VERIFIED_COMMITTED,
+    READBACK_OBSERVED, VERIFIED_COMMITTED, CLEANUP_AUTHORIZED, CLEANED, OWNER_RESOLVED,
 }
 internal data class MRecord(val id: TransactionId, val sequence: Int, val state: MState,
     val previous: String, val legacyAnchor: String, val source: SnapshotEvidence?, val output: SnapshotEvidence?,
@@ -56,7 +56,7 @@ internal fun validMTransition(old: MRecord?, next: MRecord): Boolean {
     if (old.id != next.id || old.plan != next.plan || old.legacyAnchor != next.legacyAnchor || next.sequence != old.sequence + 1) return false
     if (old.source != null && old.source != next.source || old.output != null && old.output != next.output) return false
     if (old.uri != null && (old.uri != next.uri || old.flags != next.flags)) return false
-    if (next.state.ordinal >= MState.DESTINATION_OBSERVED.ordinal && next.uri == null) return false
+    if (next.state in setOf(MState.DESTINATION_OBSERVED, MState.DESTINATION_BOUND, MState.PUBLISHING, MState.PUBLISHED_UNVERIFIED, MState.READBACK_OBSERVED, MState.VERIFIED_COMMITTED, MState.CLEANUP_AUTHORIZED, MState.CLEANED) && next.uri == null) return false
     if (next.state.ordinal < MState.DESTINATION_OBSERVED.ordinal && (next.uri != null || next.flags != 0)) return false
     return when (next.state) {
         MState.PRIVATE_INPUT_SEALED -> old.state == MState.PREPARING && next.source != null && next.output == null
@@ -71,6 +71,10 @@ internal fun validMTransition(old: MRecord?, next: MRecord): Boolean {
         MState.PUBLISHED_UNVERIFIED -> old.state == MState.PUBLISHING
         MState.READBACK_OBSERVED -> old.state == MState.PUBLISHED_UNVERIFIED
         MState.VERIFIED_COMMITTED -> old.state == MState.READBACK_OBSERVED
+        MState.CLEANUP_AUTHORIZED -> old.state == MState.VERIFIED_COMMITTED
+        MState.CLEANED -> old.state == MState.CLEANUP_AUTHORIZED
+        MState.OWNER_RESOLVED -> old.state in setOf(MState.PICKER_MAY_HAVE_LAUNCHED, MState.DESTINATION_UNKNOWN,
+            MState.DESTINATION_OBSERVED, MState.DESTINATION_BOUND, MState.PUBLISHING, MState.PUBLISHED_UNVERIFIED, MState.READBACK_OBSERVED)
         else -> false
     }
 }
@@ -78,7 +82,7 @@ internal fun validMTransition(old: MRecord?, next: MRecord): Boolean {
 /** Separate authenticated v2 sidecar, anchored to the exact unchanged v1 chain (or genesis).
  * Failed/temporary writes are retained and cause subsequent scans to fail closed.
  */
-internal class MPublicationJournal(private val budget: MStorageBudget) {
+internal class MPublicationJournal(private val budget: MStorageBudget, private val dispatcher: CoroutineDispatcher = Dispatchers.IO) {
     private val root get() = budget.root
     private fun tx(id: TransactionId) = root.check(File(root.directory, "tx-${id.value}"))
     private fun anchor(id: TransactionId) = readChain(root, tx(id), id).lastOrNull()?.second ?: RecordCodec.genesis
@@ -99,7 +103,7 @@ internal class MPublicationJournal(private val budget: MStorageBudget) {
     }
     suspend fun append(id: TransactionId, state: MState, plan: String,
                        source: SnapshotEvidence? = null, output: SnapshotEvidence? = null,
-                       uri: String? = null, flags: Int = 0): String? = withContext(Dispatchers.IO) {
+                       uri: String? = null, flags: Int = 0): String? = withContext(dispatcher) {
         root.mutations.withLock {
             try {
                 val tx = tx(id)
@@ -114,10 +118,15 @@ internal class MPublicationJournal(private val budget: MStorageBudget) {
                 val previous = previousFile?.let { RecordCodec.hash(RecordCodec.read(it)) } ?: RecordCodec.genesis
                 val record = MRecord(id, history.size + 1, state, previous, anchor(id), source, output, plan, uri, flags)
                 if (!validMTransition(old, record)) return@withLock null
-                val bytes = MCodec.encode(record)
+                val bytes = try { MCodec.encode(record) } catch (_: IllegalArgumentException) { return@withLock null }
                 val tmp = root.check(File(directory, "${record.sequence.toString().padStart(12, '0')}.tmp"))
                 val final = root.check(File(directory, tmp.name.removeSuffix(".tmp") + ".rec"))
-                budget.reserve(tmp, bytes.size.toLong()); root.create(tmp)
+                budget.reserve(tmp, bytes.size.toLong())
+                try { root.create(tmp) } catch (primary: Throwable) {
+                    try { budget.releaseAbsentReservation(tmp) }
+                    catch (cleanup: Throwable) { if (primary !== cleanup) primary.addSuppressed(cleanup) }
+                    throw primary
+                }
                 withContext(NonCancellable) {
                     root.io.output(tmp).use { it.write(bytes); root.io.syncFile(it) }
                     root.io.renameNew(tmp, final); budget.renamed(tmp, final)

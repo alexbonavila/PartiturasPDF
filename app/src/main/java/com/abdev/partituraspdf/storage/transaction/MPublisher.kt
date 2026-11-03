@@ -14,10 +14,10 @@ internal sealed interface ReadbackResult {
 /** Entry is allowed only after durable PUBLISHING; internal input copy is supplied by workflow
  * from its pinned validated artifact, never by a feature or public path. No verified receipt here.
  */
-internal class NewDocumentPublisher {
+internal class NewDocumentPublisher(private val dispatcher: CoroutineDispatcher = Dispatchers.IO) {
     private val attempts = java.util.Collections.synchronizedMap(java.util.IdentityHashMap<WriteDestinationCapability, Boolean>())
     suspend fun publish(destination: WriteDestinationCapability, expected: SnapshotEvidence,
-                        copy: suspend (OutputStream) -> Unit): ReadbackResult = withContext(Dispatchers.IO) {
+                        copy: suspend (OutputStream) -> Unit): ReadbackResult = withContext(dispatcher) {
         if (attempts.put(destination, true) != null) return@withContext ReadbackResult.Uncertain
         try {
             if (!destination.port.revalidate()) return@withContext ReadbackResult.Uncertain
@@ -28,9 +28,11 @@ internal class NewDocumentPublisher {
         catch (_: SecurityException) { ReadbackResult.Uncertain }
     }
     suspend fun observe(destination: WriteDestinationCapability, expected: SnapshotEvidence): ReadbackResult {
-        if (!destination.port.revalidate()) return ReadbackResult.Unverified
         var actual: SnapshotEvidence? = null
-        try { destination.port.readBack { input -> actual = observeBytes(input, expected.byteCount) } }
+        try {
+            if (!destination.port.revalidate()) return ReadbackResult.Unverified
+            destination.port.readBack { input -> actual = observeBytes(input, expected.byteCount) }
+        }
         catch (t: CancellationException) { throw t }
         catch (_: IOException) { return ReadbackResult.Unverified }
         catch (_: SecurityException) { return ReadbackResult.Unverified }

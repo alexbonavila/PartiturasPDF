@@ -77,3 +77,47 @@ finite local critical sections do not prove all devices respond promptly.
 Block 1 cleanup guarantees are reused, but new session-level exceptional cleanup
 and all provider/journal races still need owner review and tests before acceptance.
 No public UI Save As, integration readiness or safety PASS is claimed.
+
+## Continuation: lifecycle and recovery disposition — 2026-11-03
+
+Baseline 61951a84a1da6e221e9e80d89149ed4b7075504e. This section supersedes the
+initial unresolved-lifetime/terminal-cleanup notes; historical evidence remains.
+
+| State / condition | Possible public creation | May write | Required private files | Admission / explicit disposition |
+| --- | --- | --- | --- | --- |
+| Preparing through validated/prepared | None before an actual launch token escapes | No | Introduced sealed evidence; partial files retained on fault | Rejection completes cleanup before result; releases admission |
+| Durable MAY_HAVE_LAUNCHED, token issued | Yes, unknown | Only after matching callback and binding/publishing ack | Source + output | Retained until completion or explicit owner acknowledgement |
+| Observed/bound | Yes, known candidate | Only one acknowledged PUBLISHING attempt | Source + output | Bad/late/duplicate callback cannot write; resolution serialized |
+| Publishing through readback, incomplete/fault/canceled | Yes, possibly partial | No retry | Source + output, records | Caller cancellation does not grant clean rollback; owner acknowledges only after worker finishes |
+| Verified committed, retained | Yes, verified bytes | No further write | Source + output until cleanup authorized | Independent typed cleanup status; public work done, admission can close |
+| CLEANUP_AUTHORIZED | Verified ancestor required | No | Either file may be absent; every retained file still hash-checked | Append durability before deletion; debt retains quota |
+| CLEANED | Verified + authorized ancestors | No | Both absent by confirmed cleanup | Confirming checkpoint after release; no new receipt from recovery |
+| OWNER_RESOLVED | Uncertainty remains | Never | Retain mandatory artifacts/evidence | Owner explicitly acknowledges; unlock only after serialized operation finishes |
+
+MPreparation.Rejected now incorporates final cleanup outcomes. Its internal
+cleanupFault exposes unexpected cleanup defects without replacing the rejection
+reason; it is not serialized/public/logged. Exception/cancellation primary identity
+is preserved, all owned releases are attempted. Issuance is the boundary: if no
+request escaped prepare, local cleanup/admission release is safe even if a
+conservative launch-intent checkpoint reached disk. Recovery stays conservative.
+
+PublicationResult.VerifiedNewDocument adds independent SnapshotCleanupStatus.
+Durable VERIFIED_COMMITTED is followed by durable CLEANUP_AUTHORIZED BEFORE any
+private deletion, and CLEANED only after actual owners confirm release. Cleanup
+pending retains charges; it no longer retains the writer admission indefinitely.
+Unexpected defects remain exceptions; no invented Released value.
+
+Session acknowledgeUnresolved() is internal and explicit, never timer-triggered.
+It waits for the session mutex, so provider copy/descriptor finally has stopped.
+It returns MOwnerResolution.ACKNOWLEDGED, ALREADY_RESOLVED, or
+ACKNOWLEDGED_RECORD_UNCONFIRMED. The last value permits an explicit owner to end
+in-memory exclusion when corrupt/unconfirmed history prevents the ack checkpoint;
+it does NOT repair/verify/erase that history, authorize replay, or remove artifacts.
+Future callbacks are invalidated and quota retained. Canceling the resolution
+itself propagates and cannot silently imply acknowledgement.
+
+Read-only recovery accepts missing files ONLY with the complete durable
+verified→cleanup-authorized chain. CLEANED with reappearing files blocks. Legacy
+chains still require their evidenced files. Matching provider bytes alone never
+mint a new commit. Old PrivateRecovery remains BLOCKED for sidecars and cannot
+serve as cleanup authority. No v1 bytes or schema semantics rewritten.

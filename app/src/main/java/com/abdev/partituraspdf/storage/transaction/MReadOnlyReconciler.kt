@@ -10,7 +10,7 @@ import java.io.IOException
 internal interface KnownDestinationReader {
     suspend fun readIfAuthorized(opaque: String, consume: suspend (java.io.InputStream) -> Unit): Boolean
 }
-internal enum class MRecoveryStatus { LEGACY_PRIVATE, BLOCKED, DESTINATION_UNKNOWN, NEEDS_OWNER_RESOLUTION, MATCH_OBSERVED, VERIFIED_RECORD_OBSERVED }
+internal enum class MRecoveryStatus { LEGACY_PRIVATE, BLOCKED, DESTINATION_UNKNOWN, NEEDS_OWNER_RESOLUTION, MATCH_OBSERVED, VERIFIED_RECORD_OBSERVED, OWNER_ACKNOWLEDGED }
 internal class MReadOnlyReconciler(private val budget: MStorageBudget,
                                   private val journal: MPublicationJournal, private val reader: KnownDestinationReader) {
     suspend fun inspect(id: TransactionId): MRecoveryStatus = withContext(Dispatchers.IO) {
@@ -21,20 +21,33 @@ internal class MReadOnlyReconciler(private val budget: MStorageBudget,
             val records = journal.read(id)
             if (records.isEmpty()) {
                 val tx = budget.root.check(File(budget.root.directory, "tx-${id.value}"))
-                if (readChain(budget.root, tx, id).isEmpty()) throw JournalFormatException()
+                val legacy = readChain(budget.root, tx, id).lastOrNull()?.first ?: throw JournalFormatException()
+                if (boundedChildren(budget.root, tx, 3).any { it.name !in setOf("journal", "source.sealed", "output.sealed") }) throw JournalFormatException()
+                for ((name, evidence) in listOf("source.sealed" to legacy.source, "output.sealed" to legacy.output)) {
+                    if (evidence != null) {
+                        val file = budget.root.check(File(tx, name))
+                        val ceiling = if (name == "source.sealed") budget.policy.source else budget.policy.output
+                        if (!file.isFile || evidence.byteCount > ceiling || file.length() != evidence.byteCount || budget.root.io.evidence(file) != evidence) throw JournalFormatException()
+                    }
+                }
                 return@withContext MRecoveryStatus.LEGACY_PRIVATE
             }
             val record = records.last()
+            val cleanupAuthorized = record.state in setOf(MState.CLEANUP_AUTHORIZED, MState.CLEANED) &&
+                records.any { it.state == MState.VERIFIED_COMMITTED }
             val tx = budget.root.check(File(budget.root.directory, "tx-${id.value}"))
             if (boundedChildren(budget.root, tx, 4).any { it.name !in setOf("source.sealed", "output.sealed", "journal", "publication") }) throw JournalFormatException()
             for ((name, evidence) in listOf("source.sealed" to record.source, "output.sealed" to record.output)) {
                 if (evidence != null) {
                     val file = budget.root.check(File(tx, name))
+                    if (cleanupAuthorized && budget.root.io.conclusivelyAbsent(file)) continue
+                    if (record.state == MState.CLEANED) throw JournalFormatException()
                     if (!file.isFile || file.length() != evidence.byteCount || evidence.byteCount > (if (name == "source.sealed") budget.policy.source else budget.policy.output) || budget.root.io.evidence(file) != evidence) throw JournalFormatException()
                 }
             }
             record
         } } catch (_: IOException) { return@withContext MRecoveryStatus.BLOCKED }
+        if (latest.state == MState.OWNER_RESOLVED) return@withContext MRecoveryStatus.OWNER_ACKNOWLEDGED
         if (latest.uri == null) return@withContext MRecoveryStatus.DESTINATION_UNKNOWN
         if (latest.state.ordinal < MState.PUBLISHING.ordinal || latest.output == null)
             return@withContext MRecoveryStatus.NEEDS_OWNER_RESOLUTION
@@ -42,7 +55,7 @@ internal class MReadOnlyReconciler(private val budget: MStorageBudget,
         try {
             val available = reader.readIfAuthorized(latest.uri) { matches = observeBytes(it, latest.output.byteCount) == latest.output }
             if (!available || !matches) MRecoveryStatus.NEEDS_OWNER_RESOLUTION
-            else if (latest.state == MState.VERIFIED_COMMITTED) MRecoveryStatus.VERIFIED_RECORD_OBSERVED else MRecoveryStatus.MATCH_OBSERVED
+            else if (latest.state in setOf(MState.VERIFIED_COMMITTED, MState.CLEANUP_AUTHORIZED, MState.CLEANED)) MRecoveryStatus.VERIFIED_RECORD_OBSERVED else MRecoveryStatus.MATCH_OBSERVED
         } catch (t: CancellationException) { throw t }
         catch (_: IOException) { MRecoveryStatus.NEEDS_OWNER_RESOLUTION }
         catch (_: SecurityException) { MRecoveryStatus.NEEDS_OWNER_RESOLUTION }

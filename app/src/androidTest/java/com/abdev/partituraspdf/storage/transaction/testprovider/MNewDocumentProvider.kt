@@ -10,12 +10,19 @@ import android.provider.DocumentsProvider
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
+import kotlinx.coroutines.*
 
 /** Disposable test APK namespace only. Never registered in the production application. */
 class MNewDocumentProvider : DocumentsProvider() {
     companion object { const val AUTHORITY = "com.abdev.partituraspdf.test.m.newdocument" }
     private lateinit var directory: File
     private val pending = mutableSetOf<String>()
+    enum class Fault { NONE, CREATE_DENIED, WRITE_DENIED, READ_DENIED, CORRUPT_READBACK, PARTIAL_WRITE, CLOSE_ERROR, PIPE }
+    @Volatile var fault = Fault.NONE
+    val writeObserved = CompletableDeferred<Unit>()
+    @Volatile var workerFailure: Throwable? = null
+    private val workers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val pipes = java.util.Collections.synchronizedList(mutableListOf<ParcelFileDescriptor>())
     override fun onCreate(): Boolean {
         directory = File(requireNotNull(context).noBackupFilesDir, "m-provider-${UUID.randomUUID()}")
         return directory.mkdir()
@@ -44,6 +51,7 @@ class MNewDocumentProvider : DocumentsProvider() {
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor =
         MatrixCursor(projection ?: arrayOf(Document.COLUMN_DOCUMENT_ID))
     @Synchronized override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
+        if (fault == Fault.CREATE_DENIED) throw FileNotFoundException("Create refused")
         if (pending.size >= 16 || directory.listFiles()?.size?.let { it >= 16 } != false || parentDocumentId != "root" || mimeType != "application/pdf") throw FileNotFoundException()
         val id = UUID.randomUUID().toString()
         if (!File(directory, id).createNewFile()) throw FileNotFoundException()
@@ -53,11 +61,50 @@ class MNewDocumentProvider : DocumentsProvider() {
     @Synchronized override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor {
         signal?.throwIfCanceled()
         val f = file(documentId)
-        if (mode == "r") return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
+        if (mode == "r") {
+            if (fault == Fault.READ_DENIED) throw FileNotFoundException("Read refused")
+            if (fault == Fault.CORRUPT_READBACK) f.writeBytes(byteArrayOf(9))
+            return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
+        }
+        if (fault == Fault.WRITE_DENIED) throw FileNotFoundException("Write refused")
         if (mode != "w" || f.length() != 0L || !pending.remove(documentId)) throw FileNotFoundException()
+        val activeFault = fault
+        if (activeFault in setOf(Fault.PARTIAL_WRITE, Fault.CLOSE_ERROR, Fault.PIPE)) {
+            val pipe = ParcelFileDescriptor.createReliablePipe()
+            pipes.add(pipe[0]); pipes.add(pipe[1])
+            workers.launch {
+                try {
+                    ParcelFileDescriptor.AutoCloseInputStream(pipe[0]).use { input ->
+                        f.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024); var total = 0L
+                            while (true) {
+                                val n = input.read(buffer); if (n < 0) break
+                                if (n == 0 || n > 128L * 1024 * 1024 - total) throw java.io.IOException("Bound exceeded")
+                                if (activeFault == Fault.PARTIAL_WRITE) {
+                                    output.write(buffer, 0, 1)
+                                    pipe[0].closeWithError("Injected partial write"); return@launch
+                                }
+                                output.write(buffer, 0, n); total += n
+                                if (activeFault == Fault.CLOSE_ERROR) {
+                                    pipe[0].closeWithError("Injected close error"); return@launch
+                                }
+                            }
+                        }
+                    }
+                } catch (failure: java.io.IOException) { workerFailure = failure }
+                finally {
+                    try { pipe[0].close() } catch (failure: java.io.IOException) { workerFailure = failure }
+                    finally { writeObserved.complete(Unit) }
+                }
+            }
+            return pipe[1]
+        }
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_WRITE_ONLY)
     }
     override fun shutdown() {
+        val owned = synchronized(pipes) { pipes.toList() }
+        for (fd in owned) try { fd.close() } catch (failure: java.io.IOException) { workerFailure = failure }
+        runBlocking { workers.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin() }
         if (::directory.isInitialized) {
             directory.listFiles()?.filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }?.forEach { it.delete() }
             directory.delete()

@@ -9,13 +9,17 @@ import android.os.ParcelFileDescriptor
 import kotlinx.coroutines.*
 import java.io.IOException
 
+internal fun interface MSourceCapturer {
+    suspend fun captureForTransaction(source: SnapshotSource, limits: SnapshotCaptureLimits, transaction: TransactionId): SnapshotCaptureResult
+}
+
 /** Uses openRead, including pipe input. No provider metadata/seekable copy is trusted as a seal. */
 internal class TransactionSnapshotCapturer(
     private val access: DocumentReadAccess,
     private val store: PrivateSnapshotStore,
-) : SnapshotCapturer {
+) : SnapshotCapturer, MSourceCapturer {
     override suspend fun capture(source: SnapshotSource, limits: SnapshotCaptureLimits): SnapshotCaptureResult = captureOwned(source, limits, null)
-    internal suspend fun captureForTransaction(source: SnapshotSource, limits: SnapshotCaptureLimits, transaction: TransactionId): SnapshotCaptureResult =
+    override suspend fun captureForTransaction(source: SnapshotSource, limits: SnapshotCaptureLimits, transaction: TransactionId): SnapshotCaptureResult =
         captureOwned(source, limits, transaction)
     private suspend fun captureOwned(source: SnapshotSource, limits: SnapshotCaptureLimits, transaction: TransactionId?): SnapshotCaptureResult =
         store.produce(SnapshotOrigin.Source(source), minOf(limits.maxInputBytes, store.budget.policy.source), "source", transaction) { writer ->

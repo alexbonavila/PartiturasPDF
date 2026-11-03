@@ -17,7 +17,8 @@ internal interface NewDestinationPort {
 }
 sealed interface PublicationResult {
     data class VerifiedNewDocument(val destination: StorageDocumentRef, val evidence: SnapshotEvidence,
-                                   val checkpoint: String) : PublicationResult
+                                   val checkpoint: String,
+                                   val cleanup: SnapshotCleanupStatus = SnapshotCleanupStatus.COMPLETE) : PublicationResult
     data object RejectedBeforePublicEffect : PublicationResult
     data object UnverifiedDestination : PublicationResult
     data object UncertainPublication : PublicationResult

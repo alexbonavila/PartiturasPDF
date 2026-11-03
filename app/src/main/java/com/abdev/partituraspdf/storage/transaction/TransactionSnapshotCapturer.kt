@@ -14,8 +14,11 @@ internal class TransactionSnapshotCapturer(
     private val access: DocumentReadAccess,
     private val store: PrivateSnapshotStore,
 ) : SnapshotCapturer {
-    override suspend fun capture(source: SnapshotSource, limits: SnapshotCaptureLimits): SnapshotCaptureResult =
-        store.produce(SnapshotOrigin.Source(source), minOf(limits.maxInputBytes, store.budget.policy.source), "source") { writer ->
+    override suspend fun capture(source: SnapshotSource, limits: SnapshotCaptureLimits): SnapshotCaptureResult = captureOwned(source, limits, null)
+    internal suspend fun captureForTransaction(source: SnapshotSource, limits: SnapshotCaptureLimits, transaction: TransactionId): SnapshotCaptureResult =
+        captureOwned(source, limits, transaction)
+    private suspend fun captureOwned(source: SnapshotSource, limits: SnapshotCaptureLimits, transaction: TransactionId?): SnapshotCaptureResult =
+        store.produce(SnapshotOrigin.Source(source), minOf(limits.maxInputBytes, store.budget.policy.source), "source", transaction) { writer ->
             val handle = when (val opened = access.openRead(source.storage)) {
                 is Outcome.Success -> opened.value
                 is Outcome.Failure -> throw StorageFault(map(opened.error))

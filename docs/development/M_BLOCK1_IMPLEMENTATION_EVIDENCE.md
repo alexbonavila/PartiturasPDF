@@ -315,3 +315,12 @@ Block 1 Android methods, all NOT RUN. Full diff/whitespace inspection only;
 BUILD / TESTS / INSTRUMENTATION / LINT / COVERAGE / CI: NOT RUN. Compilation and
 complete Block 1 CI remain unverified until the owner reruns checks. No Block 2,
 protected-package, dependency, Gradle or gate changes.
+
+## Block 2 internal capture adaptation — 2026-11-03
+
+New captureForTransaction and the store's optional internal transaction argument
+place source.sealed beside output.sealed for actual journal/recovery binding.
+Default SnapshotCapturer.capture and all public Block 1 contracts remain unchanged;
+no existing tests or v1 codec/appendPrivate changed. This is a necessary internal
+consumer adaptation, not a new Block 1 PASS or rewrite of owner-reported CI #124.
+All Block 2 validation remains NOT RUN; see M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md.

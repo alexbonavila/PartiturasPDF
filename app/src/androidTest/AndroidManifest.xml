@@ -10,5 +10,16 @@
             android:name="com.abdev.partituraspdf.app.integration.CanonicalPdfContentProvider"
             android:authorities="com.abdev.partituraspdf.test.integration.pdf"
             android:exported="true" />
+        <!-- Phase M disposable DocumentsProvider, test APK only; access requires explicit URI grants. -->
+        <provider
+            android:name="com.abdev.partituraspdf.storage.transaction.testprovider.MNewDocumentProvider"
+            android:authorities="com.abdev.partituraspdf.test.m.newdocument"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 </manifest>

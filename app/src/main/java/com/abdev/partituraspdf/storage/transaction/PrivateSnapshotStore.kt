@@ -95,9 +95,10 @@ internal class PrivateSnapshotStore(
         }
     }
 
-    private fun createWriter(maximum: Long, prefix: String, origin: SnapshotOrigin): Writer {
-        val directory = if (origin is SnapshotOrigin.Produced) {
-            root.check(File(root.directory, "tx-${origin.transactionId.value}")).also {
+    private fun createWriter(maximum: Long, prefix: String, origin: SnapshotOrigin, transaction: TransactionId?): Writer {
+        val id = (origin as? SnapshotOrigin.Produced)?.transactionId ?: transaction
+        val directory = if (id != null) {
+            root.check(File(root.directory, "tx-${id.value}")).also {
                 if (!it.exists()) {
                     if (!it.mkdir()) throw IOException("Private transaction unavailable")
                     root.io.syncDirectory(it); root.io.syncDirectory(root.directory)
@@ -125,10 +126,10 @@ internal class PrivateSnapshotStore(
 
     /** One block owns one sequential writer; no writable alias escapes successful finish. */
     suspend fun stage(transaction: TransactionId, producer: suspend (Writer) -> Unit): SnapshotCaptureResult =
-        produce(SnapshotOrigin.Produced(transaction), budget.policy.output, "output", producer)
+        produce(SnapshotOrigin.Produced(transaction), budget.policy.output, "output", producer = producer)
 
     internal suspend fun produce(
-        origin: SnapshotOrigin, maximum: Long, prefix: String,
+        origin: SnapshotOrigin, maximum: Long, prefix: String, transaction: TransactionId? = null,
         producer: suspend (Writer) -> Unit,
     ): SnapshotCaptureResult {
         require(prefix == "source" || prefix == "output")
@@ -141,7 +142,7 @@ internal class PrivateSnapshotStore(
         var cleanupPending = false
         try {
             val result = withContext(dispatcher) {
-                val owned = sealMutex.withLock { createWriter(maximum, prefix, origin) }.also { writer = it }
+                val owned = sealMutex.withLock { createWriter(maximum, prefix, origin, transaction) }.also { writer = it }
                 producer(owned)
                 currentCoroutineContext().ensureActive()
                 owned.finish(origin).also { snapshot = it }

@@ -699,3 +699,29 @@ Android code/evidence schema, dependencies, CI and immutable fixtures unchanged.
 Source/full diff review and git diff --check only. BUILDS / JVM / ANDROID / PYTHON
 TESTS / LINT / COVERAGE / DEPENDENCY INSTALLATION / ADB / DEVICE / CI: **NOT RUN**.
 No compatibility/fidelity/security/production approval or Phase M completion claim.
+
+
+## CI #133 localization-job Python dependency setup — 2026-11-03
+
+Owner-verified run https://github.com/alexbonavila/PartiturasPDF/actions/runs/41708721201
+at baseline `27bb2caf9d1470f724a6a108e24f6e155cf67bcd`: both attempts failed in
+localization's `python -m unittest discover -s scripts/tests -v`. Discovery found
+516 tests with 12 errors caused by unavailable fitz (PyMuPDF), pypdf and PIL
+(Pillow). Android, JVM, build, Lint and PDF-fixture jobs passed, per owner evidence.
+These are historical results supplied by the owner, not new Codex CI/log access.
+
+The pdf-fixtures job already installs the existing Python-only fixture requirements;
+localization did not, despite discovering the new independent-PDF verifier tests.
+Only localization setup now adds pip caching keyed by
+`test-fixtures/requirements-fixtures.txt` and installs that same requirements file
+before unchanged unittest discovery and localization validation. Python 3.12,
+pinned actions, all test assertions, strict failures, mandatory jobs and quality
+gates are unchanged. No test skipping, collector/verifier workaround, new dependency
+specification, Android/production dependency or other workflow-job change.
+
+Exact scope: `.github/workflows/ci.yml` and this ledger. Complete diff/source review
+and `git diff --check` only. BUILDS / PYTHON TESTS / ANDROID TESTS / LINT / COVERAGE /
+DEPENDENCY INSTALLATION / CI: **NOT RUN** for this correction. Owner must run CI at
+the new published SHA. Passing dependency setup or CI alone does not establish
+verifier acceptance or independent PDF fidelity; separate owner-run collection,
+structural/rotated visual evidence, and remaining engine gates stay outstanding.

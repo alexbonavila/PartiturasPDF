@@ -152,6 +152,9 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: test-fixtures/requirements-fixtures.txt
+      - run: python -m pip install -r test-fixtures/requirements-fixtures.txt
       - run: python -m unittest discover -s scripts/tests -v
       - run: python scripts/validate_localization.py
 

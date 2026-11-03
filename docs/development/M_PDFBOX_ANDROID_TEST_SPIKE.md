@@ -22,11 +22,13 @@ Source organization is not proof of final binary isolation.
 Fixtures come from the existing test APK assets and unchanged canonical manifest.
 Every operation copies its source to a unique target-app `noBackupFilesDir`
 `m-pdfbox-spike-<UUID>` child. Fixture assets use `instrumentation.context.assets`;
-`PDFBoxResourceLoader.init(testContext)` uses the instrumentation context, while
-private storage uses `instrumentation.targetContext.applicationContext`. Before
+`PDFBoxResourceLoader.init(pdfboxAssetContext)` uses a private `ContextWrapper`
+based on `testContext`, with `getApplicationContext()` returning the wrapper itself.
+Inherited asset access delegates to the instrumentation APK. Private storage uses
+`instrumentation.targetContext.applicationContext`. Before
 creating the namespace, a two-asset, one-byte-per-asset preflight checks nonempty
 `glyphlist/additional.txt` and `glyphlist/glyphlist.txt` under the PDFBox resource
-prefix using `testContext.applicationContext.assets`, exactly matching the loader.
+prefix using `pdfboxAssetContext.applicationContext.assets`, exactly matching the loader.
 Missing/empty assets fail explicitly with asset and context/package diagnostics;
 no target-storage copy or replacement glyph lists. Candidate calls follow init.
 Only flat, test-owned files are eligible for deletion;
@@ -336,3 +338,46 @@ Full diff/source-scope inspection and `git diff --check` only. BUILD / JVM / AND
 INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE / PROJECT VALIDATORS: **NOT RUN**
 for this correction. Owner must validate packaging/preflight and the complete
 API26/27/36 suite on the new publication SHA. All prior gate limitations remain.
+
+## CI #130 instrumentation application-context correction — 2026-11-03
+
+Owner-provided run: https://github.com/alexbonavila/PartiturasPDF/actions/runs/41677282609
+at `ddb3b90e6072abbdbd424beabcc90514144fb44c`. Build, JVM (708 PASS), Lint,
+localization and fixtures PASS; API26/27/36 and quality-gate FAIL. Each Android API
+executed 464 tests: 445 existing tests PASS, all 19 candidate tests FAIL during
+sandbox construction. No new transformation/fidelity failure is established.
+These results are owner evidence, not CI/log access or execution by Codex.
+
+The exact failure was `IllegalStateException: PDFBox resource application context
+unavailable for com.abdev.partituraspdf.test`. The instrumentation context's
+applicationContext was null on all three APIs; the CI #129 correction therefore
+failed before checking resource availability. Passing testContext directly cannot
+satisfy upstream init's `context.getApplicationContext().getAssets()` contract.
+
+The private harness now uses this test-only adapter:
+
+```kotlin
+private val pdfboxAssetContext: Context = object : ContextWrapper(testContext) {
+    override fun getApplicationContext(): Context = this
+}
+```
+
+Inherited getAssets delegates to testContext. Both the two-glyph-list preflight
+and `PDFBoxResourceLoader.init(pdfboxAssetContext)` select that same instrumentation
+asset manager, without accessing testContext.applicationContext or changing any
+global context. Missing/empty assets retain explicit path/instrumentation-package
+diagnostics and the original IOException cause. Streams still close after the
+bounded nonempty check. Preflight precedes mkdir; post-mkdir init failure still
+preserves its primary exception and suppressed cleanup failures.
+
+Fixture access remains testContext.assets; targetContext.noBackupFilesDir, quotas,
+namespace ownership and teardown are unchanged. All 19 test methods, assertions,
+negative cases and semantic expectations remain enabled and unmodified. No
+production, dependency/build, manifest, permission, fixture or CI change.
+
+Full diff/source review and `git diff --check` only. BUILD / JVM / ANDROID /
+INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE / VALIDATORS: **NOT RUN** for this
+correction. Actual glyph-list presence in the built test APK remains unverified;
+owner must run complete CI at the new SHA. No compatibility, security, fidelity,
+production-engine approval or Block 2 completion is claimed. Prior evidence and
+all remaining gates are preserved.

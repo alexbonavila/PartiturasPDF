@@ -603,3 +603,35 @@ Full diff and git diff --check reviewed. BUILD / JVM / ANDROID INSTRUMENTATION /
 LINT / COVERAGE / CI / DEVICE / PROJECT VALIDATORS: **NOT RUN**. Owner runs complete
 CI at the new exact SHA; actual test-APK resource availability and API26/27/36
 compatibility remain pending. No Block 2 completion or production engine approval.
+
+## CI #130 PDFBox instrumentation asset wrapper — 2026-11-03
+
+Owner-provided run https://github.com/alexbonavila/PartiturasPDF/actions/runs/41677282609
+at `ddb3b90e6072abbdbd424beabcc90514144fb44c`: build, JVM (708 PASS), Lint,
+localization and fixtures PASS; API26/27/36 and quality-gate FAIL. Each API executed
+464 tests: all 445 existing tests PASS; all 19 candidate tests FAIL before functional
+execution. No independent CI access or runtime execution by Codex.
+
+Confirmed cause: instrumentation testContext.applicationContext is null on all
+three APIs. CI #129's checkNotNull failed before glyph-list access, with
+`PDFBox resource application context unavailable for com.abdev.partituraspdf.test`.
+Upstream init dereferences getApplicationContext().getAssets(), so direct
+init(testContext) is insufficient. This is not yet a PDF semantic incompatibility.
+
+The private sandbox now wraps testContext in `object : ContextWrapper(testContext)`
+whose `override fun getApplicationContext(): Context = this`. Inherited assets
+delegate to testContext. Preflight uses pdfboxAssetContext.applicationContext.assets;
+PDFBox init receives that same wrapper. Missing/empty resources fail with their
+path and instrumentation package, preserving the original exception cause.
+No fallback, synthetic glyph lists or global context mutation. Preflight remains
+before directory creation; existing primary/suppressed cleanup handling is unchanged.
+Target-private noBackupFilesDir ownership, fixture access and quotas stay intact.
+
+Exactly PdfboxSpikeSandbox.kt and the two authorized documents change. All 19 tests
+and assertions, instrumentation-only dependency, manifests, production and existing
+tests remain unchanged. See [correction details](M_PDFBOX_ANDROID_TEST_SPIKE.md#ci-130-instrumentation-application-context-correction--2026-11-03).
+
+Full diff and git diff --check reviewed. BUILD / JVM / ANDROID INSTRUMENTATION /
+LINT / COVERAGE / CI / DEVICE / VALIDATORS: **NOT RUN**. Actual test-APK glyph assets
+and API26/27/36 behavior require owner CI at the published correction SHA. No
+production approval, engine evaluation PASS or Block 2 completion is inferred.

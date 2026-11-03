@@ -1,5 +1,7 @@
 package com.abdev.partituraspdf.pdf.engine.spike
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
@@ -29,6 +31,10 @@ internal class SpikeOutputLimit : IOException("Disposable output limit exceeded"
 internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val testContext = instrumentation.context
+    // Test-only asset adapter: ContextWrapper delegates assets to the instrumentation APK.
+    private val pdfboxAssetContext: Context = object : ContextWrapper(testContext) {
+        override fun getApplicationContext(): Context = this
+    }
     private val targetContext = instrumentation.targetContext.applicationContext
     private val assets = testContext.assets // Fixtures belong to the test APK.
     private val root = File(targetContext.noBackupFilesDir, "m-pdfbox-spike-${UUID.randomUUID()}")
@@ -47,10 +53,7 @@ internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
         require(case.matches(Regex("[A-Za-z0-9]+")))
         // PDFBox init uses getApplicationContext().getAssets(), not the supplied context's assets.
         // Check that exact manager before text-engine static initialization or filesystem ownership.
-        val loaderApplication = checkNotNull(testContext.applicationContext) {
-            "PDFBox resource application context unavailable for ${testContext.packageName}"
-        }
-        val loaderAssets = loaderApplication.assets
+        val loaderAssets = pdfboxAssetContext.applicationContext.assets
         for (path in listOf(
             "com/tom_roush/pdfbox/resources/glyphlist/additional.txt",
             "com/tom_roush/pdfbox/resources/glyphlist/glyphlist.txt",
@@ -61,14 +64,14 @@ internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
                 }
             } catch (failure: IOException) {
                 throw IOException(
-                    "Required PDFBox asset $path unavailable or empty via application package " +
-                        "${loaderApplication.packageName} (instrumentation ${testContext.packageName})",
+                    "Required PDFBox asset $path unavailable or empty via instrumentation package " +
+                        testContext.packageName,
                     failure,
                 )
             }
         }
         check(root.mkdir()) { "Disposable spike namespace unavailable" }
-        try { PDFBoxResourceLoader.init(testContext) }
+        try { PDFBoxResourceLoader.init(pdfboxAssetContext) }
         catch (failure: Throwable) {
             try {
                 if (!root.delete()) throw IOException("Initialization cleanup pending")

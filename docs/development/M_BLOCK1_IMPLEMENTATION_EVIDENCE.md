@@ -255,3 +255,40 @@ BUILD / JVM TESTS / ANDROID INSTRUMENTATION / LINT / COVERAGE / CI / VALIDATORS:
 **NOT RUN**. API26/fsync/provider behavior and coverage-scope limitations from
 the original delivery remain pending. This correction is committed locally only;
 publication requires a separate explicit owner authorization. No Block 2 work.
+
+## Targeted exception/cleanup correction — 2026-11-03
+
+Baseline: `d20e46d3aa601ae3d9334c953ae4cb61ee6c0e21`.
+Only PrivateSnapshotStore, its existing JVM test file and this ledger change.
+The finally boundary now catches secondary cleanup failures (including exceptional
+awaitReleased), retains the primary object and suppresses secondary failures.
+Expected rejections keep their reason and report PENDING if cleanup cannot be
+confirmed. Absence-probe cleanup is similarly guarded; self-suppression cannot
+replace an original exception. No shared result/API or architectural changes.
+
+Unexpected owner-worker defects complete the detached release deferred
+exceptionally without rethrowing from launch. They remain observable on repeated
+awaitReleased calls, not converted to Released or silently successful cleanup.
+Caller wait cancellation still does not own/cancel cleanup. Artifact/quota release
+still requires confirmed deletion; injected pre-unlink defects retain both.
+
+Five deterministic JVM regression methods added (source only, NOT RUN):
+
+- primaryRejectionSurvivesUnexpectedAbsenceCleanupException
+- primaryDefectSurvivesUnexpectedWriterCleanupByIdentity
+- cancellationAfterSealingSurvivesExceptionalOwnerCleanup
+- unexpectedWorkerFailureIsAwaitableWithoutUnhandledLaunchFailure
+- expectedRejectionRemainsPendingAfterUnexpectedWriterCleanup
+
+The cancellation test cancels exactly at final sealed-file verification to exercise
+an undelivered owner and its exceptional cleanup inside produce's finally. It
+requires the exact original CancellationException, retained bytes/charge and no
+unhandled worker failure. The worker test uses an independently owned supervisor
+scope/exception handler, observes exceptional release twice and joins the scope;
+coroutine stack-trace recovery may wrap the secondary worker exception, so it
+accepts that original as identity or direct cause. Existing assertions stay enabled.
+
+Full diff and git diff --check inspected. BUILD / JVM TESTS / INSTRUMENTATION /
+LINT / COVERAGE / CI / VALIDATORS: **NOT RUN**, as required. The test source has
+not been compiled; all earlier API26/provider/durability/coverage acceptance gaps
+remain. Local commit only, no push, PR, merge, main changes or Block 2 work.

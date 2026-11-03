@@ -14,10 +14,16 @@ class PrivateSnapshotStoreTest {
     @get:Rule val temporary = TemporaryFolder()
     private class Io : PrivateIo {
         var deletesFail = false
+        var unexpectedDelete: Throwable? = null
+        var unexpectedAbsence: Throwable? = null
+        var evidenceReads = 0
+        var onSealedReread: (() -> Unit)? = null
         var createFault: String? = null
         var absenceUnknown = false
-        override fun conclusivelyAbsent(file: File): Boolean =
-            if (absenceUnknown) false else java.nio.file.Files.notExists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        override fun conclusivelyAbsent(file: File): Boolean {
+            unexpectedAbsence?.let { throw it }
+            return if (absenceUnknown) false else java.nio.file.Files.notExists(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        }
         override fun create(file: File): Boolean {
             if (createFault == "absent") throw IOException("Injected before creation")
             if (createFault == "present") {
@@ -31,7 +37,9 @@ class PrivateSnapshotStoreTest {
         var evidenceFault = false
         override fun evidence(file: File): com.abdev.partituraspdf.core.document.SnapshotEvidence {
             if (evidenceFault) throw IOException("Injected reread")
-            return digest(file)
+            val result = digest(file)
+            if (++evidenceReads == 2) onSealedReread?.invoke()
+            return result
         }
         override fun output(file: File): FileOutputStream = object : FileOutputStream(file) {
             override fun write(bytes: ByteArray, offset: Int, length: Int) {
@@ -52,7 +60,7 @@ class PrivateSnapshotStoreTest {
         override fun renameNew(from: File, to: File) {
             if (to.exists() || !from.renameTo(to)) throw IOException("No replace")
         }
-        override fun delete(file: File) { if (deletesFail || !file.delete()) throw IOException("Retained") }
+        override fun delete(file: File) { unexpectedDelete?.let { throw it }; if (deletesFail || !file.delete()) throw IOException("Retained") }
         override fun openLease(file: File): SnapshotLeasePort = object : SnapshotLeasePort {
             override val descriptor: android.os.ParcelFileDescriptor get() = error("JVM test never reads Android FD")
             override fun close() { closes++ }
@@ -193,6 +201,106 @@ class PrivateSnapshotStoreTest {
         assertEquals(SnapshotFailure.InputLimitExceeded, result.reason)
         assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
         assertTrue(budget.used() > 0)
+    }
+
+    @Test fun primaryRejectionSurvivesUnexpectedAbsenceCleanupException() = runTest {
+        val cleanup = IllegalStateException("Unexpected absence probe")
+        val io = Io().apply { createFault = "absent"; unexpectedAbsence = cleanup }
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
+        val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
+        val result = store.stage(TransactionId(UUID.randomUUID().toString())) { fail("No producer expected") }
+            as SnapshotCaptureResult.Rejected
+        assertEquals(SnapshotFailure.SealFailure, result.reason)
+        assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
+        assertTrue(budget.used() > 0)
+    }
+    @Test fun primaryDefectSurvivesUnexpectedWriterCleanupByIdentity() = runTest {
+        val primary = IllegalArgumentException("Primary defect")
+        val cleanup = IllegalStateException("Unexpected unlink")
+        val io = Io().apply { unexpectedDelete = cleanup }
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
+        val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
+        try {
+            store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(byteArrayOf(1)); throw primary }
+            fail("Primary defect must propagate")
+        } catch (caught: IllegalArgumentException) {
+            assertSame(primary, caught)
+            assertTrue(caught.suppressed.any { it === cleanup })
+            assertTrue(caught.suppressed.any { it is SnapshotCleanupPendingException })
+        }
+        assertTrue(budget.used() > 0)
+    }
+    @Test fun cancellationAfterSealingSurvivesExceptionalOwnerCleanup() = runTest {
+        val cancellation = CancellationException("Original cancellation")
+        val cleanup = IllegalStateException("Unexpected owner cleanup")
+        val unhandled = mutableListOf<Throwable>()
+        val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined +
+            CoroutineExceptionHandler { _, error -> unhandled += error })
+        try {
+            val io = Io().apply { unexpectedDelete = cleanup }
+            val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
+            val store = PrivateSnapshotStore(budget, cleanupScope, Dispatchers.Unconfined)
+            // Cancel exactly at the second/final verification; minting returns into a canceled
+            // withContext, so produce must close the never-delivered snapshot in its finally.
+            val operation = launch {
+                val operationJob = currentCoroutineContext()[Job]!!
+                io.onSealedReread = { operationJob.cancel(cancellation) }
+                try {
+                    store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(byteArrayOf(1)) }
+                    fail("Canceled handoff must not return Captured")
+                } catch (caught: CancellationException) {
+                    assertSame(cancellation, caught)
+                    assertTrue(caught.suppressed.any { it === cleanup || it.cause === cleanup })
+                    assertTrue(caught.suppressed.any { it is SnapshotCleanupPendingException })
+                    throw caught
+                }
+            }
+            operation.join()
+            assertTrue(operation.isCancelled)
+            assertEquals(1L, budget.used())
+            assertEquals(1, boundedFiles(budget.root).size)
+            assertTrue(unhandled.isEmpty())
+        } finally { cleanupScope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+    @Test fun unexpectedWorkerFailureIsAwaitableWithoutUnhandledLaunchFailure() = runTest {
+        val cleanup = IllegalStateException("Unexpected cleanup worker defect")
+        val unhandled = mutableListOf<Throwable>()
+        val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined +
+            CoroutineExceptionHandler { _, error -> unhandled += error })
+        try {
+            val io = Io()
+            val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io))
+            val store = PrivateSnapshotStore(budget, cleanupScope, Dispatchers.Unconfined)
+            val snapshot = (store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(byteArrayOf(1)) }
+                as SnapshotCaptureResult.Captured).snapshot
+            io.unexpectedDelete = cleanup
+            snapshot.requestClose()
+            repeat(2) {
+                try {
+                    snapshot.awaitReleased()
+                    fail("Uncertain cleanup must never return Released")
+                } catch (caught: IllegalStateException) {
+                    assertTrue(caught === cleanup || caught.cause === cleanup)
+                }
+            }
+            assertTrue(unhandled.isEmpty())
+            assertTrue(cleanupScope.coroutineContext[Job]!!.isActive)
+            assertEquals(1L, budget.used())
+            assertEquals(1, boundedFiles(budget.root).size)
+        } finally { cleanupScope.coroutineContext[Job]!!.cancelAndJoin() }
+    }
+
+    @Test fun expectedRejectionRemainsPendingAfterUnexpectedWriterCleanup() = runTest {
+        val io = Io().apply { unexpectedDelete = IllegalStateException("Unexpected unlink") }
+        val budget = MStorageBudget(PrivateRoot(File(temporary.root.canonicalFile, "root"), io), MStoragePolicy(output = 1))
+        val store = PrivateSnapshotStore(budget, backgroundScope, Dispatchers.Unconfined)
+        val result = store.stage(TransactionId(UUID.randomUUID().toString())) {
+            it.write(byteArrayOf(1)); it.write(byteArrayOf(2))
+        } as SnapshotCaptureResult.Rejected
+        assertEquals(SnapshotFailure.InputLimitExceeded, result.reason)
+        assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
+        assertEquals(1L, budget.used())
+        assertEquals(1, boundedFiles(budget.root).size)
     }
 
 }

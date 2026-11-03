@@ -57,7 +57,7 @@ internal class PrivateSnapshotStore(
             catch (t: Throwable) { primary = t; throw t }
             finally { try { stream.close() } catch (t: Throwable) {
                 closeUnconfirmed = true
-                if (primary != null) primary.addSuppressed(t) else throw t
+                if (primary != null) primary.suppressCleanup(t) else throw t
             } }
             if (count == 0L) throw StorageFault(SnapshotFailure.SealFailure)
             currentCoroutineContext().ensureActive()
@@ -83,13 +83,13 @@ internal class PrivateSnapshotStore(
                 terminal = true
                 try { stream.close() } catch (t: Throwable) {
                     closeUnconfirmed = true
-                    primary?.addSuppressed(t)
+                    primary?.suppressCleanup(t)
                 }
             }
             if (closeUnconfirmed) return true // Retain bytes/charge while resource release is uncertain.
             return try { store.budget.deleteOwned(file); false }
             catch (t: Throwable) {
-                if (primary != null) primary.addSuppressed(t) else throw t
+                if (primary != null) primary.suppressCleanup(t) else throw t
                 true
             }
         }
@@ -114,10 +114,11 @@ internal class PrivateSnapshotStore(
             return Writer(this, part, maximum, root.io.output(part))
         } catch (t: Throwable) {
             // Never delete a file whose creation/ownership was not confirmed.
-            val pending = if (created) {
-                try { budget.deleteOwned(part); false } catch (c: Throwable) { t.addSuppressed(c); true }
-            } else !budget.releaseAbsentReservation(part)
-            if (pending) t.addSuppressed(SnapshotCleanupPendingException())
+            val pending = try {
+                if (created) { budget.deleteOwned(part); false }
+                else !budget.releaseAbsentReservation(part)
+            } catch (cleanup: Throwable) { t.suppressCleanup(cleanup); true }
+            if (pending) t.suppressCleanup(SnapshotCleanupPendingException())
             throw t
         }
     }
@@ -161,14 +162,23 @@ internal class PrivateSnapshotStore(
                 else -> throw t
             }
         } finally {
-            if (!handedOff) withContext(NonCancellable + dispatcher) {
-                val owner = snapshot
-                if (owner != null) {
-                    owner.requestClose()
-                    cleanupPending = owner.awaitReleased() is SnapshotReleaseResult.CleanupPending || cleanupPending
-                } else cleanupPending = (writer?.discard(primary) ?: false) || cleanupPending
+            if (!handedOff) {
+                try {
+                    withContext(NonCancellable + dispatcher) {
+                        val owner = snapshot
+                        if (owner != null) {
+                            owner.requestClose()
+                            cleanupPending = owner.awaitReleased() is SnapshotReleaseResult.CleanupPending || cleanupPending
+                        } else cleanupPending = (writer?.discard(primary) ?: false) || cleanupPending
+                    }
+                } catch (cleanup: Throwable) {
+                    cleanupPending = true
+                    val original = primary
+                    if (original == null) throw cleanup
+                    original.suppressCleanup(cleanup)
+                }
                 if (cleanupPending && primary?.suppressed?.none { it is SnapshotCleanupPendingException } == true) {
-                    primary?.addSuppressed(SnapshotCleanupPendingException())
+                    primary?.suppressCleanup(SnapshotCleanupPendingException())
                 }
             }
         }
@@ -223,7 +233,7 @@ internal class PrivateSnapshotStore(
                     try { withContext(NonCancellable + dispatcher) { port?.close() } }
                     catch (t: Throwable) {
                         closeFailed = true
-                        if (primary != null) primary.addSuppressed(t) else throw t
+                        if (primary != null) primary.suppressCleanup(t) else throw t
                     } finally { releasePin(closeFailed) }
                 }
             }
@@ -240,8 +250,8 @@ internal class PrivateSnapshotStore(
             }
             // UNDISPATCHED enters the owned cleanup even when the injected scope is canceled.
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                withContext(NonCancellable + dispatcher) {
-                    try {
+                try {
+                    withContext(NonCancellable + dispatcher) {
                         val unsafeRelease = synchronized(lock) { leaseCleanupFailed }
                         if (unsafeRelease) {
                             released.complete(SnapshotReleaseResult.CleanupPending(SnapshotFailure.CleanupFailure))
@@ -249,16 +259,23 @@ internal class PrivateSnapshotStore(
                         }
                         budget.deleteOwned(file)
                         released.complete(SnapshotReleaseResult.Released)
-                    } catch (_: IOException) {
-                        released.complete(SnapshotReleaseResult.CleanupPending(SnapshotFailure.CleanupFailure))
-                    } catch (_: android.system.ErrnoException) {
-                        released.complete(SnapshotReleaseResult.CleanupPending(SnapshotFailure.CleanupFailure))
-                    } catch (t: Throwable) {
-                        released.completeExceptionally(t); throw t
                     }
+                } catch (_: IOException) {
+                    released.complete(SnapshotReleaseResult.CleanupPending(SnapshotFailure.CleanupFailure))
+                } catch (_: android.system.ErrnoException) {
+                    released.complete(SnapshotReleaseResult.CleanupPending(SnapshotFailure.CleanupFailure))
+                } catch (t: Throwable) {
+                    // Ownership remains unresolved. The owner observes this exact defect by awaiting
+                    // release; do not also report it as an unhandled launch exception.
+                    released.completeExceptionally(t)
                 }
             }
         }
         override suspend fun awaitReleased(): SnapshotReleaseResult = released.await()
     }
+}
+
+/** A faulty cleanup seam may throw the very same object; self-suppression must not mask it. */
+private fun Throwable.suppressCleanup(secondary: Throwable) {
+    if (secondary !== this) addSuppressed(secondary)
 }

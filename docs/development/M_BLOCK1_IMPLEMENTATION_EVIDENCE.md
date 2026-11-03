@@ -292,3 +292,26 @@ Full diff and git diff --check inspected. BUILD / JVM TESTS / INSTRUMENTATION /
 LINT / COVERAGE / CI / VALIDATORS: **NOT RUN**, as required. The test source has
 not been compiled; all earlier API26/provider/durability/coverage acceptance gaps
 remain. Local commit only, no push, PR, merge, main changes or Block 2 work.
+
+## CI #123 public-SDK compatibility correction — 2026-11-03
+
+Owner-reported run 41599521510 at `1d668ad840fe923289b0ca6435383a8f8ef457b7`
+identified one shared compilation blocker: Android's public SDK does not expose
+OsConstants.O_DIRECTORY. This explains the blocked Gradle-dependent jobs; it is
+not evidence of six independent failures. No CI access/execution was performed
+for this correction.
+
+AndroidPrivateIo.syncDirectory now opens with public O_RDONLY | O_NOFOLLOW,
+checks Os.fstat(fd).st_mode through public S_ISDIR, then fsyncs that verified
+directory descriptor. Finally still closes it; a close failure is suppressed
+onto an existing primary failure (guarding self-suppression), or propagated alone.
+No numeric flags/reflection/JNI or skipped sync fallback. Open/type/sync/close
+failures cannot acknowledge durability through this method.
+
+One Android regression method added: directorySyncRejectsRegularFileAndSymlink.
+The existing actualDirectorySyncCheckpointReopenAndCorruptionFailClosed method
+retains the successful-directory/checkpoint test source. There are now five
+Block 1 Android methods, all NOT RUN. Full diff/whitespace inspection only;
+BUILD / TESTS / INSTRUMENTATION / LINT / COVERAGE / CI: NOT RUN. Compilation and
+complete Block 1 CI remain unverified until the owner reruns checks. No Block 2,
+protected-package, dependency, Gradle or gate changes.

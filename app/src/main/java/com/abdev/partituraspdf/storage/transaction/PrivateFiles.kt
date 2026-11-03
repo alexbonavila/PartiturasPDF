@@ -36,11 +36,14 @@ internal class AndroidPrivateIo : PrivateIo {
     override fun freeBytes(root: File): Long = StatFs(root.path).availableBytes
     override fun syncFile(stream: FileOutputStream) { stream.flush(); stream.fd.sync() }
     override fun syncDirectory(directory: File) {
-        val fd = Os.open(directory.path, OsConstants.O_RDONLY or OsConstants.O_DIRECTORY, 0)
+        val fd = Os.open(directory.path, OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW, 0)
         var primary: Throwable? = null
-        try { Os.fsync(fd) } catch (t: Throwable) { primary = t; throw t }
+        try {
+            if (!OsConstants.S_ISDIR(Os.fstat(fd).st_mode)) throw IOException("Not a directory")
+            Os.fsync(fd)
+        } catch (t: Throwable) { primary = t; throw t }
         finally { try { Os.close(fd) } catch (t: Throwable) {
-            if (primary != null) primary.addSuppressed(t) else throw t
+            if (primary != null) { if (primary !== t) primary.addSuppressed(t) } else throw t
         } }
     }
     override fun renameNew(from: File, to: File) {

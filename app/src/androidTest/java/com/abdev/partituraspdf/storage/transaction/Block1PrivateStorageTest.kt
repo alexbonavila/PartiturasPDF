@@ -115,4 +115,16 @@ class Block1PrivateStorageTest {
                 (capturer.capture(source, SnapshotCaptureLimits(4)) as SnapshotCaptureResult.Rejected).reason)
         }
     }
+    @Test fun directorySyncRejectsRegularFileAndSymlink() = runBlocking {
+        sandbox { budget, _ ->
+            val regular = File(budget.root.directory, "not-directory").apply { writeBytes(byteArrayOf(1)) }
+            assertThrows(java.io.IOException::class.java) { budget.root.io.syncDirectory(regular) }
+            val link = File(budget.root.directory, "directory-link")
+            java.nio.file.Files.createSymbolicLink(link.toPath(), budget.root.directory.toPath())
+            try {
+                assertThrows(android.system.ErrnoException::class.java) { budget.root.io.syncDirectory(link) }
+            } finally { java.nio.file.Files.delete(link.toPath()) }
+        }
+    }
+
 }

@@ -124,3 +124,70 @@ independent reparse/object/page/resource/annotation expectations and deliberatel
 mutated outputs, 50/100-page resource trials, API26/27/36 and physical Android8.1
 as applicable. No operation publicly enabled; no main engine token minting until
 that evidence is reviewed. Tests/builds/CI remain owner-executed, NOT RUN here.
+
+## Test-only spike authorization and evidence ledger — 2026-11-03
+
+**SOURCE READY FOR OWNER VALIDATION; PRODUCTION APPROVAL: NOT APPROVED.**
+This dated entry supersedes earlier *test-only dependency approval pending*
+statements only. The earlier production-installation proposal remains unapproved.
+The owner approved the pinned catalog alias and exactly
+`androidTestImplementation(libs.pdfbox.android)` on `feat/pdf-safe-write-m`, from
+`32ad93fdcffc2273bc76617bc6880e0f9a5dbe6b`. No `implementation` or
+`debugImplementation`, engine adapter, production validator/minting, optional codec,
+repository/BC override, host wiring or public document write is introduced.
+See [test inventory, retrieval/oracle protocol and gates](M_PDFBOX_ANDROID_TEST_SPIKE.md).
+CI #128 still applies only to `edd372aaf6ecc73d78e67655cf8996a2569f0fdf`.
+
+### Read-only upstream evidence obtained for this increment
+
+Public source/metadata requests via curl and upstream `git ls-remote --tags`,
+2026-11-03; no Gradle resolution, archive installation or security scanner:
+
+| Reference | Observation / limitation |
+| --- | --- |
+| [Maven metadata](https://repo.maven.apache.org/maven2/com/tom-roush/pdfbox-android/maven-metadata.xml) | Latest/release 2.0.27.0; lastUpdated 20230102065914. This corroborates the 2023-01-02 metadata date, not an independent artifact publication timestamp. |
+| [Versioned POM](https://repo.maven.apache.org/maven2/com/tom-roush/pdfbox-android/2.0.27.0/pdfbox-android-2.0.27.0.pom) | AAR, Apache-2.0 declaration; bcprov-jdk15to18, bcpkix-jdk15to18, bcutil-jdk15to18 all declared 1.72. Actual resolved graph/bytecode/hashes: NOT RUN / UNKNOWN. |
+| [Release source tag](https://github.com/TomRoush/PdfBox-Android/tree/v2.0.27.0) | Remote tag at 45da92629dad5b3c9887eceefecc89a1423f5457. Read PDDocument/PDPage/PDResources/COSStream/COSName/COSBoolean/PDAnnotation/PDFRenderer/Splitter, README and library manifest from this tag; no source-to-AAR identity attestation. |
+| [Tagged README](https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/README.md) | API19+ vendor statement and application-context resource-loader requirement; optional JP2Android/JCenter warning and ignored JPX images without codec. README still names 2.0.26 in examples/base: do not mistake it for a resolved 2.0.27 binary identity. |
+| [PDDocument.importPage](https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/library/src/main/java/com/tom_roush/pdfbox/pdmodel/PDDocument.java) | Explicit inherited-resource omission warning; annotation references may retain other pages. Stock-import case uses strict unchanged fidelity expectations, no silent repair. |
+| [Splitter](https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/library/src/main/java/com/tom_roush/pdfbox/multipdf/Splitter.java) | Page-link handling is implementation-specific, not proof that stock import preserves arbitrary annotation relationships. Spike does not adopt Splitter as a production workaround. |
+| [Sonatype versions](https://central.sonatype.com/artifact/com.tom-roush/pdfbox-android/versions) | HTTP 403; page UNVERIFIED in this increment. Maven metadata/POM were accessible separately. Initial raw source URL without the `v` tag prefix returned 404; corrected tagged sources were accessible. |
+| [Apache security page](https://pdfbox.apache.org/security.html) | HTTP 403; current complete advisory inventory UNVERIFIED. Owner research about example-module issues remains attributed, not proof of this fork's vulnerability or safety. |
+
+### Security and licensing remain separate owner gates
+
+| Advisory | Verified/source attribution, precondition and decision boundary |
+| --- | --- |
+| [CVE-2023-33202 BC wiki](https://github.com/bcgit/bc-java/wiki/CVE%E2%80%902023%E2%80%9033202) | Wiki fetched; PEM/ASN.1 parsing availability issue described for <=1.72, fixed 1.73. Published candidate transitives include affected version; exact use/reachability from the spike/production PDF path UNKNOWN. |
+| [CVE-2026-5598 / GHSA-p93r-85wp-75v3](https://github.com/advisories/GHSA-p93r-85wp-75v3) | Fetched advisory lists bcprov-jdk15to18 >=1.71,<1.80.2, fixed 1.80.2; FrodoKEM encapsulation-decryption timing context. Artifact affected is not demonstrated invocation/exploitability here; reachability UNKNOWN. |
+| [CVE-2024-34447 / GHSA-4h8f-2wvx-gg5w](https://github.com/advisories/GHSA-4h8f-2wvx-gg5w) | Fetched advisory lists bcprov-jdk15to18 >=1.61,<1.78, fixed 1.78; BCJSSE/TLS endpoint identification/hostname context. The spike adds no networking; actual reachable class paths remain unassessed. |
+
+No complete SCA or reachability/security audit performed; further advisories may
+apply. An absent demonstrated exploit is not a security clearance. Test APKs can
+contain affected bytecode: evaluate only committed synthetic assets on separately
+authorized disposable devices. No untrusted/private PDFs or network endpoint tests.
+No automatic BC patch upgrade/exclusion, JCenter, JP2/JBIG2 or new native artifact.
+
+The tagged upstream manifest is empty (source observation only). Actual merged
+permissions, runtime/network behavior, APK size/native payload, license/NOTICE
+packaging, BC attribution and resolved transitives require owner inspection. Preserve
+root license and fixture CC0. Apache-2.0/POM and upstream README license statements
+are metadata, not legal clearance; distribution of test APKs also needs appropriate
+third-party notices. No production binary may acquire PDFBox or BC from this spike.
+Source-only dependency scope is not proof of that property.
+
+| Gate | Status at source publication |
+| --- | --- |
+| SOURCE READY | Test-only source prepared; compilation NOT RUN |
+| CI / API26 / API27 / API36 | NOT RUN for spike; historical #128 not reused |
+| TEST-APK ISOLATION / actual graph / APK size | NOT RUN / UNKNOWN |
+| FUNCTIONAL / FIDELITY | NOT RUN / UNVERIFIED; saved-output and deliberate-mutation checks plus independent PDFium source; owner pypdf/PyMuPDF checks pending |
+| JPX | BLOCKED: dictionary-filter negative test only; no real fixture or complete positive detection/rejection proof |
+| SECURITY | OPEN: affected declared transitives, unknown full inventory/reachability; owner risk decision required |
+| MEMORY | NOT MEASURED / INCONCLUSIVE; bounded cycles/phase observations do not cap parser heap/CPU or prove leak absence |
+| PHYSICAL API27 | NOT RUN; 2–3 GiB hardware feasibility pending |
+| PRODUCTION APPROVAL | NOT APPROVED regardless of future test successes |
+
+No engine-backed production defaults changed. M-specific coverage remains the
+separately proposed, unapplied scope. All BUILD / JVM / ANDROID / LINT / COVERAGE /
+DEPENDENCY RESOLUTION / SECURITY SCAN / CI / DEVICE / VALIDATORS: **NOT RUN**.

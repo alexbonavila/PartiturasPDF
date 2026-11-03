@@ -528,3 +528,39 @@ remain separate owner decisions.
 This addendum is documentation-only and was committed *after* the tested
 `edd372a` commit. CI #128 is **not** CI evidence for the new documentation
 commit SHA. No tests or workflows were executed as part of this addendum.
+
+## Isolated PDFBox-Android test spike — source delivery, 2026-11-03
+
+Owner-approved baseline: `32ad93fdcffc2273bc76617bc6880e0f9a5dbe6b`.
+The preceding CI #128 addendum remains unchanged and applies solely to
+`edd372aaf6ecc73d78e67655cf8996a2569f0fdf`, not to this new dependency/test source.
+
+Pinned `com.tom-roush:pdfbox-android:2.0.27.0` is added ONLY through the catalog
+and `androidTestImplementation`. Three new files in the Android-only
+`pdf/engine/spike` package define 19 enabled candidate test methods and two
+helpers. No existing test, manifest, production package, engine default, artifact
+minting, provider permission, host contract or fixture is changed. No JCenter,
+optional codec, BC override, toolchain/repository/coverage/CI change.
+
+See [spike protocol and exact test matrix](M_PDFBOX_ANDROID_TEST_SPIKE.md) and
+[dependency/security source ledger](M_ENGINE_EVALUATION.md#test-only-spike-authorization-and-evidence-ledger--2026-11-03).
+All 15 fixtures participate through the existing manifest/assets; only private
+disposable copies are transformed. Working-copy and stock-import approaches are
+compared with saved/reopened page/resource/annotation oracles; a failure is not
+silently repaired. Independent PDFium raster comparisons are additional evidence;
+separate owner Python checks, actual binary isolation, real JPX rejection proof,
+security/risk review and physical resource acceptance remain unresolved.
+
+Exactly two operations each for the 50/100-page cases, phase endpoint timing/heap/
+native/PSS observations, tracked handle closure, source rehashing, output/incomplete
+input faults and deliberately corrupted semantic outputs are source-only tests.
+No invented measurements, parser heap cap, finite-run leak-freedom or production
+readiness claim. Optional explicit retention concerns synthetic copies only; no
+automatic PDF artifact upload. Default teardown removes its own namespace.
+
+Read-only upstream metadata/source/advisory inspection, full diff review and
+`git diff --check` only. BUILD / JVM / ANDROID / LINT / COVERAGE / DEPENDENCY
+RESOLUTION / SECURITY SCAN / CI / DEVICE / PROJECT VALIDATORS: **NOT RUN**.
+Owner executes existing CI/API26/27/36 and packaging/dependency/oracle checks at
+the new exact publication SHA. Test source readiness is not test PASS, engine
+approval, M-scoped coverage acceptance or Block 2 completion.

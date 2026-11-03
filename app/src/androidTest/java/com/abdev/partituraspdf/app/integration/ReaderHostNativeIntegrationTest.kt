@@ -508,6 +508,12 @@ class ReaderHostNativeIntegrationTest {
     @Test fun libraryReaderSettingsRoundTripPersistsUiChoicesAndRegisteredPosition() {
         mount("02")
         val fixture = session!!
+        // One nullable snapshot for polling only; pdf() remains the strict assertion accessor.
+        fun readyPdf(): LibraryRow.Pdf? {
+            val readyHost = host?.state?.value as? AppHostState.Ready ?: return null
+            val content = readyHost.features.library.state.value.content as? LibraryContent.Ready ?: return null
+            return (content.rows.singleOrNull() as? LibraryRow.Pdf)?.takeIf { it.key.storage == fixture.storage }
+        }
         val original = fixture.source.readBytes()
         val grants = context.contentResolver.persistedUriPermissions.map {
             Triple(it.uri, it.isReadPermission, it.isWritePermission)
@@ -519,12 +525,12 @@ class ReaderHostNativeIntegrationTest {
         }
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_register_description, "score.pdf"))
             .performScrollTo().assertIsDisplayed().assertHasClickAction().performClick()
-        compose.waitUntil(15_000) { (pdf().association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
+        compose.waitUntil(15_000) { (readyPdf()?.association as? LibraryAssociation.Registered)?.metadata is Observation.Ready }
         val document = (pdf().association as LibraryAssociation.Registered).value.document
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.library_favorite_add_description, "score.pdf"))
             .performScrollTo().performClick()
         compose.waitUntil(15_000) {
-            ((pdf().association as? LibraryAssociation.Registered)?.metadata as? Observation.Ready)?.value?.favorite == true
+            ((readyPdf()?.association as? LibraryAssociation.Registered)?.metadata as? Observation.Ready)?.value?.favorite == true
         }
         open(); visible("m2-a-first-frame"); verifyPostedScorePixels()
         val first = entry()
@@ -558,7 +564,7 @@ class ReaderHostNativeIntegrationTest {
         }
         compose.onNodeWithTag("app_back").assertIsDisplayed().performClick()
         compose.waitUntil(20_000) { host!!.navigation.value.destination == AppDestination.LIBRARY }
-        compose.waitUntil(15_000) { pdf().opening == LibraryOpening.Idle }
+        compose.waitUntil(15_000) { readyPdf()?.opening == LibraryOpening.Idle }
         assertEquals(ReaderPhase.RETIRED, first.controller.state.value.phase)
         assertNull(first.controller.state.value.frame)
         assertTrue(routeClosed())

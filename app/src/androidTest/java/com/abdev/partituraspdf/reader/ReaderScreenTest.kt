@@ -320,6 +320,7 @@ class ReaderScreenTest {
         start();visible();val old=bitmaps.single()
         button(R.string.reader_next).performClick();visible(1)
         assertTrue(old.isRecycled);assertFalse(bitmaps.last().isRecycled)
+        compose.waitUntil(10_000){acknowledged.contains(PageIndex(1))}
         assertEquals(1,maximumLeases.get());assertEquals(listOf(PageIndex(0),PageIndex(1)),acknowledged)
     }
     @Test fun screenRemovalAndRetirementDoNotDeadlockOrDoubleClose(){

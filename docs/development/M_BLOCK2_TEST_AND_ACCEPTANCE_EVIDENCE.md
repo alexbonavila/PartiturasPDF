@@ -725,3 +725,48 @@ DEPENDENCY INSTALLATION / CI: **NOT RUN** for this correction. Owner must run CI
 the new published SHA. Passing dependency setup or CI alone does not establish
 verifier acceptance or independent PDF fidelity; separate owner-run collection,
 structural/rotated visual evidence, and remaining engine gates stay outstanding.
+
+
+## CI #134 API27 Reader test synchronization — 2026-11-03
+
+Owner-provided run https://github.com/alexbonavila/PartiturasPDF/actions/runs/41712008963
+at `1f4eb0ac591ea6d624f04e016971e0d8e6c43886`, two attempts: build, JVM (708 PASS),
+Lint, fixtures, localization/Python (516 executed, 515 PASS, one skipped), API26
+(466 PASS) and API36 (466 PASS) succeeded. Python dependency setup is verified
+by that owner evidence. API27 had one distinct pre-existing Reader failure in each
+attempt; quality-gate failed. All 21 PDFBox spike methods passed in both API27
+attempts. Codex did not access CI/logs or execute these checks.
+
+- ReaderScreenTest.replacementRecyclesOldBitmapAndNeverKeepsTwoLeases expected
+  acknowledgements [PageIndex(0), PageIndex(1)], observed [PageIndex(0)]. Source:
+  ReaderController.nextWork publishes VISIBLE/presentedPage and Scheduling before
+  returning Work.Ack; its separate perform callback invokes route.displayed.
+  The fake records acknowledgements in CopyOnWriteArrayList. visible(1) does not
+  imply that callback has completed. The test now waits (existing 10,000 ms bound)
+  for the actual PageIndex(1) observation, then retains the exact ordered-list
+  assertion. Duplicates, reordering or unexpected values still fail. Bitmap
+  recycling/current bitmap and maximum-one-lease assertions are unchanged.
+- ReaderHostNativeIntegrationTest.libraryReaderSettingsRoundTripPersistsUiChoicesAndRegisteredPosition
+  threw ClassCastException casting LibraryContent.Loading to Ready. LibraryController
+  beginLoad publishes Loading before its asynchronous catalog result. Destination
+  LIBRARY is therefore insufficient readiness. Only this scenario now has a nullable
+  snapshot helper for waits: safely read Ready host/content, require the single PDF
+  with the expected fixture storage identity. Loading/missing/wrong rows return null;
+  the Idle wait keeps its 15,000 ms bound. Registration/metadata and favorite waits
+  in this same scenario use the same safe lookup. Strict pdf() and other scenarios
+  remain unchanged. Related mount/back predicates were inspected; no broad helper
+  or unrelated scenario rewrite was introduced.
+
+These source orderings support test-synchronization corrections; no production
+Reader/Library defect is demonstrated by the supplied failures. Native retirement,
+route closure, registration, persisted page, settings/favorite metadata, original
+bytes and SAF grants assertions remain unchanged. No sleeps, timeout increases,
+catch-all polling, retries, relaxed assertions, production, PDFBox, Python, Gradle,
+manifest, fixture, CI or quality-gate changes. Scope is the two named test files
+and this append-only ledger.
+
+Full diff/source review and git diff --check only. BUILDS / JVM / ANDROID / PYTHON
+TESTS / VALIDATORS / LINT / COVERAGE / DEPENDENCY INSTALLATION / CI: **NOT RUN**.
+Owner must validate the new exact SHA on API26/27/36; runtime reliability remains
+unverified for this correction. No Phase M completion, independent fidelity or
+PDFBox production approval is inferred.

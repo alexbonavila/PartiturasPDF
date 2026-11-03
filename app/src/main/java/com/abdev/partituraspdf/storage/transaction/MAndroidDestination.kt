@@ -37,7 +37,7 @@ internal class MAndroidDestination(private val context: Context, private val pro
                 if (!revalidate()) throw SecurityException("Destination unavailable")
                 // Only provider-proven new empty destinations are eligible. No mode fallback/retry.
                 val fd = context.contentResolver.openFileDescriptor(uri, "w") ?: throw IOException("No descriptor")
-                ParcelFileDescriptor.AutoCloseOutputStream(fd).use { copy(it); it.flush() }
+                writeNewDescriptor(fd, copy)
             }
             override suspend fun readBack(copy: suspend (java.io.InputStream) -> Unit) {
                 if (!has(Intent.FLAG_GRANT_READ_URI_PERMISSION)) throw SecurityException("Readback unavailable")
@@ -46,4 +46,45 @@ internal class MAndroidDestination(private val context: Context, private val pro
             }
         })
     }
+}
+
+/** API26 AutoCloseOutputStream.close does not throw cached remote status. Check both before
+ * and after closure. Reliable writers have no public blocking peer-OK acknowledgement API;
+ * absent that proof we reject even a currently silent reliable status, never guess success.
+ * closeStream is an internal regression seam; production always owns/closes the real stream.
+ */
+internal suspend fun writeNewDescriptor(
+    fd: ParcelFileDescriptor,
+    copy: suspend (java.io.OutputStream) -> Unit,
+    closeStream: (java.io.OutputStream) -> Unit = { it.close() },
+) {
+    val reliable = fd.canDetectErrors()
+    val output = ParcelFileDescriptor.AutoCloseOutputStream(fd)
+    var primary: Throwable? = null
+    try {
+        copy(output)
+        output.flush()
+        if (reliable) fd.checkError()
+    } catch (failure: Throwable) { primary = failure; throw failure }
+    finally {
+        var closeFailure: Throwable? = null
+        var remoteFailure: Throwable? = null
+        try { closeStream(output) } catch (failure: Throwable) { closeFailure = failure }
+        try { if (reliable) fd.checkError() } catch (remote: Throwable) { remoteFailure = remote }
+        val original = primary
+        if (original != null) {
+            for (secondary in listOfNotNull(remoteFailure, closeFailure)) {
+                if (original !== secondary) original.addSuppressed(secondary)
+            }
+        } else {
+            // Prefer the provider failure over a secondary local close failure.
+            val failure = remoteFailure ?: closeFailure
+            if (failure != null) {
+                val close = closeFailure
+                if (close != null && close !== failure) failure.addSuppressed(close)
+                throw failure
+            }
+        }
+    }
+    if (reliable) throw IOException("Reliable provider completion unconfirmed")
 }

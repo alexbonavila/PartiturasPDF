@@ -170,4 +170,21 @@ class MTransactionLifecycleTest {
         }
     }
 
+    @Test fun exceptionalCleanupCannotEraseDurablyVerifiedPublication() = runTest {
+        val r = rig(backgroundScope); val ready = r.ready(); val port = r.destination(ready.request.operation)
+        val defect = IllegalStateException("Unexpected private cleanup")
+        r.fault = { if (it == "delete") throw defect }
+        val result = ready.session.complete(ready.request.token, WriteDestinationCapability(port)) as PublicationResult.VerifiedNewDocument
+        assertEquals(port.destination, result.destination)
+        assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
+        assertEquals(result, ready.session.verifiedPublication())
+        val diagnostic = ready.session.cleanupFailure()
+        assertTrue(diagnostic === defect || diagnostic?.cause === defect)
+        assertEquals(MState.CLEANUP_AUTHORIZED, r.journal.read(ready.request.operation).last().state)
+        assertTrue(r.budget.used() > 0)
+        assertEquals(2, boundedFiles(r.root).count { it.name.endsWith(".sealed") })
+        assertEquals(1, port.writes); assertArrayEquals(r.bytes, port.stored)
+        (r.gate.tryAcquire() as WriteAdmissionGate.Admission.Acquired).close()
+    }
+
 }

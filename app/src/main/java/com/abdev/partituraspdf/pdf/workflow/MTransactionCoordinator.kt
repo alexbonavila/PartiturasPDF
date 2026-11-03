@@ -106,6 +106,11 @@ internal class MTransactionSession(
     private val copier: MLeaseCopier = NativeMLeaseCopier,
 ) {
     private val mutex = Mutex(); private var consumed = false; private var resolved = false
+    private var verifiedResult: PublicationResult.VerifiedNewDocument? = null
+    private var cleanupDefect: Throwable? = null
+    /** Private diagnostic channel: never serialize/log arbitrary exception messages. */
+    suspend fun cleanupFailure(): Throwable? = mutex.withLock { cleanupDefect }
+    suspend fun verifiedPublication(): PublicationResult.VerifiedNewDocument? = mutex.withLock { verifiedResult }
     suspend fun complete(token: String, destination: WriteDestinationCapability?): PublicationResult = mutex.withLock {
         if (resolved || consumed || token != request.token) return@withLock PublicationResult.NeedsOwnerResolution
         consumed = true
@@ -130,7 +135,11 @@ internal class MTransactionSession(
             if (checkpoint(MState.PUBLISHED_UNVERIFIED) == null || observed != ReadbackResult.Match) return@withLock PublicationResult.UnverifiedDestination
             if (checkpoint(MState.READBACK_OBSERVED) == null) return@withLock PublicationResult.UnverifiedDestination
             val final = checkpoint(MState.VERIFIED_COMMITTED) ?: return@withLock PublicationResult.UnverifiedDestination
-            // Public work is finished; cleanup debt must not retain exclusive admission forever.
+            // Save the durable public outcome BEFORE any private cleanup. Cancellation or a
+            // programming defect in cleanup must not erase it from the session's observation.
+            val verified = PublicationResult.VerifiedNewDocument(destination.port.destination, artifact.evidence,
+                final, SnapshotCleanupStatus.PENDING)
+            verifiedResult = verified
             try {
                 val authorized = checkpoint(MState.CLEANUP_AUTHORIZED) != null
                 var pending = true
@@ -138,8 +147,15 @@ internal class MTransactionSession(
                     pending = releaseSnapshots(listOf(artifact.output, input), null)
                     if (!pending && checkpoint(MState.CLEANED) == null) pending = true
                 }
-                PublicationResult.VerifiedNewDocument(destination.port.destination, artifact.evidence, final,
-                    if (pending) SnapshotCleanupStatus.PENDING else SnapshotCleanupStatus.COMPLETE)
+                verified.copy(cleanup = if (pending) SnapshotCleanupStatus.PENDING else SnapshotCleanupStatus.COMPLETE)
+                    .also { verifiedResult = it }
+            } catch (cancel: CancellationException) {
+                // Caller cancellation propagates; verifiedPublication still exposes the commit.
+                cleanupDefect = cancel
+                throw cancel
+            } catch (cleanup: Throwable) {
+                cleanupDefect = cleanup
+                verified // PENDING plus the explicit diagnostic channel, never false Released.
             } finally { resolved = true; admission.close() }
         } catch (cancel: CancellationException) { throw cancel }
         catch (_: IOException) { PublicationResult.UncertainPublication }

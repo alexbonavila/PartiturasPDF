@@ -269,3 +269,66 @@ LINT / COVERAGE / CI / DEVICE-MANUAL / VALIDATORS: **NOT RUN**. Owner should fir
 run the existing build/lint/full JVM/CI against the new exact SHA, then separately
 owned API26/27/36 and relevant physical acceptance. The prior SHA's CI does not
 substitute for this revision. No PR, merge, tag, release or production host wiring.
+
+## Publication-result / reliable-descriptor correction — 2026-11-03
+
+Baseline: e7bf0512bada0126f47d24fc971d53bbbaf4ad1b. Exact scope: coordinator,
+MAndroidDestination, their existing JVM/Android test files and this ledger only.
+
+After durable VERIFIED_COMMITTED, the session stores its verified identity before
+any private cleanup. Unexpected cleanup failures return that same verified public
+identity with cleanup PENDING, release admission in finally, retain uncertain files
+and charges, and remain observable through cleanupFailure(). verifiedPublication()
+retains the public outcome even if caller cancellation propagates after commit.
+Diagnostics are internal in-memory Throwables, never serialized/logged or exposed
+as user-facing text. releaseSnapshots still attempts all owners and preserves
+primary/suppressed failures; no worker failure becomes false Released/COMPLETE.
+
+JVM regression added (NOT RUN):
+MTransactionLifecycleTest.exceptionalCleanupCannotEraseDurablyVerifiedPublication
+asserts verified identity/evidence, pending cleanup, observable defect, durable
+cleanup-authorized state, retained files/charge and immediately reusable admission.
+
+### API26 source evidence, not runtime reproduction
+
+Read-only inspection of AOSP android-8.0.0_r1 ParcelFileDescriptor.java:
+https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android-8.0.0_r1/core/java/android/os/ParcelFileDescriptor.java
+Relevant symbols: AutoCloseOutputStream.close (lines 953–968), closeWithStatus /
+writeCommStatusAndClose (737–812), checkError (873–894). The stream closes the PFD
+and superclass stream but does not checkError. PFD close may cache a remote status
+without throwing it. checkError is nonblocking: no status yet is not peer success.
+No Android runtime, SDK execution, Gradle or CI was used to reach this conclusion.
+
+The adapter now uses internal writeNewDescriptor: write/flush, checkError before
+closure, owned stream closure, then checkError again for cached peer errors.
+Copy/cancellation/provider primary errors survive; close and additional peer errors
+are suppressed. If no earlier primary exists, an observed peer error takes priority
+over a secondary close failure. A reliable writer lacking affirmative completion
+proof is rejected as unconfirmed (even if currently silent); it cannot enter a
+readback-match/verified flow. This intentionally limits reliable pipe publication;
+regular descriptors retain ordinary fresh-readback + durable-checkpoint semantics.
+No polling, sleeps, detach/dup, undocumented flags, reflection, permission escalation
+or provider-write retry is introduced. There is no universal late-provider or
+hardware-durability guarantee for ordinary descriptors.
+
+Five Android regression methods added (all NOT RUN):
+- autoCloseAloneCanLeaveReliablePeerErrorUnthrown — owner-run reproduction using
+  the existing disposable provider's reliable close-error descriptor.
+- checkedReliableProviderErrorCannotReachReadbackMatch — same provider/helper
+  used by the real adapter; publisher remains Uncertain, readback not attempted.
+- primaryCopyAndSecondaryCloseFailuresSurviveReliablePeerError — exact primary
+  identity, injected close failure AFTER real closure, real peer error retained.
+- reliableWriterWithoutPeerCompletionNeverAssumesSuccess — open reliable pair
+  without an acknowledged peer, no timeout/racy retry as proof.
+- checkedRegularDescriptorStillWritesAndClosesSuccessfully — regular provider FD
+  remains usable and exact bytes survive helper closure.
+
+These direct provider/descriptor tests do not claim system-picker, positive OS
+URI-grant or actual resolver success. They establish only test SOURCE until the
+owner executes them. Current Block 2 source inventory: 34 JVM / nine Android
+methods, not executed test counts. Existing methods/assertions remain enabled.
+
+Full diff and git diff --check reviewed. BUILD / JVM TESTS / INSTRUMENTATION /
+LINT / COVERAGE / CI / DEVICE-MANUAL: NOT RUN. Runtime reproduction and compilation
+remain pending owner execution. No engine installed, no Gradle/CI/policy/core/SAF/
+Reader/host/registry/fixture changes. Publication is for review, not acceptance.

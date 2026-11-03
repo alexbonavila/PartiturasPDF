@@ -564,3 +564,42 @@ RESOLUTION / SECURITY SCAN / CI / DEVICE / PROJECT VALIDATORS: **NOT RUN**.
 Owner executes existing CI/API26/27/36 and packaging/dependency/oracle checks at
 the new exact publication SHA. Test source readiness is not test PASS, engine
 approval, M-scoped coverage acceptance or Block 2 completion.
+
+## CI #129 PDFBox spike asset context correction — 2026-11-03
+
+Owner-reported run https://github.com/alexbonavila/PartiturasPDF/actions/runs/41672861285
+at exact tested SHA `648c80c9b28de0eb4f1be3570f609af9e06e9859`:
+build, JVM (708 PASS), Lint, localization and PDF fixtures PASS (five jobs);
+API26/27/36 and quality-gate FAIL (four jobs). Each Android run: 464 executed,
+449 PASS / 15 FAIL; all 445 existing tests plus four new candidate tests passed,
+15 of the 19 PDFBox tests failed. This is owner-provided historical evidence,
+not new execution or independent CI access by Codex.
+
+`ExceptionInInitializerError` originates from `PDFBoxResourceLoader.getStream`
+missing `com/tom_roush/pdfbox/resources/glyphlist/additional.txt` during
+`LegacyPDFStreamEngine` static initialization. Later `NoClassDefFoundError` for
+`PDFTextStripper` is consistent with that poisoned initialization, not proof of
+a missing dependency or a transformation/fidelity defect.
+
+The sandbox passed the target application context to the loader despite candidate
+resources being instrumentation-only. Pinned upstream init reads the supplied
+context's application-context assets. Now fixture access remains on
+`testContext.assets`, loader init receives `testContext`, and filesystem storage
+remains under `targetContext.noBackupFilesDir`. Before namespace creation or text
+initialization, a bounded preflight opens both additional.txt and glyphlist.txt
+from `testContext.applicationContext.assets`, checks one nonempty byte and closes
+each stream. Missing/empty assets fail with exact asset/package diagnostics;
+unavailable application context also fails explicitly. No copying, replacement,
+permission, dependency or production fallback. Existing post-mkdir init cleanup
+preserves the primary and any suppressed directory-cleanup failure.
+
+See [correction details and remaining gates](M_PDFBOX_ANDROID_TEST_SPIKE.md#ci-129-resource-loader-correction--2026-11-03).
+Exactly PdfboxSpikeSandbox.kt and the two authorized spike/Block 2 documents change.
+All 19 enabled tests and assertions remain intact. androidTestImplementation scope,
+version, manifest, fixtures, production, Reader/SAF/provider contexts and quality
+gates are unchanged. True future candidate failures must not be masked.
+
+Full diff and git diff --check reviewed. BUILD / JVM / ANDROID INSTRUMENTATION /
+LINT / COVERAGE / CI / DEVICE / PROJECT VALIDATORS: **NOT RUN**. Owner runs complete
+CI at the new exact SHA; actual test-APK resource availability and API26/27/36
+compatibility remain pending. No Block 2 completion or production engine approval.

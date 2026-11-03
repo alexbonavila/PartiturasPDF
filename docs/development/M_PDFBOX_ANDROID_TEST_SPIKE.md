@@ -21,8 +21,15 @@ Source organization is not proof of final binary isolation.
 
 Fixtures come from the existing test APK assets and unchanged canonical manifest.
 Every operation copies its source to a unique target-app `noBackupFilesDir`
-`m-pdfbox-spike-<UUID>` child. `PDFBoxResourceLoader.init(targetContext.applicationContext)`
-precedes candidate calls. Only flat, test-owned files are eligible for deletion;
+`m-pdfbox-spike-<UUID>` child. Fixture assets use `instrumentation.context.assets`;
+`PDFBoxResourceLoader.init(testContext)` uses the instrumentation context, while
+private storage uses `instrumentation.targetContext.applicationContext`. Before
+creating the namespace, a two-asset, one-byte-per-asset preflight checks nonempty
+`glyphlist/additional.txt` and `glyphlist/glyphlist.txt` under the PDFBox resource
+prefix using `testContext.applicationContext.assets`, exactly matching the loader.
+Missing/empty assets fail explicitly with asset and context/package diagnostics;
+no target-storage copy or replacement glyph lists. Candidate calls follow init.
+Only flat, test-owned files are eligible for deletion;
 no original or provider document is writable. Each source copy AND original asset
 is rehashed against the manifest in teardown. Cleanup failures fail the test;
 uncertain owned handles retain the namespace. Original failures retain secondary
@@ -283,3 +290,49 @@ ANDROID / LINT / COVERAGE / DEPENDENCY RESOLUTION / SECURITY SCAN / CI / DEVICE 
 PROJECT VALIDATORS: **NOT RUN**. Publication is not acceptance. Owner must classify
 resolution, packaging, SDK, runtime parser, fidelity, resource and unrelated failures
 separately; no automatic dependency override, feature expansion or production fallback.
+
+## CI #129 resource-loader correction — 2026-11-03
+
+Owner-provided evidence for exact spike commit
+`648c80c9b28de0eb4f1be3570f609af9e06e9859`:
+https://github.com/alexbonavila/PartiturasPDF/actions/runs/41672861285.
+Build, JVM (708 PASS), Lint, localization and PDF fixtures succeeded; API26,
+API27, API36 and quality-gate failed. Each Android API ran 464 tests: 449 PASS,
+15 FAIL. All 445 existing tests and four candidate tests passed; 15 of the 19
+candidate tests failed. Codex did not access CI/logs or execute these checks.
+
+Primary error: `ExceptionInInitializerError` caused by missing
+`com/tom_roush/pdfbox/resources/glyphlist/additional.txt` in
+`PDFBoxResourceLoader.getStream` / `LegacyPDFStreamEngine.<clinit>`.
+Subsequent `NoClassDefFoundError: PDFTextStripper` is consistent with failed
+static initialization, not demonstrated absent bytecode or semantic incompatibility.
+
+Source inspection of the pinned v2.0.27.0
+[loader](https://github.com/TomRoush/PdfBox-Android/blob/v2.0.27.0/library/src/main/java/com/tom_roush/pdfbox/android/PDFBoxResourceLoader.java)
+confirms `init(context)` stores `context.getApplicationContext().getAssets()`.
+The original target-app context selected resources outside the instrumentation-only
+candidate packaging boundary. The correction passes `testContext` and separately
+retains target-app private storage. Fixtures continue using the test APK manager.
+Before directory creation and before candidate text initialization, both required
+glyph lists are opened and checked nonempty through the exact application-context
+manager used by the loader. Streams close deterministically after at most one byte.
+If that manager cannot expose the assets, diagnostics identify the required path,
+actual application package and instrumentation package: this remains a packaging/
+context BLOCKER, with no fallback, synthetic resource or Gradle change.
+
+Preflight failure creates no directory. If subsequent loader init fails after
+successful mkdir, existing cleanup deletes only the owned empty namespace and
+attaches secondary cleanup failure to the original exception. No filesystem or
+other provider context is changed. No attempt to recover a previously poisoned
+static class in the same process: owner validation needs a fresh test process.
+
+All 19 methods, semantic/negative expectations, PDFium comparisons, source hashes,
+annotation checks and resource constraints are unchanged. Only the sandbox and
+two authorized documents change; dependency/catalog/build/manifests, production
+and other tests remain unchanged. No new compatibility/fidelity/safety/production
+acceptance is inferred. Further genuine candidate failures must remain visible.
+
+Full diff/source-scope inspection and `git diff --check` only. BUILD / JVM / ANDROID
+INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE / PROJECT VALIDATORS: **NOT RUN**
+for this correction. Owner must validate packaging/preflight and the complete
+API26/27/36 suite on the new publication SHA. All prior gate limitations remain.

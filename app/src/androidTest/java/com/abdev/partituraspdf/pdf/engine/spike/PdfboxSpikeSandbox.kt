@@ -28,9 +28,10 @@ internal class SpikeOutputLimit : IOException("Disposable output limit exceeded"
 /** Flat, unique target-private test namespace. No SAF, publication or production capability. */
 internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private val assets = instrumentation.context.assets // Fixtures belong to the test APK.
-    private val context = instrumentation.targetContext.applicationContext
-    private val root = File(context.noBackupFilesDir, "m-pdfbox-spike-${UUID.randomUUID()}")
+    private val testContext = instrumentation.context
+    private val targetContext = instrumentation.targetContext.applicationContext
+    private val assets = testContext.assets // Fixtures belong to the test APK.
+    private val root = File(targetContext.noBackupFilesDir, "m-pdfbox-spike-${UUID.randomUUID()}")
     private val retain = InstrumentationRegistry.getArguments().getString("retainPdfboxSpike") == "true"
     private val manifest = JSONObject(assets.open("manifest.json").bufferedReader().use { it.readText() })
     private val outputs = JSONArray()
@@ -44,10 +45,34 @@ internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
 
     init {
         require(case.matches(Regex("[A-Za-z0-9]+")))
+        // PDFBox init uses getApplicationContext().getAssets(), not the supplied context's assets.
+        // Check that exact manager before text-engine static initialization or filesystem ownership.
+        val loaderApplication = checkNotNull(testContext.applicationContext) {
+            "PDFBox resource application context unavailable for ${testContext.packageName}"
+        }
+        val loaderAssets = loaderApplication.assets
+        for (path in listOf(
+            "com/tom_roush/pdfbox/resources/glyphlist/additional.txt",
+            "com/tom_roush/pdfbox/resources/glyphlist/glyphlist.txt",
+        )) {
+            try {
+                loaderAssets.open(path).use { input ->
+                    if (input.read() == -1) throw IOException("Required glyph list is empty")
+                }
+            } catch (failure: IOException) {
+                throw IOException(
+                    "Required PDFBox asset $path unavailable or empty via application package " +
+                        "${loaderApplication.packageName} (instrumentation ${testContext.packageName})",
+                    failure,
+                )
+            }
+        }
         check(root.mkdir()) { "Disposable spike namespace unavailable" }
-        try { PDFBoxResourceLoader.init(context) }
+        try { PDFBoxResourceLoader.init(testContext) }
         catch (failure: Throwable) {
-            if (!root.delete()) failure.addSuppressed(IOException("Initialization cleanup pending"))
+            try {
+                if (!root.delete()) throw IOException("Initialization cleanup pending")
+            } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
             throw failure
         }
     }

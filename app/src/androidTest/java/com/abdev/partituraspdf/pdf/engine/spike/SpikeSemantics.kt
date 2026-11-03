@@ -21,17 +21,17 @@ internal object SpikeSemantics {
         val hasPageAssociations: List<Boolean>, val appearances: List<String>,
     )
 
-    fun snapshot(document: PDDocument): List<Page> {
+    fun snapshot(document: PDDocument, textReferenceRotations: List<Int>? = null): List<Page> {
         require(!document.isEncrypted) { "Encrypted fixture is outside scope" }
         require(document.numberOfPages in 1..100) { "Unbounded page tree" }
+        require(textReferenceRotations == null || textReferenceRotations.size == document.numberOfPages)
         return (0 until document.numberOfPages).map { index ->
             val page = document.getPage(index)
             val annotations = page.annotations
             require(annotations.size <= 64) { "Annotation bound exceeded" }
-            val stripper = PDFTextStripper().apply { startPage = index + 1; endPage = index + 1 }
             Page(box(page.mediaBox), box(page.cropBox), normalized(page.rotation),
                 page.contents.use { digest(it) }, fingerprint(page.resources?.cosObject),
-                stripper.getText(document), annotations.map { fingerprint(it.cosObject, setOf(COSName.P)) },
+                extractText(document, index, textReferenceRotations?.get(index)), annotations.map { fingerprint(it.cosObject, setOf(COSName.P)) },
                 annotations.map { it.subtype }, annotations.map { annotation ->
                     val associated = annotation.page
                     require(associated == null || associated.cosObject === page.cosObject) {
@@ -40,6 +40,18 @@ internal object SpikeSemantics {
                     associated != null
                 }, annotations.map { fingerprint(it.cosObject.getDictionaryObject(COSName.AP)) })
         }
+    }
+
+    /** Only text extraction sees the source orientation; persisted structural fields remain intact. */
+    private fun extractText(document: PDDocument, index: Int, referenceRotation: Int?): String {
+        val stripper = PDFTextStripper().apply { startPage = index + 1; endPage = index + 1 }
+        if (referenceRotation == null) return stripper.getText(document)
+        val page = document.getPage(index)
+        val savedRotation = page.rotation
+        try {
+            page.rotation = referenceRotation
+            return stripper.getText(document)
+        } finally { page.rotation = savedRotation }
     }
 
     fun selected(source: List<Page>, indices: List<Int>, turns: Int): List<Page> {

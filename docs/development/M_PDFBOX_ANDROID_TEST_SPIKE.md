@@ -40,7 +40,8 @@ cleanup failures as suppressed exceptions. No global cleanup or automatic retry.
 ## Exact source test inventory
 
 Class: `com.abdev.partituraspdf.pdf.engine.spike.PdfboxAndroidSpikeTest`.
-All **19** block-bodied JUnit4 methods are enabled; none have been executed here.
+Current source contains **21** enabled block-bodied JUnit4 methods; none executed
+by Codex. CI #131 evaluated the previous 19-method inventory at its exact SHA.
 Helper files: `PdfboxSpikeSandbox.kt`, `SpikeSemantics.kt`.
 
 | Method | Canonical fixtures / actual planned assertions |
@@ -56,7 +57,9 @@ Helper files: `PdfboxSpikeSandbox.kt`, `SpikeSemantics.kt`.
 | `vectorContentEmbeddedFontsAndGlyphPixelsSurvive` | 11: reverse; text, decoded streams/resources, embedded font presence, raster |
 | `annotationTypesAssociationsAndAppearancesSurvive` | 12: reverse; all five annotations, four subtypes, full dictionaries/AP data and containing-page associations |
 | `complexResourcesTransparencyAndPixelsSurvive` | 13: [2,0,1]; text/fonts, resource graph including ExtGState, raster |
-| `stockImportComparedWithWorkingCopyWithoutSilentRepairs` | 02/08/10/11/12/13: stock import/reverse checked against the same expectations; no resource/annotation repair or silent drop |
+| `stockImportComparedWithWorkingCopyWithoutSilentRepairs` | 02/08/10/11: positive stock import/reverse checks; no repair or silent drop |
+| `stockImportComplexFixtureIsEvaluatedIndependently` | 13: independent positive stock import/reverse semantics and PDFium |
+| `stockImportPersistedAnnotationsRetainInvalidExternalPageAssociation` | 12: expected-negative persisted external /P relationship; NOT fidelity acceptance |
 | `passwordProtectedAndCorruptedInputsCannotProduceOutputs` | 14/15: expected parser rejection, no save/output; no password/decrypted output |
 | `fiftyAndHundredPagesHaveBoundedRepeatedResourceObservations` | 04/05: exactly two full identity operations each; all pages inspected/rendered; no warmup or timing acceptance threshold |
 | `limitedOutputAndTruncatedCopyCloseWithoutSuccessfulResult` | 02: 64-byte output fault and separately truncated 64-byte input; required rejection, closed owned handles |
@@ -381,3 +384,46 @@ correction. Actual glyph-list presence in the built test APK remains unverified;
 owner must run complete CI at the new SHA. No compatibility, security, fidelity,
 production-engine approval or Block 2 completion is claimed. Prior evidence and
 all remaining gates are preserved.
+
+
+## CI #131 functional evaluation correction — 2026-11-03
+
+Owner-provided CI https://github.com/alexbonavila/PartiturasPDF/actions/runs/41681088740
+at `90fd7debf5428911cd0c3440140ea3a302cd9eb3`: build/JVM (708 PASS)/Lint/
+localization/fixtures PASS; API26/27/36 and quality-gate FAIL. Each API: 464 tests,
+460 PASS / 4 FAIL; all 445 existing tests PASS, candidate 15 PASS / 4 FAIL.
+No CI/log access or runtime execution by Codex for this correction.
+
+The three rotation methods (eachQuarterTurnIsPersistedForEachSelectedPage,
+mixedBoxesSurviveSelectionAndAdditionalRotation,
+additionalQuarterTurnComposesWithAllOriginalRotations) differed in PDFTextStripper
+layout while observed structural fields matched. Reopened persisted rotations are
+now asserted against the composed expectation before extraction. Only additional-
+rotation cases extract complete text temporarily at the source reference rotation,
+restore the actual saved rotation in finally, and compare text exactly. No text,
+whitespace, punctuation or glyph removal. Unrotated snapshot behavior and exact
+comparison remain unchanged. No temporary orientation is saved; wrong-rotation
+mutation detection and all geometry/content/resource/annotation checks remain.
+Independent rotated raster/visual acceptance remains pending, not implied by this
+same-parser text comparison. Zero-extra-rotation PDFium assertions are unchanged.
+
+Stock import fixture 12 exhibited an annotation /P outside its containing page:
+a real candidate limitation, not an oracle issue. The negative regression
+stockImportPersistedAnnotationsRetainInvalidExternalPageAssociation performs real
+import/save/reopen, checks retained annotation dictionaries excluding /P, requires
+explicit associations, and requires an incorrect /P outside the output page tree
+whose content matches its original source page. At least one such relationship
+must be observed. No broad exception is accepted; unrelated failures propagate.
+No annotation is repaired, removed or accepted as valid. A passing negative test
+only detects the limitation; stock import remains unsuitable for this scenario.
+
+The original positive import method retains 02/08/10/11. New independent method
+stockImportComplexFixtureIsEvaluatedIndependently checks 13 (previously never
+reached after 12 failed) with the same positive semantic/PDFium assertions.
+Source inventory is now 21 methods, not an executed count. All prior scenarios,
+negative mutations, fixture hashes, resource limits and cleanup are retained.
+Sandbox, production, dependencies, manifests, original fixtures and non-spike tests
+are unchanged. BUILD / JVM / ANDROID / LINT / COVERAGE / CI / VALIDATORS: **NOT RUN**.
+Full source/diff review and git diff --check only; owner CI must validate the new
+SHA. Fidelity, independent rotated visuals, security, JPX, physical resources and
+production approval remain open; Phase M/Block 2 completion is not claimed.

@@ -21,6 +21,7 @@ class PdfboxAndroidSpikeTest {
         var expected = emptyList<SpikeSemantics.Page>()
         var indices = emptyList<Int>()
         var sourceRasters = emptyList<String>()
+        var referenceRotations = emptyList<Int>()
         sandbox.document(source) { document ->
             val original = sandbox.phase("inspectSource") { SpikeSemantics.snapshot(document) }
             sandbox.verifyManifest(document, entry, original)
@@ -32,6 +33,7 @@ class PdfboxAndroidSpikeTest {
             }
             indices = selection ?: original.indices.toList()
             expected = SpikeSemantics.selected(original, indices, turns)
+            referenceRotations = indices.map { original[it].rotation }
             // The source and output are independently rendered by Android/PDFium, not PDFBox.
             // Bounded thumbnails are supporting evidence, not a complete fidelity guarantee.
             if (turns == 0) sourceRasters = indices.map { sandbox.raster(source, it) }
@@ -64,7 +66,14 @@ class PdfboxAndroidSpikeTest {
         sandbox.record(output, entry, indices, turns, if (useImport) "STOCK_IMPORT" else "WORKING_COPY")
         // Producer handles are closed before a new parser opens the actual on-disk output.
         sandbox.document(output, "reopen") { reopened ->
-            val actual = sandbox.phase("inspectSavedOutput") { SpikeSemantics.snapshot(reopened) }
+            assertEquals(expected.size, reopened.numberOfPages)
+            val savedRotations = (0 until reopened.numberOfPages).map { reopened.getPage(it).rotation }
+            assertEquals("Persisted composed rotations", expected.map { it.rotation }, savedRotations)
+            val actual = sandbox.phase("inspectSavedOutput") {
+                SpikeSemantics.snapshot(reopened, if (turns == 0) null else referenceRotations)
+            }
+            assertEquals("Text extraction must restore saved rotations", savedRotations,
+                (0 until reopened.numberOfPages).map { reopened.getPage(it).rotation })
             assertEquals("Persisted selection/order/rotation/resources/annotations", expected, actual)
             if (id == "12") {
                 assertTrue(actual.flatMap { it.annotationTypes }.toSet().containsAll(setOf("Highlight", "Underline", "Ink", "FreeText")))
@@ -123,10 +132,55 @@ class PdfboxAndroidSpikeTest {
     @Test fun stockImportComparedWithWorkingCopyWithoutSilentRepairs() {
         PdfboxSpikeSandbox("importComparison").use { sandbox ->
             // Separate from the working-copy cases: import failure identifies that approach's limit.
-            for (id in listOf("02", "08", "10", "11", "12", "13")) {
-                val count = when (id) { "08" -> 5; "13" -> 3; else -> 2 }
+            for (id in listOf("02", "08", "10", "11")) {
+                val count = if (id == "08") 5 else 2
                 scenario(sandbox, id, (count - 1 downTo 0).toList(), useImport = true)
             }
+        }
+    }
+    @Test fun stockImportComplexFixtureIsEvaluatedIndependently() {
+        PdfboxSpikeSandbox("import13").use { scenario(it, "13", listOf(2, 1, 0), useImport = true) }
+    }
+    @Test fun stockImportPersistedAnnotationsRetainInvalidExternalPageAssociation() {
+        PdfboxSpikeSandbox("import12Limitation").use { sandbox ->
+            val (source, entry) = sandbox.fixture("12")
+            val output = sandbox.fresh("invalidImport")
+            var expected = emptyList<SpikeSemantics.Page>()
+            sandbox.document(source) { document ->
+                val original = SpikeSemantics.snapshot(document)
+                sandbox.verifyManifest(document, entry, original)
+                expected = SpikeSemantics.selected(original, listOf(1, 0), 0)
+                sandbox.emptyDocument { destination ->
+                    destination.importPage(document.getPage(1))
+                    destination.importPage(document.getPage(0))
+                    sandbox.save(destination, output)
+                }
+            }
+            sandbox.document(output, "reopenImportLimitation") { reopened ->
+                assertEquals(2, reopened.numberOfPages)
+                val containingPages = (0 until reopened.numberOfPages).map { reopened.getPage(it).cosObject }
+                var invalidAssociations = 0
+                for (index in 0 until reopened.numberOfPages) {
+                    val page = reopened.getPage(index)
+                    val annotations = page.annotations
+                    assertEquals(expected[index].annotations,
+                        annotations.map { SpikeSemantics.fingerprint(it.cosObject, setOf(COSName.P)) })
+                    for (annotation in annotations) {
+                        val associated = annotation.page
+                        assertNotNull("Fixture 12 must retain an explicit /P association", associated)
+                        if (associated.cosObject !== page.cosObject) {
+                            assertTrue("Wrong /P must reference a page outside the output tree",
+                                containingPages.none { it === associated.cosObject })
+                            assertEquals("Wrong /P retains the original source-page content",
+                                expected[index].contents, associated.contents.use(SpikeSemantics::digest))
+                            invalidAssociations++
+                        }
+                    }
+                }
+                assertTrue("Stock import limitation must actually reproduce", invalidAssociations > 0)
+            }
+            // No positive recipe/semantic acceptance is recorded for this defective output.
+            sandbox.assertNoOwnedHandles()
         }
     }
     @Test fun passwordProtectedAndCorruptedInputsCannotProduceOutputs() {

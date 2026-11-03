@@ -480,3 +480,51 @@ INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE-MANUAL: **NOT RUN**. Directory
 creation, provider startup and API26/27/36 runtime outcomes require owner CI on
 the published SHA. No production, Reader, SAF, host, registry, dependency, Gradle,
 manifest, fixture or quality-gate changes. Block 2 completion is not claimed.
+
+## CI #128 owner-executed acceptance evidence — 2026-11-03
+
+Verified GitHub Actions run: https://github.com/alexbonavila/PartiturasPDF/actions/runs/41647494002
+(run ID `41647494002`, attempt 1, workflow `CI`).
+Exact tested branch: `feat/pdf-safe-write-m`.
+Exact tested commit: `edd372aaf6ecc73d78e67655cf8996a2569f0fdf`.
+GitHub run status: **completed**; conclusion: **success** (2026-11-03 13:56:40 UTC).
+These findings were independently checked against GitHub's run/job results and
+the relevant job logs; they replace the *pending owner validation* status of
+the preceding source-only addendum **for this exact tested SHA**, not for
+future commits or unimplemented Block 2 capabilities.
+
+| Mandatory CI job | Verified result | Specific job evidence |
+| --- | --- | --- |
+| `build` | **PASS** | GitHub job conclusion success |
+| `lint` | **PASS** | GitHub job conclusion success |
+| `unit-tests` | **PASS** | `PASS 708 executed test(s); no failures or skips` |
+| `instrumented-api26` | **PASS** | Android 8.0 / API 26: `PASS 445 executed test(s); no failures or skips` |
+| `compatibility-api27` | **PASS** | Android 8.1 / API 27: `PASS 445 executed test(s); no failures or skips` |
+| `compatibility-api36` | **PASS** | Android 16 / API 36: `PASS 445 executed test(s); no failures or skips` |
+| `localization` | **PASS** | GitHub job conclusion success |
+| `pdf-fixtures` | **PASS** | GitHub job conclusion success |
+| `quality-gate` | **PASS** | GitHub job conclusion success; mandatory result checks success |
+
+The source-level CI #127 repair is now **runtime-validated on CI**: both
+manual `MDocumentsProviderTest` attachments use `targetContext`, and
+disposable directory creation fails explicitly before any document operation.
+All nine enabled provider-test methods are included in the successful
+instrumentation suite; no separate positive system-picker/OS-grant acceptance
+is thereby established. The earlier Reader synchronization and JVM
+cancellation regressions also executed within the passing suites.
+
+**Acceptance interpretation:** All nine mandatory jobs PASSED on the tested
+commit; this validates the current implemented and CI-covered Phase M Block 1/2
+source increment. It does **not** constitute Phase M Block 2 final acceptance.
+No approved production editing engine/semantic transform-and-validator,
+no independent full PDF fidelity acceptance, no positive host picker/URI-grant
+integration, and no physical-device/manual acceptance were established.
+The M-specific `storage/transaction`, `pdf/editing` and `pdf/workflow`
+coverage proposal remains **NOT CONFIGURED / NOT MEASURED**; the existing
+quality-gate success must not be represented as a >=90% line / >=80% branch
+result for those new implementation packages. Engine and coverage approvals
+remain separate owner decisions.
+
+This addendum is documentation-only and was committed *after* the tested
+`edd372a` commit. CI #128 is **not** CI evidence for the new documentation
+commit SHA. No tests or workflows were executed as part of this addendum.

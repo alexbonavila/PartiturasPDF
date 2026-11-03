@@ -427,3 +427,24 @@ are unchanged. BUILD / JVM / ANDROID / LINT / COVERAGE / CI / VALIDATORS: **NOT 
 Full source/diff review and git diff --check only; owner CI must validate the new
 SHA. Fidelity, independent rotated visuals, security, JPX, physical resources and
 production approval remain open; Phase M/Block 2 completion is not claimed.
+
+
+## Independent Python fidelity tooling — source delivery, 2026-11-03
+
+Baseline `3a0f4067ec671d640bf7ced9d026dec9146e9911`. Owner reports CI #132 attempt 2
+[41687967334](https://github.com/alexbonavila/PartiturasPDF/actions/runs/41687967334)
+PASS: nine jobs, 708 JVM, 466 Android on each API26/27/36. This is historical owner
+evidence, not independent Python fidelity or CI evidence for the new host tools.
+
+Added bounded explicit-namespace binary collector, offline pypdf/PyMuPDF/Pillow
+structural and rotated raster verifier, and synthetic/mock regression tests.
+See [owner workflow, limits, classifications and PowerShell commands](M_PDFBOX_INDEPENDENT_VALIDATION.md).
+The known fixture 12 stock-import association remains KNOWN_UNSAFE; positive
+working-copy results do not clear it. Source tools have not been executed, and
+empty negative recipes cannot prove negative success. Missing positive scenarios
+block complete campaign acceptance; long-document visual sampling is explicit.
+Android code/evidence schema, dependencies, CI and immutable fixtures unchanged.
+
+Source/full diff review and git diff --check only. BUILDS / JVM / ANDROID / PYTHON
+TESTS / LINT / COVERAGE / DEPENDENCY INSTALLATION / ADB / DEVICE / CI: **NOT RUN**.
+No compatibility/fidelity/security/production approval or Phase M completion claim.

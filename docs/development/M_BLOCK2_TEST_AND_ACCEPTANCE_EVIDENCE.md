@@ -332,3 +332,43 @@ Full diff and git diff --check reviewed. BUILD / JVM TESTS / INSTRUMENTATION /
 LINT / COVERAGE / CI / DEVICE-MANUAL: NOT RUN. Runtime reproduction and compilation
 remain pending owner execution. No engine installed, no Gradle/CI/policy/core/SAF/
 Reader/host/registry/fixture changes. Publication is for review, not acceptance.
+
+## CI #125 test compilation / provider startup correction — 2026-11-03
+
+Owner-reported failure at 0cf23c05b97a6b3e3fb486f567cbf71f3d8b8c7e:
+https://github.com/alexbonavila/PartiturasPDF/actions/runs/41621001737
+No CI/log access or execution was performed by Codex for this correction.
+
+1. MJournalRecoveryTest.chain is an MTestRig extension. Its receiver's OrderedPagePlan
+   named plan shadows the test class's String fingerprint at the journal call.
+   Rename that String planFingerprint and explicitly qualify every use as
+   this@MJournalRecoveryTest.planFingerprint. No journal production behavior,
+   assertion or regression method is changed.
+2. Logcat supplied by the owner identifies Fault enum initialization as the cause
+   of NoClassDefFoundError: kotlin/enums/EnumEntriesKt during ActivityThread provider
+   installation on API26/27/36, before the relevant tests execute. This is an early
+   test-provider class-loading boundary, not proof of a PDF/publication defect.
+   Replace the enum with nested integer constants (same eight named modes, values
+   0–7). Existing Fault.NAME test call sites compile against constants without enum
+   entries initialization. No Kotlin/library/Gradle/packaging workaround is added.
+
+Provider initializer inspection: fault is a primitive Int; pending/pipes use Java
+HashSet/ArrayList constructors; directory is initialized by onCreate; failure and
+coroutine backing fields start null. CompletableDeferred and CoroutineScope/
+SupervisorJob/Dispatchers creation occurs only through synchronized accessors when
+fault tests actually need them, not during provider construction/onCreate. This
+avoids an eager coroutine/helper startup dependency, without weakening fault modes.
+Shutdown does not create a worker scope merely to cancel it; any existing scope is
+still canceled/joined. Pipe-list writes and shutdown snapshots use the same lock.
+The compiler's actual DEX/class-loader result remains unverified until owner runs.
+
+Exact scope: MJournalRecoveryTest.kt, testprovider/MNewDocumentProvider.kt, this
+ledger. No production logic, manifest/authority/permission/provider isolation,
+reliable error injection, existing method or assertion changes. Original and M
+provider authorities stay distinct and test-APK-only. All earlier PASS/FAIL/
+BLOCKED/NOT RUN evidence retains its original revision/provenance.
+
+Full diff reviewed and git diff --check performed. BUILD / JVM TESTS / ANDROID
+INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE-MANUAL: **NOT RUN**. No claim that
+CI #125 is now passing or that provider startup is runtime verified. Owner must
+compile/run the new exact SHA and retain API26/27/36 test/process evidence.

@@ -16,13 +16,31 @@ import kotlinx.coroutines.*
 class MNewDocumentProvider : DocumentsProvider() {
     companion object { const val AUTHORITY = "com.abdev.partituraspdf.test.m.newdocument" }
     private lateinit var directory: File
-    private val pending = mutableSetOf<String>()
-    enum class Fault { NONE, CREATE_DENIED, WRITE_DENIED, READ_DENIED, CORRUPT_READBACK, PARTIAL_WRITE, CLOSE_ERROR, PIPE }
-    @Volatile var fault = Fault.NONE
-    val writeObserved = CompletableDeferred<Unit>()
+    // Provider installation precedes instrumentation class-loader setup. Keep construction
+    // limited to Java collections, primitive constants and null backing fields.
+    private val pending = java.util.HashSet<String>()
+    object Fault {
+        const val NONE = 0
+        const val CREATE_DENIED = 1
+        const val WRITE_DENIED = 2
+        const val READ_DENIED = 3
+        const val CORRUPT_READBACK = 4
+        const val PARTIAL_WRITE = 5
+        const val CLOSE_ERROR = 6
+        const val PIPE = 7
+    }
+    @Volatile var fault: Int = Fault.NONE
+    private var observed: CompletableDeferred<Unit>? = null
+    val writeObserved: CompletableDeferred<Unit>
+        get() = synchronized(this) {
+            observed ?: CompletableDeferred<Unit>().also { observed = it }
+        }
     @Volatile var workerFailure: Throwable? = null
-    private val workers = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val pipes = java.util.Collections.synchronizedList(mutableListOf<ParcelFileDescriptor>())
+    private var workerScope: CoroutineScope? = null
+    private fun workers(): CoroutineScope = synchronized(this) {
+        workerScope ?: CoroutineScope(SupervisorJob() + Dispatchers.IO).also { workerScope = it }
+    }
+    private val pipes = java.util.ArrayList<ParcelFileDescriptor>()
     override fun onCreate(): Boolean {
         directory = File(requireNotNull(context).noBackupFilesDir, "m-provider-${UUID.randomUUID()}")
         return directory.mkdir()
@@ -71,8 +89,8 @@ class MNewDocumentProvider : DocumentsProvider() {
         val activeFault = fault
         if (activeFault in setOf(Fault.PARTIAL_WRITE, Fault.CLOSE_ERROR, Fault.PIPE)) {
             val pipe = ParcelFileDescriptor.createReliablePipe()
-            pipes.add(pipe[0]); pipes.add(pipe[1])
-            workers.launch {
+            synchronized(pipes) { pipes.add(pipe[0]); pipes.add(pipe[1]) }
+            workers().launch {
                 try {
                     ParcelFileDescriptor.AutoCloseInputStream(pipe[0]).use { input ->
                         f.outputStream().use { output ->
@@ -104,7 +122,8 @@ class MNewDocumentProvider : DocumentsProvider() {
     override fun shutdown() {
         val owned = synchronized(pipes) { pipes.toList() }
         for (fd in owned) try { fd.close() } catch (failure: java.io.IOException) { workerFailure = failure }
-        runBlocking { workers.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin() }
+        val ownedWorkers = synchronized(this) { workerScope }
+        if (ownedWorkers != null) runBlocking { ownedWorkers.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin() }
         if (::directory.isInitialized) {
             directory.listFiles()?.filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }?.forEach { it.delete() }
             directory.delete()

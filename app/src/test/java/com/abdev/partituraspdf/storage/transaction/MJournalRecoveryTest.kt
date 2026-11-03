@@ -13,7 +13,7 @@ import java.util.UUID
 class MJournalRecoveryTest {
     @get:Rule val temporary = TemporaryFolder()
     private fun rig(scope: CoroutineScope) = MTestRig(File(temporary.root.canonicalFile, UUID.randomUUID().toString()), scope)
-    private val plan = "a".repeat(64)
+    private val planFingerprint = "a".repeat(64)
     private fun sequence(target: MState): List<MState> {
         val normal = listOf(MState.PREPARING, MState.PRIVATE_INPUT_SEALED, MState.PRIVATE_OUTPUT_SEALED,
             MState.PRIVATE_OUTPUT_VALIDATED, MState.PREPARED_FOR_PICKER, MState.PICKER_MAY_HAVE_LAUNCHED,
@@ -41,7 +41,7 @@ class MJournalRecoveryTest {
             if (state == MState.CLEANED) { assertTrue(File(tx, "source.sealed").delete()); assertTrue(File(tx, "output.sealed").delete()) }
             val bound = state in setOf(MState.DESTINATION_OBSERVED, MState.DESTINATION_BOUND, MState.PUBLISHING,
                 MState.PUBLISHED_UNVERIFIED, MState.READBACK_OBSERVED, MState.VERIFIED_COMMITTED, MState.CLEANUP_AUTHORIZED, MState.CLEANED)
-            assertNotNull(journal.append(id, state, plan, source, output, if (bound) "test-known-destination" else null, if (bound) 3 else 0))
+            assertNotNull(journal.append(id, state, this@MJournalRecoveryTest.planFingerprint, source, output, if (bound) "test-known-destination" else null, if (bound) 3 else 0))
         }
         return id
     }
@@ -81,7 +81,7 @@ class MJournalRecoveryTest {
         assertTrue(legacy.appendPrivate(id, TransactionState.PREPARING) is CheckpointResult.Durable)
         val reader = Reader(r.bytes)
         assertEquals(MRecoveryStatus.LEGACY_PRIVATE, MReadOnlyReconciler(r.budget, r.journal, reader).inspect(id))
-        assertNotNull(r.journal.append(id, MState.PREPARING, plan))
+        assertNotNull(r.journal.append(id, MState.PREPARING, this@MJournalRecoveryTest.planFingerprint))
         assertTrue(legacy.appendPrivate(id, TransactionState.FAILED_RECOVERABLE) is CheckpointResult.Durable)
         assertEquals(MRecoveryStatus.BLOCKED, MReadOnlyReconciler(r.budget, r.journal, reader).inspect(id))
         assertEquals(0, reader.reads)
@@ -89,12 +89,12 @@ class MJournalRecoveryTest {
     @Test fun syncRenameCloseAndWriteFaultsNeverAcknowledgeAndRetainOldRecord() = runTest {
         for (point in listOf("write", "fsync", "close", "rename", "directory")) {
             val r = rig(backgroundScope); val id = TransactionId(UUID.randomUUID().toString())
-            assertNotNull(r.journal.append(id, MState.PREPARING, plan))
+            assertNotNull(r.journal.append(id, MState.PREPARING, this@MJournalRecoveryTest.planFingerprint))
             val oldFile = File(r.root.directory, "tx-${id.value}/publication/000000000001.rec")
             val old = oldFile.readBytes()
             val file = File(r.root.directory, "tx-${id.value}/source.sealed").apply { writeBytes(r.bytes) }
             r.fault = { if (it == point) throw IOException("Injected barrier") }
-            assertNull(r.journal.append(id, MState.PRIVATE_INPUT_SEALED, plan, digest(file)))
+            assertNull(r.journal.append(id, MState.PRIVATE_INPUT_SEALED, this@MJournalRecoveryTest.planFingerprint, digest(file)))
             assertArrayEquals(old, oldFile.readBytes()); assertTrue(r.budget.used() > 0)
         }
     }
@@ -117,7 +117,7 @@ class MJournalRecoveryTest {
     }
     @Test fun metadataLimitsUnknownVersionAndPredecessorMutationReject() {
         val id = TransactionId(UUID.randomUUID().toString())
-        val g = MRecord(id, 1, MState.PREPARING, RecordCodec.genesis, RecordCodec.genesis, null, null, plan)
+        val g = MRecord(id, 1, MState.PREPARING, RecordCodec.genesis, RecordCodec.genesis, null, null, this@MJournalRecoveryTest.planFingerprint)
         assertThrows(IllegalArgumentException::class.java) { MCodec.encode(g.copy(uri = "x".repeat(4097))) }
         assertThrows(IllegalArgumentException::class.java) { MCodec.encode(g.copy(flags = 128)) }
         val bytes = MCodec.encode(g); val body = bytes.copyOf(bytes.size - 32).also { it[7] = 3 }
@@ -129,13 +129,13 @@ class MJournalRecoveryTest {
     }
     @Test fun rereadTamperingNeverAcknowledgesNewRecord() = runTest {
         val r = rig(backgroundScope); val id = TransactionId(UUID.randomUUID().toString())
-        assertNotNull(r.journal.append(id, MState.PREPARING, plan))
+        assertNotNull(r.journal.append(id, MState.PREPARING, this@MJournalRecoveryTest.planFingerprint))
         val source = File(r.root.directory, "tx-${id.value}/source.sealed").apply { writeBytes(r.bytes) }
         r.fault = { point -> if (point == "directory") {
             val file = File(r.root.directory, "tx-${id.value}/publication/000000000002.rec")
             if (file.exists()) file.appendBytes(byteArrayOf(1))
         } }
-        assertNull(r.journal.append(id, MState.PRIVATE_INPUT_SEALED, plan, digest(source)))
+        assertNull(r.journal.append(id, MState.PRIVATE_INPUT_SEALED, this@MJournalRecoveryTest.planFingerprint, digest(source)))
         assertEquals(MRecoveryStatus.BLOCKED, MReadOnlyReconciler(r.budget, r.journal, Reader(r.bytes)).inspect(id))
     }
     @Test fun legacyScannerCannotTreatV2TransactionAsOrdinaryPrivateSuccess() = runTest {
@@ -152,7 +152,7 @@ class MJournalRecoveryTest {
             val owner = currentCoroutineContext()[Job]!!
             r.fault = { if (it == "fsync") owner.cancel(cancellation) }
             try {
-                r.journal.append(id, MState.PREPARING, plan); returned = true
+                r.journal.append(id, MState.PREPARING, this@MJournalRecoveryTest.planFingerprint); returned = true
             } catch (caught: CancellationException) { assertSame(cancellation, caught); throw caught }
         }
         job.join(); assertTrue(job.isCancelled); assertFalse(returned)

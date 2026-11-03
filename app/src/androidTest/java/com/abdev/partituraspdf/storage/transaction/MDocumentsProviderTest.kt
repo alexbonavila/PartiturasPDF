@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 class MDocumentsProviderTest {
     @Test fun newIdsSameNameNeverOverwriteAndWriteIsOneShot() {
         val provider = MNewDocumentProvider()
-        provider.attachInfo(InstrumentationRegistry.getInstrumentation().context,
+        provider.attachInfo(InstrumentationRegistry.getInstrumentation().targetContext,
             ProviderInfo().apply { authority = MNewDocumentProvider.AUTHORITY; exported = true; grantUriPermissions = true; readPermission = "android.permission.MANAGE_DOCUMENTS"; writePermission = readPermission })
         try {
         val first = provider.createDocument("root", "application/pdf", "same.pdf")
@@ -27,7 +27,7 @@ class MDocumentsProviderTest {
         } finally { provider.shutdown() }
     }
     private fun provider() = MNewDocumentProvider().also {
-        it.attachInfo(InstrumentationRegistry.getInstrumentation().context, ProviderInfo().apply {
+        it.attachInfo(InstrumentationRegistry.getInstrumentation().targetContext, ProviderInfo().apply {
             authority = MNewDocumentProvider.AUTHORITY; exported = true; grantUriPermissions = true
             readPermission = "android.permission.MANAGE_DOCUMENTS"; writePermission = readPermission
         })

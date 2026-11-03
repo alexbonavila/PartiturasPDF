@@ -427,3 +427,56 @@ No test disabled or skipped, no production/protected behavior changed. Full diff
 and whitespace review only. BUILD / JVM TESTS / ANDROID INSTRUMENTATION / LINT /
 COVERAGE / CI / DEVICE-MANUAL: **NOT RUN**. Owner must execute CI at the published
 SHA; no passing-CI, engine-acceptance or Block 2 completion claim is made.
+
+## CI #127 manual-provider storage context correction — 2026-11-03
+
+Owner-reported run https://github.com/alexbonavila/PartiturasPDF/actions/runs/41641563085
+at d2692a365821a1c9eb80048254d3622e793d903e: build/JVM/Lint/localization/fixtures
+succeeded. Each API26/27/36 run reported seven MDocumentsProviderTest failures
+out of 445 tests, with 438 passing, including the prior Reader regression.
+Logcat showed no_backup mkdir EACCES/permission denied on API26/27 and ENOENT on
+API36. These are owner-provided historical results, not new Codex execution.
+
+Both manually attached providers received instrumentation.context (test APK
+package com.abdev.partituraspdf.test), while the test executes in the target
+application process. Private no-backup access through that context can address
+a different package/UID filesystem namespace. Replace it with targetContext
+(com.abdev.partituraspdf) in newIdsSameNameNeverOverwriteAndWriteIsOneShot and the
+shared provider() helper. This does not change the actual manifest-registered
+provider's context or grant any permissions; it fixes only manual test instances.
+
+Conditional provider change: onCreate previously assigned its directory and
+returned mkdir()'s Boolean. The attachInfo call sites have no returned Boolean
+to validate, so a failed initialization could be followed by createDocument and
+an indirect FileNotFoundException. Now require successful mkdir explicitly, then
+assign the owned directory and return true. Failure throws a sanitized initialization
+error before document operations; shutdown cannot own a failed candidate. Same
+noBackupFilesDir, unpredictable UUID child, bounded canonical document IDs and
+no public/external fallback. No runtime/external storage permission is requested.
+
+Shutdown still closes its owned descriptors, stops/joins its existing workers,
+preserves workerFailure and deletes only files in the uniquely owned test child,
+then that child. No new recursive deletion, retries, sleeps or suppressed cleanup
+errors. All fault modes and real descriptor/error behavior remain unchanged.
+Provider authority, MANAGE_DOCUMENTS, exported/grantUriPermissions and the entire
+manifest are untouched; all providers/fixtures remain test-APK-only.
+
+Exactly three files changed: MDocumentsProviderTest.kt, testprovider/
+MNewDocumentProvider.kt and this ledger. All nine enabled Android methods and all
+assertions retained:
+
+- newIdsSameNameNeverOverwriteAndWriteIsOneShot
+- providerRefusalAndCorruptReadbackAreExplicitNotOsGrantClaims
+- reliablePipePartialAndCloseErrorHaveDeterministicErrorSignal
+- realResolverWithoutManageDocumentsOrUriGrantCannotWriteTestProvider
+- autoCloseAloneCanLeaveReliablePeerErrorUnthrown
+- checkedReliableProviderErrorCannotReachReadbackMatch
+- primaryCopyAndSecondaryCloseFailuresSurviveReliablePeerError
+- reliableWriterWithoutPeerCompletionNeverAssumesSuccess
+- checkedRegularDescriptorStillWritesAndClosesSuccessfully
+
+Full diff and git diff --check reviewed. BUILD / JVM TESTS / ANDROID
+INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE-MANUAL: **NOT RUN**. Directory
+creation, provider startup and API26/27/36 runtime outcomes require owner CI on
+the published SHA. No production, Reader, SAF, host, registry, dependency, Gradle,
+manifest, fixture or quality-gate changes. Block 2 completion is not claimed.

@@ -42,8 +42,10 @@ class MNewDocumentProvider : DocumentsProvider() {
     }
     private val pipes = java.util.ArrayList<ParcelFileDescriptor>()
     override fun onCreate(): Boolean {
-        directory = File(requireNotNull(context).noBackupFilesDir, "m-provider-${UUID.randomUUID()}")
-        return directory.mkdir()
+        val created = File(requireNotNull(context).noBackupFilesDir, "m-provider-${UUID.randomUUID()}")
+        check(created.mkdir()) { "Disposable provider directory unavailable" }
+        directory = created // Cleanup owns this namespace only after successful creation.
+        return true
     }
     private fun file(id: String): File {
         val canonical = try { UUID.fromString(id).toString() } catch (_: IllegalArgumentException) { null }

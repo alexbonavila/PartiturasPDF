@@ -305,7 +305,10 @@ class ReaderScreenTest {
             assertTrue(acknowledged.isEmpty());assertFalse(consumer.bitmap.isRecycled);consumer.detached()
         }
         assertTrue(acknowledged.isEmpty())
-        compose.runOnIdle{shown.value=true};visible();assertEquals(listOf(PageIndex(0)),acknowledged)
+        compose.runOnIdle{shown.value=true};visible()
+        // VISIBLE schedules Work.Ack; the independent route callback runs in the subsequent task.
+        compose.waitUntil(10_000){acknowledged.isNotEmpty()}
+        compose.runOnIdle{assertEquals(listOf(PageIndex(0)),acknowledged)}
     }
     @Test fun recompositionDoesNotReattachReopenOrRerender(){
         start();visible();val rendered=requests.size

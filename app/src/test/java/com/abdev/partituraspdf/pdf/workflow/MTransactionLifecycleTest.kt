@@ -91,11 +91,21 @@ class MTransactionLifecycleTest {
         val r = rig(backgroundScope); val ready = r.ready(); val port = r.destination(ready.request.operation)
         val cancellation = CancellationException("Owner cancellation")
         port.blockWrite = CompletableDeferred()
+        var cancellationObserved = false
         val job = launch {
             try { ready.session.complete(ready.request.token, WriteDestinationCapability(port)); fail("Must cancel") }
-            catch (caught: CancellationException) { assertSame(cancellation, caught); throw caught }
+            catch (caught: CancellationException) {
+                // Job.cancel may deliver a recovered/wrapped exception, unlike direct throw.
+                assertEquals(cancellation.message, caught.message)
+                cancellationObserved = true
+                throw caught
+            }
         }
         port.entered.await(); job.cancel(cancellation); job.join()
+        assertTrue(cancellationObserved); assertTrue(job.isCancelled)
+        assertNull(ready.session.verifiedPublication())
+        assertTrue(r.budget.used() > 0)
+        assertEquals(2, boundedFiles(r.root).count { it.name.endsWith(".sealed") })
         assertSame(WriteAdmissionGate.Admission.Busy, r.gate.tryAcquire())
         assertEquals(MOwnerResolution.ACKNOWLEDGED, ready.session.acknowledgeUnresolved()); assertEquals(1, port.writes)
     }

@@ -372,3 +372,58 @@ Full diff reviewed and git diff --check performed. BUILD / JVM TESTS / ANDROID
 INSTRUMENTATION / LINT / COVERAGE / CI / DEVICE-MANUAL: **NOT RUN**. No claim that
 CI #125 is now passing or that provider startup is runtime verified. Owner must
 compile/run the new exact SHA and retain API26/27/36 test/process evidence.
+
+## CI #126 targeted test corrections — 2026-11-03
+
+Owner-reported run https://github.com/alexbonavila/PartiturasPDF/actions/runs/41625091669
+at baseline 137fa2d00e51ed04f262c5792316d5b63d000585. Build/Lint/localization/
+fixtures succeeded; JVM reported 708 executed/one failure; API26 was blocked by
+the JVM task; API27/API36 reported instrumentation failures. These are historical
+owner-supplied results, not execution by Codex or results for this new revision.
+
+A — MTransactionLifecycleTest's cancellationKeepsExactIdentityAndRequiresResolutionAfterWriterStops
+cancels the writer job with Job.cancel(cancellation), then observes coroutine
+cancellation through suspend/dispatch boundaries. That API does not promise the
+same Throwable object (coroutine recovery/wrapping may preserve reason instead).
+Replace only this unsupported identity check with expected CancellationException
+message, an explicit observed flag, canceled job state, no verified publication,
+retained quota/two sealed artifacts, blocked admission, explicit owner resolution
+and one write. Original direct-throw/propagation identity tests elsewhere remain
+unchanged. The historical method identity is retained to preserve inventory.
+
+B — MDocumentsProviderTest.autoCloseAloneCanLeaveReliablePeerErrorUnthrown used
+expression-bodied runBlocking ending in assertThrows, which returns a Throwable;
+its JVM return was non-void, so JUnit4 rejected the class before its tests ran.
+All nine @Test declarations were inspected. Convert all six expression-bodied
+runBlocking test methods into block-bodied Unit functions. The three existing
+block-bodied methods remain unchanged. Every assertion, descriptor/fault/permission
+scenario, provider cleanup and method name is retained; no provider/production/
+manifest/dependency changes or synthetic successes.
+
+C — ReaderScreenTest.renderAndAttachmentWithoutVisibleScreenNeverAcknowledge
+had a source-demonstrable synchronization gap: ReaderController.nextWork publishes
+VISIBLE/presentedPage with checkpoint Scheduling before returning Work.Ack;
+execute(Work.Ack) invokes perform(), whose distinct scope.async task calls
+route.displayed(). The fake route adds to a CopyOnWriteArrayList. visible() only
+polls phase/page; it does not wait for the route observation. This test inherits
+Main.immediate, not an assumed IO dispatcher. Another test thread can observe
+state publication before the Ack task has appended its observation.
+ReaderPageSurface signals presentation after draw/unlock/post with identity/visible
+checks; merely attaching/detaching does not invoke route.displayed.
+
+Only the affected Reader test now waits for the thread-safe observed collection
+to become nonempty, with the existing 10,000 ms Compose wait limit, then performs
+the unchanged exact listOf(PageIndex(0)) assertion in runOnIdle. Waiting for
+nonempty does NOT accept at-least-once: wrong or duplicate observations fail the
+exact assertion rather than being filtered out. Pre-visibility empty-list checks
+and frame/bitmap checks are unchanged. No synthetic acknowledgements, sleeps,
+timeout increases, retries or changes to the shared visible() helper/other tests.
+No production Reader defect is demonstrated by this specific ordering gap; runtime
+behavior of the correction remains to be verified by the owner.
+
+Exact four-file scope: MTransactionLifecycleTest.kt, MDocumentsProviderTest.kt,
+conditionally authorized ReaderScreenTest.kt (one method only), this ledger.
+No test disabled or skipped, no production/protected behavior changed. Full diff
+and whitespace review only. BUILD / JVM TESTS / ANDROID INSTRUMENTATION / LINT /
+COVERAGE / CI / DEVICE-MANUAL: **NOT RUN**. Owner must execute CI at the published
+SHA; no passing-CI, engine-acceptance or Block 2 completion claim is made.

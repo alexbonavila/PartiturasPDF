@@ -49,19 +49,21 @@ class MDocumentsProviderTest {
             ParcelFileDescriptor.AutoCloseInputStream(p.openDocument(id, "r", null)).use { assertArrayEquals(byteArrayOf(9), it.readBytes()) }
         } finally { p.shutdown() }
     }
-    @Test fun reliablePipePartialAndCloseErrorHaveDeterministicErrorSignal() = kotlinx.coroutines.runBlocking {
-        for (fault in listOf(MNewDocumentProvider.Fault.PARTIAL_WRITE, MNewDocumentProvider.Fault.CLOSE_ERROR)) {
-            val p = provider()
-            try {
-                val id = p.createDocument("root", "application/pdf", "same.pdf"); p.fault = fault
-                val fd = p.openDocument(id, "w", null)
+    @Test fun reliablePipePartialAndCloseErrorHaveDeterministicErrorSignal() {
+        kotlinx.coroutines.runBlocking {
+            for (fault in listOf(MNewDocumentProvider.Fault.PARTIAL_WRITE, MNewDocumentProvider.Fault.CLOSE_ERROR)) {
+                val p = provider()
                 try {
-                    val output = ParcelFileDescriptor.AutoCloseOutputStream(fd)
-                    output.write(byteArrayOf(1, 2, 3)); output.flush()
-                    p.writeObserved.await()
-                    assertThrows(java.io.IOException::class.java) { fd.checkError() }
-                } finally { fd.close() }
-            } finally { p.shutdown() }
+                    val id = p.createDocument("root", "application/pdf", "same.pdf"); p.fault = fault
+                    val fd = p.openDocument(id, "w", null)
+                    try {
+                        val output = ParcelFileDescriptor.AutoCloseOutputStream(fd)
+                        output.write(byteArrayOf(1, 2, 3)); output.flush()
+                        p.writeObserved.await()
+                        assertThrows(java.io.IOException::class.java) { fd.checkError() }
+                    } finally { fd.close() }
+                } finally { p.shutdown() }
+            }
         }
     }
     @Test fun realResolverWithoutManageDocumentsOrUriGrantCannotWriteTestProvider() {
@@ -74,83 +76,93 @@ class MDocumentsProviderTest {
         }
     }
 
-    @Test fun autoCloseAloneCanLeaveReliablePeerErrorUnthrown() = kotlinx.coroutines.runBlocking {
-        val p = provider()
-        try {
-            val id = p.createDocument("root", "application/pdf", "same.pdf")
-            p.fault = MNewDocumentProvider.Fault.CLOSE_ERROR
-            val fd = p.openDocument(id, "w", null)
-            val output = ParcelFileDescriptor.AutoCloseOutputStream(fd)
+    @Test fun autoCloseAloneCanLeaveReliablePeerErrorUnthrown() {
+        kotlinx.coroutines.runBlocking {
+            val p = provider()
             try {
-                output.write(byteArrayOf(1, 2, 3)); output.flush(); p.writeObserved.await()
-                output.close() // API26 close caches status; it does not itself checkError().
-                assertThrows(java.io.IOException::class.java) { fd.checkError() }
-            } finally { output.close() }
-        } finally { p.shutdown() }
+                val id = p.createDocument("root", "application/pdf", "same.pdf")
+                p.fault = MNewDocumentProvider.Fault.CLOSE_ERROR
+                val fd = p.openDocument(id, "w", null)
+                val output = ParcelFileDescriptor.AutoCloseOutputStream(fd)
+                try {
+                    output.write(byteArrayOf(1, 2, 3)); output.flush(); p.writeObserved.await()
+                    output.close() // API26 close caches status; it does not itself checkError().
+                    assertThrows(java.io.IOException::class.java) { fd.checkError() }
+                } finally { output.close() }
+            } finally { p.shutdown() }
+        }
     }
-    @Test fun checkedReliableProviderErrorCannotReachReadbackMatch() = kotlinx.coroutines.runBlocking {
-        val p = provider()
-        try {
-            val id = p.createDocument("root", "application/pdf", "same.pdf")
-            p.fault = MNewDocumentProvider.Fault.CLOSE_ERROR
-            var reads = 0
-            val port = object : com.abdev.partituraspdf.storage.api.NewDestinationPort {
-                override val operation = com.abdev.partituraspdf.storage.api.TransactionId(java.util.UUID.randomUUID().toString())
-                override val destination = com.abdev.partituraspdf.core.document.StorageDocumentRef("test", "reliable-new")
-                override val observedFlags = 3
-                override suspend fun revalidate() = true
-                override suspend fun writeOnce(copy: suspend (java.io.OutputStream) -> Unit) {
-                    writeNewDescriptor(p.openDocument(id, "w", null), copy = { output -> copy(output); p.writeObserved.await() })
+    @Test fun checkedReliableProviderErrorCannotReachReadbackMatch() {
+        kotlinx.coroutines.runBlocking {
+            val p = provider()
+            try {
+                val id = p.createDocument("root", "application/pdf", "same.pdf")
+                p.fault = MNewDocumentProvider.Fault.CLOSE_ERROR
+                var reads = 0
+                val port = object : com.abdev.partituraspdf.storage.api.NewDestinationPort {
+                    override val operation = com.abdev.partituraspdf.storage.api.TransactionId(java.util.UUID.randomUUID().toString())
+                    override val destination = com.abdev.partituraspdf.core.document.StorageDocumentRef("test", "reliable-new")
+                    override val observedFlags = 3
+                    override suspend fun revalidate() = true
+                    override suspend fun writeOnce(copy: suspend (java.io.OutputStream) -> Unit) {
+                        writeNewDescriptor(p.openDocument(id, "w", null), copy = { output -> copy(output); p.writeObserved.await() })
+                    }
+                    override suspend fun readBack(copy: suspend (java.io.InputStream) -> Unit) {
+                        reads++
+                        ParcelFileDescriptor.AutoCloseInputStream(p.openDocument(id, "r", null)).use { copy(it) }
+                    }
                 }
-                override suspend fun readBack(copy: suspend (java.io.InputStream) -> Unit) {
-                    reads++
-                    ParcelFileDescriptor.AutoCloseInputStream(p.openDocument(id, "r", null)).use { copy(it) }
+                val bytes = byteArrayOf(1, 2, 3)
+                val expected = observeBytes(java.io.ByteArrayInputStream(bytes), 3)
+                val result = NewDocumentPublisher().publish(com.abdev.partituraspdf.storage.api.WriteDestinationCapability(port), expected) { it.write(bytes) }
+                assertSame(ReadbackResult.Uncertain, result)
+                assertEquals(0, reads) // Even matching stored bytes cannot override the remote error.
+            } finally { p.shutdown() }
+        }
+    }
+    @Test fun primaryCopyAndSecondaryCloseFailuresSurviveReliablePeerError() {
+        kotlinx.coroutines.runBlocking {
+            val p = provider()
+            try {
+                val id = p.createDocument("root", "application/pdf", "same.pdf")
+                p.fault = MNewDocumentProvider.Fault.CLOSE_ERROR
+                val primary = IllegalArgumentException("Primary copy defect")
+                val secondary = java.io.IOException("Injected close failure")
+                try {
+                    writeNewDescriptor(p.openDocument(id, "w", null), copy = {
+                        it.write(byteArrayOf(1, 2, 3)); p.writeObserved.await(); throw primary
+                    }, closeStream = { it.close(); throw secondary })
+                    fail("Must propagate original copy failure")
+                } catch (caught: IllegalArgumentException) {
+                    assertSame(primary, caught)
+                    assertTrue(caught.suppressed.any { it === secondary })
+                    assertTrue(caught.suppressed.any { it is java.io.IOException && it !== secondary })
                 }
-            }
-            val bytes = byteArrayOf(1, 2, 3)
-            val expected = observeBytes(java.io.ByteArrayInputStream(bytes), 3)
-            val result = NewDocumentPublisher().publish(com.abdev.partituraspdf.storage.api.WriteDestinationCapability(port), expected) { it.write(bytes) }
-            assertSame(ReadbackResult.Uncertain, result)
-            assertEquals(0, reads) // Even matching stored bytes cannot override the remote error.
-        } finally { p.shutdown() }
+            } finally { p.shutdown() }
+        }
     }
-    @Test fun primaryCopyAndSecondaryCloseFailuresSurviveReliablePeerError() = kotlinx.coroutines.runBlocking {
-        val p = provider()
-        try {
-            val id = p.createDocument("root", "application/pdf", "same.pdf")
-            p.fault = MNewDocumentProvider.Fault.CLOSE_ERROR
-            val primary = IllegalArgumentException("Primary copy defect")
-            val secondary = java.io.IOException("Injected close failure")
+    @Test fun reliableWriterWithoutPeerCompletionNeverAssumesSuccess() {
+        kotlinx.coroutines.runBlocking {
+            val pipe = ParcelFileDescriptor.createReliablePipe()
             try {
-                writeNewDescriptor(p.openDocument(id, "w", null), copy = {
-                    it.write(byteArrayOf(1, 2, 3)); p.writeObserved.await(); throw primary
-                }, closeStream = { it.close(); throw secondary })
-                fail("Must propagate original copy failure")
-            } catch (caught: IllegalArgumentException) {
-                assertSame(primary, caught)
-                assertTrue(caught.suppressed.any { it === secondary })
-                assertTrue(caught.suppressed.any { it is java.io.IOException && it !== secondary })
-            }
-        } finally { p.shutdown() }
+                try {
+                    writeNewDescriptor(pipe[1], copy = { })
+                    fail("No affirmative peer completion proof")
+                } catch (_: java.io.IOException) { /* Explicitly unconfirmed, never successful. */ }
+            } finally { pipe[0].close(); pipe[1].close() }
+        }
     }
-    @Test fun reliableWriterWithoutPeerCompletionNeverAssumesSuccess() = kotlinx.coroutines.runBlocking {
-        val pipe = ParcelFileDescriptor.createReliablePipe()
-        try {
+    @Test fun checkedRegularDescriptorStillWritesAndClosesSuccessfully() {
+        kotlinx.coroutines.runBlocking {
+            val p = provider()
             try {
-                writeNewDescriptor(pipe[1], copy = { })
-                fail("No affirmative peer completion proof")
-            } catch (_: java.io.IOException) { /* Explicitly unconfirmed, never successful. */ }
-        } finally { pipe[0].close(); pipe[1].close() }
-    }
-    @Test fun checkedRegularDescriptorStillWritesAndClosesSuccessfully() = kotlinx.coroutines.runBlocking {
-        val p = provider()
-        try {
-            val id = p.createDocument("root", "application/pdf", "same.pdf")
-            writeNewDescriptor(p.openDocument(id, "w", null), copy = { it.write(byteArrayOf(1, 2, 3)) })
-            ParcelFileDescriptor.AutoCloseInputStream(p.openDocument(id, "r", null)).use {
-                assertArrayEquals(byteArrayOf(1, 2, 3), it.readBytes())
-            }
-        } finally { p.shutdown() }
+                val id = p.createDocument("root", "application/pdf", "same.pdf")
+                writeNewDescriptor(p.openDocument(id, "w", null), copy = { it.write(byteArrayOf(1, 2, 3)) })
+                ParcelFileDescriptor.AutoCloseInputStream(p.openDocument(id, "r", null)).use {
+                    assertArrayEquals(byteArrayOf(1, 2, 3), it.readBytes())
+                }
+            } finally { p.shutdown() }
+        }
     }
 
 }

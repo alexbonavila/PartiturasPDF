@@ -298,3 +298,15 @@ NOT GRANTED and Phase M Block 2 is not complete. Prior dated FAIL/NOT RUN eviden
 remains unchanged; this scoped PASS supersedes only the matching pending positive
 fidelity/rotated visual evidence. Builds/tests/validators/resolution/install/ADB/
 devices/scanners/CI: **NOT RUN by Codex** for this documentation increment.
+
+## Experimental vertical slice and owner performance scope — 2026-11-09
+
+A real working-copy engine and strict validator now exist ONLY in androidTest,
+limited to exact canonical synthetic source hashes and a 2 MiB harness parser-byte
+bound. Production EngineApprovalRequired defaults and test-only dependency remain
+unchanged; no general engine approval. See [source/fault matrix](M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md#real-pdf--safe-save-as-test-confined-vertical-slice--2026-11-09).
+The owner omitted the dedicated physical memory/performance campaign: earlier
+prospective profiling requirements are superseded as scope, not marked PASS.
+No new benchmark/physical profiling or quantitative threshold is scheduled. Parser
+exhaustion/cancellation limits and security/JPX/packaging/legal gates remain open;
+no leak-freedom or resource-safety claim. New integration/JVM tests are NOT RUN.

@@ -80,9 +80,10 @@ class MPdfboxSaveAsIntegrationTest {
             val source=captured.snapshot
             var output:WorkingSnapshot?=null
             try {
-                output=(rig.adapters.transform(source,rig.plan,id,rig.store) as EngineResult.Produced).output
+                val produced=(rig.adapters.transform(source,rig.plan,id,rig.store) as EngineResult.Produced).output
+                output=produced
                 val wrong=OrderedPagePlan(listOf(PageSelection(0,0),PageSelection(1,0)))
-                assertTrue(rig.adapters.validate(source,output,wrong) is ValidationResult.Refused)
+                assertTrue(rig.adapters.validate(source,produced,wrong) is ValidationResult.Refused)
             } finally {
                 output?.let { it.requestClose(); assertSame(SnapshotReleaseResult.Released,it.awaitReleased()) }
                 source.requestClose();assertSame(SnapshotReleaseResult.Released,source.awaitReleased())
@@ -205,7 +206,9 @@ class MPdfboxSaveAsIntegrationTest {
             val defect=IllegalStateException("Injected private cleanup defect");rig.cleanupFault=defect
             val result=ready.session.complete(ready.request.token,destination.capability()) as PublicationResult.VerifiedNewDocument
             assertEquals(SnapshotCleanupStatus.PENDING,result.cleanup)
-            assertNotNull(ready.session.cleanupFailure());assertEquals(result.evidence,destination.evidence())
+            assertSame(defect,ready.session.cleanupFailure());assertEquals(result.evidence,destination.evidence())
+            assertTrue(java.io.File(rig.root.directory,"tx-${ready.request.operation.value}/source.sealed").isFile)
+            assertTrue(java.io.File(rig.root.directory,"tx-${ready.request.operation.value}/output.sealed").isFile)
             assertTrue(rig.budget.used() >= result.evidence.byteCount)
             val admission=rig.gate.tryAcquire() as WriteAdmissionGate.Admission.Acquired;admission.close()
             assertEquals(1,destination.writes)

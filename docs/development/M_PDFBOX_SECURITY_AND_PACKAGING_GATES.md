@@ -192,3 +192,20 @@ production cancellation bound or isolated-worker kill policy. No destructive dev
 operation, adversarial OOM trial, worker kill or new test implementation is authorized
 here. Agree quantitative budgets and physical acceptance criteria BEFORE calling
 results acceptable; file quotas and 64 KiB buffers do not bound parser heap/CPU.
+
+## Owner scope adjustment — 2026-11-09, subsequent vertical slice
+
+Owner explicitly omits the separate physical memory/performance benchmarking
+campaign. The prospective hardware/profiling plan and corresponding matrix row
+above are historical proposals, superseded for this increment: DEFERRED/OMITTED
+BY OWNER, NOT PASS. Do not schedule a benchmark suite, physical tablet profiling,
+heap/PSS/CPU/latency campaign or invent thresholds. This does not establish leak
+freedom or solve hostile-parser exhaustion. Keep byte quotas and deterministic
+ownership/cleanup/cancellation requirements. General physical functional policy
+remains distinct; no protected policy was changed or silently waived.
+
+The new engine/validator remain instrumentation-only and limited to exact synthetic
+source hashes, with a 2 MiB experimental parser-input bound. Production defaults
+still require engine approval. Security/advisory/JPX, packaging and legal decisions
+above remain open. See [vertical-slice source evidence](M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md#real-pdf--safe-save-as-test-confined-vertical-slice--2026-11-09).
+No builds/tests/measurements/resolution/CI executed by Codex.

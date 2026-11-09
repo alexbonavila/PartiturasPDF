@@ -69,8 +69,8 @@ internal class TestPdfboxModificationAdapters : PdfModificationEngine, PdfOperat
         }
     }
     override suspend fun transform(source: WorkingSnapshot, plan: OrderedPagePlan, transaction: TransactionId,
-                                   store: PrivateSnapshotStore): EngineResult = withContext(Dispatchers.IO) {
-        qualification(source)?.let { return@withContext EngineResult.Rejected(it) }
+                                   store: PrivateSnapshotStore): EngineResult {
+        qualification(source)?.let { return EngineResult.Rejected(it) }
         var rejection = PdfOperationFailure.TransformationFailure
         val context = currentCoroutineContext()
         val staged = store.stage(transaction) { writer ->
@@ -109,9 +109,27 @@ internal class TestPdfboxModificationAdapters : PdfModificationEngine, PdfOperat
                 context.ensureActive()
             }
         }
-        when (staged) {
+        return when (staged) {
             is SnapshotCaptureResult.Captured -> EngineResult.Produced(staged.snapshot)
             is SnapshotCaptureResult.Rejected -> EngineResult.Rejected(rejection, staged.cleanup)
+        }
+    }
+    private suspend fun raster(snapshot: WorkingSnapshot, index: Int): IntArray {
+        val lease = (snapshot.acquireReadLease() as? SnapshotLeaseResult.Acquired)?.lease ?: throw IOException("Raster lease unavailable")
+        return lease.use {
+            ParcelFileDescriptor.dup(it.descriptor.fileDescriptor).use { fd -> PdfRenderer(fd).use { renderer ->
+                renderer.openPage(index).use { page ->
+                    val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+                    try {
+                        bitmap.eraseColor(Color.WHITE)
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        IntArray(128 * 128).also { pixels ->
+                            bitmap.getPixels(pixels, 0, 128, 0, 0, 128, 128)
+                            require(pixels.any { pixel -> pixel != Color.WHITE && pixel != Color.TRANSPARENT }) { "Empty native raster" }
+                        }
+                    } finally { bitmap.recycle() }
+                }
+            } }
         }
     }
     override suspend fun validate(source: WorkingSnapshot, output: WorkingSnapshot, plan: OrderedPagePlan): ValidationResult = withContext(Dispatchers.IO) {
@@ -130,6 +148,12 @@ internal class TestPdfboxModificationAdapters : PdfModificationEngine, PdfOperat
                 val observed = SpikeSemantics.snapshot(actual, plan.selections.map { originals[it.sourcePageIndex].rotation })
                 check(persisted == (0 until actual.numberOfPages).map { actual.getPage(it).rotation })
                 if (observed != expected) return@withContext ValidationResult.Refused(PdfValidationReport.Rejected)
+                for ((index, selection) in plan.selections.withIndex()) {
+                    currentCoroutineContext().ensureActive()
+                    val pixels = raster(output, index)
+                    if (selection.addedClockwiseQuarterTurns == 0 && !pixels.contentEquals(raster(source, selection.sourcePageIndex)))
+                        return@withContext ValidationResult.Refused(PdfValidationReport.Rejected)
+                }
                 currentCoroutineContext().ensureActive()
                 // Privileged test-only mint, after actual independent sealed reopens/checks.
                 ValidationResult.Accepted(ValidatedPdfArtifact(output, plan))

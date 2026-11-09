@@ -17,6 +17,19 @@ class MTransactionLifecycleTest {
     @get:Rule val temporary = TemporaryFolder()
     private fun rig(scope: CoroutineScope) = MTestRig(File(temporary.root.canonicalFile, UUID.randomUUID().toString()), scope)
     private suspend fun MTestRig.ready() = coordinator().prepare(source, plan) as MPreparation.Ready
+    @Test fun engineCleanupDebtSurvivesOtherwiseCompletePreparationCleanup() = runTest {
+        val r = rig(backgroundScope)
+        val engine = object : PdfModificationEngine {
+            override suspend fun transform(source: WorkingSnapshot, plan: OrderedPagePlan, transaction: TransactionId,
+                                           store: PrivateSnapshotStore) =
+                EngineResult.Rejected(PdfOperationFailure.TransformationFailure, SnapshotCleanupStatus.PENDING)
+        }
+        val coordinator = MTransactionCoordinator(r.gate, r.capture, r.store, r.journal, engine, r.validator)
+        val result = coordinator.prepare(r.source, r.plan) as MPreparation.Rejected
+        assertEquals(PdfOperationFailure.TransformationFailure, result.reason)
+        assertEquals(SnapshotCleanupStatus.PENDING, result.cleanup)
+        (r.gate.tryAcquire() as WriteAdmissionGate.Admission.Acquired).close()
+    }
     @Test fun verifiedCleanupIsDurableAndAdmissionReopens() = runTest {
         val r = rig(backgroundScope); val ready = r.ready(); val destination = r.destination(ready.request.operation)
         val result = ready.session.complete(ready.request.token, WriteDestinationCapability(destination)) as PublicationResult.VerifiedNewDocument

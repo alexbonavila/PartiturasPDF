@@ -813,3 +813,125 @@ NOT GRANTED and Phase M Block 2 is not complete. Prior dated FAIL/NOT RUN eviden
 remains unchanged; this scoped PASS supersedes only the matching pending positive
 fidelity/rotated visual evidence. Builds/tests/validators/resolution/install/ADB/
 devices/scanners/CI: **NOT RUN by Codex** for this documentation increment.
+
+## Real PDF / safe Save As test-confined vertical slice — 2026-11-09
+
+Approved baseline `5465a9b14e9f5f1acaa7b558a7e785370de98b06`. Implementation
+SOURCE, not compilation/execution evidence. Existing owner fidelity campaign and
+CI #135 retain their exact historical source attribution; neither verifies this
+new increment. No new framework, coordinator, journal, owner, dependency or UI.
+
+### Implemented components
+
+- `pdf/engine/spike/TestPdfboxModificationAdapters` (androidTest ONLY) implements
+  existing PdfModificationEngine/PdfOperationValidator. It qualifies exact source
+  hash/length against the canonical fixture manifest, rejects unknown/protected/
+  corrupt inputs and admits only the synthetic valid corpus. Additional harness
+  bound: 2 MiB per parsed sealed input/output (not a changed production quota or
+  proof of a parser heap cap). Caller cancellation is checked during reads/writes
+  and between native operations; blocking parser calls have no proven interruption
+  bound. Leases use separate dup descriptors for owned stream closure and exact
+  rehash/count. No writable source alias, user URI, arbitrary file output or importPage.
+- Working-copy transformation materializes inherited properties, applies selected
+  page order and additional quarter turns, and streams save through the SAME store
+  Writer. The synchronous-to-suspend bridge checks caller cancellation; no output
+  buffer masquerades as a transformed artifact. Parser closes BEFORE stage returns,
+  so close failure prevents sealing. PrivateSnapshotStore alone seals/mints ownership.
+- Validator independently reopens/rehashes the two sealed byte sequences; validates
+  order/count, persisted rotations, effective boxes, decoded streams/resources,
+  annotation dictionaries/AP/page associations and exact source-orientation text,
+  restoring rotations in finally. Native PDFium checks nonempty actual output
+  pages and exact source/output pixels when no added rotation. Only after all
+  required checks does the TEST-only adapter construct ValidatedPdfArtifact with
+  the exact output and original plan objects. Same-parser structural comparison
+  and bounded thumbnails are not full independent fidelity or production approval.
+- M-specific EngineResult.Rejected gains defaulted cleanup status, forwarded by
+  coordinator into preparation rejection. This prevents pending engine-output
+  cleanup from disappearing when the coordinator's input cleanup completes. No
+  AppError/Outcome, journal schema, transition, production adapter default or
+  destination provenance requirement changed. EngineApprovalRequired remains default.
+
+### New test source inventory (all NOT RUN)
+
+Class `storage.transaction.MPdfboxSaveAsIntegrationTest`, real Android private I/O,
+TransactionSnapshotCapturer, store/budget, journal, coordinator/session/publisher,
+NativeMLeaseCopier and directly invoked disposable MNewDocumentProvider:
+
+| Method | Source assertions / evidence distinction |
+| --- | --- |
+| realReorderRotationPublishesOnceWithDurableReadbackAndCleanup | Actual fixture02 reorder [1,0], +90/+270; prepared and verified/cleaned records; independent provider byte/hash readback; saved output page labels/rotations; source unchanged; cleanup removes sealed files, releases admission; restart-style read-only reconciliation observes existing verified record; duplicate never writes |
+| workingCopyAnnotationsAndZeroTurnNativePixelsAreValidated | Fixture12 working-copy reverse validates actual AP/associations and native zero-turn pixels, then publishes; no stock import |
+| realValidatorRejectsWrongPlanAndMalformedSealedOutput | Real engine output checked against a mismatching plan; separately sealed malformed bytes refused; owned snapshots released |
+| refusedProviderCreateAndCancellationBeforeLaunchCannotPublish | Actual provider create refusal; separate injected pre-transform barrier cancellation, no escaped launch result; admission released |
+| invalidIndexProtectedCorruptAndUnknownBytesNeverLaunch | Out-of-range plan; 14/15 and modified test-owned input hash reject; unknown bytes never enter parser; canonical copy restored for teardown |
+| sealValidationAndPreparedCheckpointFailuresCannotIssueHandoff | Injected output fsync fault; explicit validator refusal; journal prepared checkpoint failure; no Ready request |
+| actualProviderWriteRefusalCorruptReadbackAndReliableErrorsNeverVerify | Real provider WRITE_DENIED/CORRUPT_READBACK/PARTIAL_WRITE/CLOSE_ERROR; real regular/reliable descriptors; no verified result or duplicate retry; explicit unresolved disposition |
+| injectedShortReadCloseFailureAndPrewriteRefusalStayUnverified | Injected short reader, exception after actual stream close, or capability revalidation refusal; assert zero/one writes and no verified result |
+| staleDuplicateAndMissingCallbacksNeverReplayPublicWrite | Wrong token and lost callback, no write/replay; explicit owner acknowledgement |
+| cancellationAtWriterBarriersRetainsUncertaintyAndStopsBeforeResolution | Deterministic before-copy/after-copy barriers AFTER possible destination creation; caller cancellation, no receipt, retained admission until explicit resolution; one attempt |
+| finalCheckpointFaultAndExceptionalPrivateCleanupKeepIndependentOutcomes | Failed terminal checkpoint cannot verify; separate unexpected cleanup defect after durable commit preserves verified bytes, pending cleanup, exact diagnostic object, files/quota and admission release |
+
+`MPdfboxIntegrationRig` shares one PrivateRoot/budget/store/journal and one cleanup
+scope. Every test checks canonical source hash/size in teardown; provider closes and
+workers join before the unique synthetic subtree is removed. Constructor failures
+retain primary/suppressed cleanup failures. Provider descriptor effects are actual
+Android operations; custom destination identity/capability/revalidation and explicit
+fault barriers are injected seams, NOT OS grants/resolver/system-picker evidence.
+No MAndroidDestination proof check is bypassed or modified: it is deliberately not
+claimed by the direct test port. No registry/metadata dependency or implicit copy
+of favorites/reading positions. Existing metadata/SAF/Reader tests are untouched.
+
+JVM regression: `pdf.workflow.MTransactionLifecycleTest.engineCleanupDebtSurvivesOtherwiseCompletePreparationCleanup`
+checks the new cleanup-status propagation, original rejection reason and reusable
+admission. No trivial semantic-validator fake is used by positive PDF integration.
+
+### M-T01–M-T20 attribution
+
+M-T01/03/05 gain real capture/lease/seal/closure integration; M-T06 adds qualified
+protected/corrupt/unknown rejection, not arbitrary parser/security acceptance;
+M-T07 gains actual transformation + semantic/native checks for 02/12 (earlier
+spike's broader 08/09/10/11/13 source remains). M-T08/09/11/12/13/14/17/19 gain
+new-document byte readback, injected faults/cancellation, durable outcomes and
+cleanup-debt integration. No genuine OS process restart/power-loss/revocation or
+picker/grant proof. M-T10 retains existing same-name provider tests; M-T15 is
+supported by absence of registration APIs, not new real Room/metadata acceptance.
+M-T02/16 existing quotas/overflow/admission protections remain, not new exact-limit
+or hostile-parser resource measurements. M-T04 external concurrent source changes,
+M-T18 APK/backup/D2D isolation and M-T20 future production host remain separate
+acceptance gaps. No requirement is declared runtime complete by new source alone.
+
+### Owner scope decision and next validation
+
+Owner explicitly omits the dedicated physical memory/performance campaign: no
+benchmark suite, physical tablet profiling requirement, PSS/heap/CPU/latency
+campaign or new numerical performance threshold is scheduled. This is a scope
+waiver, **not technical PASS** and not proof against parser exhaustion/leaks.
+Existing correctness, storage byte/margin limits and cleanup/cancellation invariants
+remain. General physical functional acceptance policy is not silently rewritten;
+any conflict at final phase acceptance requires owner policy disposition.
+Security/BC advisories, JPX/unsupported-feature qualification, main/test binary
+isolation and production engine approval remain OPEN; unrestricted stock import12
+remains KNOWN_UNSAFE. User-facing Save As and production engines remain disabled.
+
+Owner-only Windows commands from the published source (NOT executed by Codex):
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest
+py -3 -m unittest discover -s scripts/tests -v
+py -3 scripts/validate_localization.py
+py -3 test-fixtures/scripts/verify_fixtures.py
+# After manual matching app/test APK install to the explicitly authorized emulator:
+adb -s emulator-5554 shell am instrument -w `
+  -e class com.abdev.partituraspdf.storage.transaction.MPdfboxSaveAsIntegrationTest `
+  com.abdev.partituraspdf.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Owner retains raw JUnit/counts, actual installed APK hashes/source identity and full
+API26/27/36 CI results; focused integration does not replace the complete suite.
+Run existing A1/B5/C05 coverage gates as applicable; M-specific coverage proposal
+still requires separately approved configuration and actual measured evidence.
+No coverage percentage is claimed. No automatic retries of failed assertions.
+
+Full source/diff review and git diff --check only. BUILDS / JVM / ANDROID / PYTHON /
+LINT / COVERAGE / VALIDATORS / DEPENDENCY INSTALLATION OR RESOLUTION / ADB / DEVICE /
+CI: **NOT RUN**. No new measured result, production approval or Block 2 completion.

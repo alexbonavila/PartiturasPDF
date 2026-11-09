@@ -121,3 +121,17 @@ verified→cleanup-authorized chain. CLEANED with reappearing files blocks. Lega
 chains still require their evidenced files. Matching provider bytes alone never
 mint a new commit. Old PrivateRecovery remains BLOCKED for sidecars and cannot
 serve as cleanup authority. No v1 bytes or schema semantics rewritten.
+
+## Test-confined real-PDF vertical slice — 2026-11-09
+
+Existing coordinator/store/journal/publisher contracts now have Android-only
+PDFBox transformation/validator consumers and disposable-provider integration tests.
+Production EngineApprovalRequired defaults remain unchanged; no production artifact
+mint, host UI, grants or provider-general independence proof is installed.
+EngineResult.Rejected adds a default COMPLETE cleanup status, propagated to
+MPreparation.Rejected so pending engine output cleanup is not erased by successful
+input cleanup. No durable format/transition or shared AppError/Outcome change.
+See [implementation and fault evidence](M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md#real-pdf--safe-save-as-test-confined-vertical-slice--2026-11-09).
+All new code is source-only / NOT RUN. Dedicated physical performance campaign is
+omitted by owner scope decision, not technically passed. All security/production
+gates remain open.

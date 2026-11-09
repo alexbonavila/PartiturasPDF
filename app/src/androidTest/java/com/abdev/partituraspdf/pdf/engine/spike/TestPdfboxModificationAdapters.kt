@@ -21,13 +21,13 @@ import java.io.OutputStream
 import java.security.MessageDigest
 
 /** TEST ONLY: qualified synthetic fixtures, NOT arbitrary/user PDFs or production approval. */
-internal class TestPdfboxModificationAdapters : PdfModificationEngine, PdfOperationValidator {
+internal class TestPdfboxModificationAdapters : PdfModificationAdapters {
     private val testContext = InstrumentationRegistry.getInstrumentation().context
     private val fixtureEntries = JSONObject(testContext.assets.open("manifest.json").bufferedReader().use { it.readText() })
         .getJSONArray("files")
     init {
-        val assets = object : ContextWrapper(testContext) { override fun getApplicationContext(): Context = this }
-        // Same instrumentation-asset boundary as the existing spike, never target private assets.
+        val assets = object : ContextWrapper(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext) { override fun getApplicationContext(): Context = this }
+        // Production dependency owns candidate assets; fixture assets remain test-only.
         for (name in listOf("additional.txt", "glyphlist.txt")) {
             assets.assets.open("com/tom_roush/pdfbox/resources/glyphlist/$name").use {
                 if (it.read() < 0) throw IOException("Missing candidate glyph resource")

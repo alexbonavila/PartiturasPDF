@@ -1,5 +1,6 @@
 [versions]
 pdfboxAndroid = "2.0.27.0"
+bouncyCastle = "1.86"
 agp = "9.5.0"
 coreKtx = "1.10.1"
 junit = "4.13.2"
@@ -17,6 +18,9 @@ ksp = "2.3.10"
 uiautomator = "2.3.0"
 
 [libraries]
+bouncycastle-provider = { module = "org.bouncycastle:bcprov-jdk15to18", version.ref = "bouncyCastle" }
+bouncycastle-pkix = { module = "org.bouncycastle:bcpkix-jdk15to18", version.ref = "bouncyCastle" }
+bouncycastle-util = { module = "org.bouncycastle:bcutil-jdk15to18", version.ref = "bouncyCastle" }
 pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfboxAndroid" }
 androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }

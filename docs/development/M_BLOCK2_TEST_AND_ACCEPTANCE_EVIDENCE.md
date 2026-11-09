@@ -935,3 +935,124 @@ No coverage percentage is claimed. No automatic retries of failed assertions.
 Full source/diff review and git diff --check only. BUILDS / JVM / ANDROID / PYTHON /
 LINT / COVERAGE / VALIDATORS / DEPENDENCY INSTALLATION OR RESOLUTION / ADB / DEVICE /
 CI: **NOT RUN**. No new measured result, production approval or Block 2 completion.
+
+## Block A production engine and validator — source delivery, 2026-11-09
+
+Starting/fetched branch revision `39a0332a87323ad151bf0914403fe7a862d9cc46`,
+`feat/pdf-safe-write-m`, clean before edits. This entry is evidence of source
+implementation/review only. Its publication commit identifies the new source;
+no historical CI/fidelity result is attributed to it. Codex executed no build,
+dependency resolution/install, test, compiler, validator, Lint, coverage, ADB,
+benchmark, scanner or CI. Only source/public-metadata inspection and Git checks.
+
+### New exact test inventory — all IMPLEMENTED — NOT EXECUTED
+
+Android class:
+`com.abdev.partituraspdf.storage.transaction.MProductionPdfEngineTest` (**11 methods**).
+Uses the existing `MPdfboxIntegrationRig(useProduction=true)` with actual production
+adapters/store/journal/coordinator and disposable direct provider. It is not a
+system-picker/grant acceptance campaign.
+
+| Method | Assertion and origin |
+| --- | --- |
+| `productionFactoryReordersRotatesPublishesAndCleans` | Explicit production factory, real transform/seal/validate/readback, one public write, durable CLEANED, duplicate callback blocked, exact provider evidence and unchanged source. |
+| `supportedCorpusReorderExtractionGeometryAndAllQuarterTurns` | Canonical01/02/03/06/07/08/09/10/11/12/13; each0/90/180/270; unique last/first selections (single-page uses0). Actual production structural/text/native checks, 44 recipes. These are test expectations, not executed fidelity results. |
+| `generalNoncanonicalDrawingAndInheritedResourcesWorkWithoutFixturePrivilege` | Generated noncanonical vector PDF with non-default200x300 box and inherited resources; production path has no fixture hash allowlist. Test source copy restored in finally. |
+| `productionValidatorRejectsWrongPlan` | Actual transformed output cannot validate against another exact order/rotation plan. |
+| `malformedOutputAndCorruptedSnapshotCannotMintArtifacts` | Sealed non-PDF bytes refused; private TEST source bytes corrupted after seal are rejected before transformed output handoff. |
+| `actualProtectedCorruptAndOutOfRangeRequestsRejectWithoutPicker` | Real canonical14 password-protected and15 corrupt; actual typed protection/invalid-plan rejection, no picker handoff. |
+| `objectGraphPolicyRejectsIndirectJpxFormsActionsSignaturesAndInlineImages` | Actual COS dictionaries/indirect stream and byte-backed content parser reject direct/indirect/array JPX filters, prohibited catalogs and inline image operators in pages and nested Forms. |
+| `policyRejectsInvalidTreesMissingResourcesAndForeignAnnotationPages` | Invalid tree count, referenced missing font, foreign `/P` rejected by actual qualifier. |
+| `alteredResourceGraphCannotReceiveValidationAuthority` | Serialize a deliberate resource mutation of real transformed bytes, stage/seal it, require validation refusal. |
+| `cancellationDuringProductionSourceLeaseClosesPartialOutput` | Deterministic cancellable lease barrier inside real engine/store staging; exact cancellation identity and no retained partial/output file; source unchanged. Does not prove cancellation inside a synchronous native decode. |
+| `realProductionSealCheckpointAndCleanupFaultsNeverInventSuccess` | Real output-seal/preparation-journal faults reject; post-verification cleanup debt retains independent verified bytes with PENDING/accounting. |
+
+JVM class `com.abdev.partituraspdf.pdf.editing.SnapshotRandomAccessTest`
+(**six methods**):
+
+- `positionalReadSeekPeekAndRewindDoNotMoveOwnersChannel`
+- `invalidSeekRewindAndReadSizesFailClosed`
+- `closedViewNeverClosesBorrowedChannel`
+- `mismatchedLengthAndClosedChannelAreRejected`
+- `cancellationPropagatesTheExactObject`
+- `truncationAfterLeaseValidationNeverInventsBytes`
+
+Uses tiny generated private files, no Android rendering/mocks of PDF fidelity.
+Tests parser input position/bounds/ownership/cancellation, not whole-parser memory.
+New Python `scripts/tests/test_m_engine_packaging.py` has four synthetic ZIP tests:
+`test_limited_main_assertions`, `test_fixture_notice_and_dependency_regressions`,
+`test_test_code_leak`, `test_cli_failure_is_nonzero`.
+No tests were removed/disabled and no prior assertions were reduced. Experimental
+adapters still require their original exact fixture hashes and keep their tests;
+only shared interface and PDFBox main-APK asset ownership were adjusted.
+
+### M-T01–M-T20 additional attribution
+
+| Requirement | Additional source coverage / remaining boundary |
+| --- | --- |
+| M-T01 | Real sealed source lease/hash and private output/seal/rehash; immutable original asserted. |
+| M-T02 | Existing quota/free-space/overflow accounting reused unchanged; no new exact-limit execution. |
+| M-T03 | Positional duplicate-FD parser view and lease cleanup tests; no unowned parser input file. |
+| M-T04 | Rehash rejects altered private snapshot; no universal external-provider consistency or race proof. |
+| M-T05 | Actual production output seal/journal failure and cancellation cleanup tests. |
+| M-T06 | Actual protected/corrupt canonical inputs, malformed sealed output and unsupported policy cases. |
+| M-T07 |44 production recipe expectations, all five boxes/order/rotation/decoded content/resources/annotations/text and native pixel checks; tests not executed, general arbitrary-PDF fidelity not accepted. |
+| M-T08 | Production coordinator direct-provider publication and exact readback; actual system picker remains Block B. |
+| M-T09 | Existing provider create/refusal tests retained; no grant escalation or new permission. |
+| M-T10 | Existing same-name/independence proof boundary retained, no new collision policy. |
+| M-T11 | Existing partial/close/reliable-provider error tests retained; new engine seal failure never creates publication authority. |
+| M-T12 | Deterministic production lease cancellation; existing callback/write cancellation tests retained; synchronous parser interruption bounds unproven. |
+| M-T13 | Actual production PREPARED checkpoint failure regression; journal/recovery format unchanged; no crash/power-loss campaign. |
+| M-T14 | Existing permission checks/revocation simulations unchanged; no real grant revocation. |
+| M-T15 | No registry, favorite, checkpoint or rebind mutation added. |
+| M-T16 | Existing limits plus parser input/graph/decode/page/image/raster bounds; no hostile exhaustion immunity, no owner-omitted benchmark. |
+| M-T17 | Reuses real disposable provider descriptors; API26/27/36 execution and actual picker/grants still pending. |
+| M-T18 | Production dependency promotion requires revised packaging expectations; script/tests and notices added. Actual APK/manifest/native/backup/D2D inspection NOT RUN. |
+| M-T19 | Existing primary/suppressed/cleanup debt contracts reused; production cancellation and cleanup-pending tests added. |
+| M-T20 | No host UI/overwrite, automatic registration, metadata transfer or generic source WRITE path. |
+
+### Exact owner-run Windows 10 / PowerShell verification
+
+From repository root at the publication SHA, using the existing supported JDK/SDK
+and an explicitly owner-selected disposable API26 emulator (not any physical device):
+
+```powershell
+git rev-parse HEAD
+git status --short
+.\gradlew.bat :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest
+python -m unittest discover -s scripts/tests -v
+python scripts\validate_localization.py
+python test-fixtures\scripts\verify_fixtures.py
+$env:ANDROID_SERIAL = 'OWNER_VERIFIED_API26_SERIAL'
+.\gradlew.bat :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.storage.transaction.MProductionPdfEngineTest,com.abdev.partituraspdf.storage.transaction.MPdfboxSaveAsIntegrationTest,com.abdev.partituraspdf.pdf.engine.spike.PdfboxAndroidSpikeTest'
+```
+
+Replace the placeholder with the verified emulator serial; do not adopt/reset an
+unknown AVD. Repeat the same exact instrumentation selection on separately owned
+API27/API36 environments under owner execution. Existing full ordinary Android
+suite and coverage gates remain required; the selection alone is not full CI.
+Use the existing coverage tasks/policies without weakening denominators or gates;
+retain XML/HTML and exact source/APK/device identities. Owner must obtain
+>=90% lines/>=80% branches for new testable business logic and all critical cases.
+No percentage or test PASS is claimed in this source delivery.
+
+JUnit reports: `app/build/test-results/testDebugUnitTest/`; Android XML/results:
+`app/build/outputs/androidTest-results/connected/`; Lint:
+`app/build/reports/lint-results-debug.html`. Retain actual Gradle output and exact
+inventory, failures/skips/coverage, resolved dependency reports, APK hashes and
+packaging evidence from the [current packaging protocol](M_PDFBOX_SECURITY_AND_PACKAGING_GATES.md#block-a-current-gates--2026-11-09).
+Compilation alone is not instrumentation. Existing independent Python fidelity
+collector can still supplement experimental outputs at its recorded scope; no
+accepted general production PDF fidelity is inferred from past synthetic recipes.
+
+### Disposition
+
+Real production engine/validator/factory/test source and attribution assets:
+**IMPLEMENTED — NOT EXECUTED**. Git whitespace/source scope review: recorded at
+publication. Current complete fork security inventory: **BLOCKED** (Apache403),
+actual resolved graph/BC API26 linkage/packaging/coverage: **NOT RUN**. Legal and
+host-activation disposition: **OWNER DECISION REQUIRED**. Block A is **NOT
+ACCEPTED** while mandatory gates remain open. Physical functional requirements
+remain distinct; dedicated performance/memory/physical profiling is **NOT
+APPLICABLE — OMITTED BY OWNER**, no new benchmark suite or made-up budget.
+Block B real host/picker integration is not started and must not bypass these gates.

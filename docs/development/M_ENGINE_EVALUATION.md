@@ -310,3 +310,78 @@ prospective profiling requirements are superseded as scope, not marked PASS.
 No new benchmark/physical profiling or quantitative threshold is scheduled. Parser
 exhaustion/cancellation limits and security/JPX/packaging/legal gates remain open;
 no leak-freedom or resource-safety claim. New integration/JVM tests are NOT RUN.
+
+## Block A production implementation — 2026-11-09
+
+**Current source disposition, superseding prospective/test-only statements above;
+all historical execution evidence retains its original revision.** Starting source:
+`39a0332a87323ad151bf0914403fe7a862d9cc46`. Publication revision is the commit
+containing this entry (`git log -1 --format=%H -- docs/development/M_ENGINE_EVALUATION.md`).
+
+Selected implementation: PDFBox-Android **2.0.27.0**, with explicit, strictly
+constrained **1.86** versions of `bcprov-jdk15to18`, `bcpkix-jdk15to18` and
+`bcutil-jdk15to18`. Maven metadata/POM source was read, not resolved/installed.
+There was no newer published Android fork release in the inspected metadata.
+The vendor API19+ claim and Java 1.5–1.8 BC artifact description do not prove our
+API26 compatibility. Existing native PdfRenderer supplies independent visual
+corroboration; no added codec, network call, repository or dependency framework.
+The production dependency replaces the old test-only declaration; old absence-
+from-main packaging expectations apply to their historical revisions only.
+
+Rationale: retain the previously exercised working-copy strategy and interfaces,
+replace the known affected BC 1.72 declaration, and enforce a restricted PDF
+subset. No evidence justifies substituting a second unassessed parser. This is a
+source implementation decision, **not security clearance or runtime acceptance**.
+Complete current fork-advisory inventory and resolved-bytecode reachability remain
+BLOCKED; the ordinary coordinator still defaults to `EngineApprovalRequired`.
+Only the explicit `MTransactionCoordinator.production(...)` construction factory
+selects the new adapters. No host calls it and no user picker is enabled.
+
+`ProductionPdfAdapters` uses strict PDFParser (`setLenient(false)`) over a
+non-owning positional `SnapshotRandomAccess` view of a duplicated leased FD.
+No parser-created input file or alternate snapshot owner. Scratch buffering is
+limited to 32 MiB per parsed document in memory, each parser read/decoded stream to 8 MiB, graph depth/
+nodes, page count, content tokens and native verification dimensions are bounded.
+These controls do **not** bound every upstream parser allocation or CPU interval.
+Cancellation is checked on descriptor reads, qualification traversal, tokens and
+page verification; a synchronous upstream/native call is not forcibly interruptible.
+No promise of hostile-input exhaustion immunity or hard cancellation deadline.
+
+Supported policy: single-source, unique page selection/reorder/removal/extraction;
+additional 0/90/180/270-degree rotations; effective five page boxes/resources
+materialized before reattaching original page objects to the working tree. This
+avoids stock import's fixture12 `/P` defect. Source bytes are never rewritten.
+The selection contract still rejects duplicates and multi-source merging is absent.
+Qualified text/vector/image resources and Highlight/Underline/Ink/FreeText with
+appearances are supported, subject to strict structure checks. Embedded fonts or
+standard fourteen fonts are permitted; no arbitrary missing-font substitution is
+accepted. Catalog structures outside the allowlist are unsupported.
+
+Rejected: encrypted inputs, strict-parser failures, inconsistent/cyclic/shared page
+trees, unsupported units/rotations/geometry, unavailable resource references,
+Type3/nonstandard unembedded fonts, missing/foreign annotation associations or missing
+appearances, widgets/forms/signatures/attachments/actions/scripts, unsupported
+filters/DecodeParms, all inline images and JPX. JPX detection resolves dictionary
+Filter values, filter arrays and indirect objects over the loaded COS graph,
+including retained orphan objects; it is not a byte-keyword search. Unknown object
+representations fail closed. Strict parser and graph limits do not prove that the
+upstream parser cannot allocate while resolving a malicious graph before policy.
+
+Validator: independently leases/hashes and strictly parses source and output;
+checks exact plan, count/order/rotation, five boxes, decoded content, resource
+fingerprints, supported annotations/appearance graphs and page associations,
+catalog/info metadata and exact extracted text. All selected pages also require
+exact native PdfRenderer raster correspondence after the requested rotation.
+Bitmaps are bounded/recycled; parser/FD/lease cleanup precedes output sealing.
+Structural and text checks share PDFBox and are **not wholly independent**;
+native rendering supplements them and does not prove interactive semantics. Any
+mismatch/unsupported/inconclusive check refuses the restricted artifact. Exact
+raster comparison may reject a legitimate fractional-geometry case; no tolerance
+or synthetic hash exemption manufactures success.
+
+Status: engine/validator/integration/test source **IMPLEMENTED — NOT EXECUTED**.
+Block A is **NOT ACCEPTED / NOT READY FOR HOST ACTIVATION** while the mandatory
+security, resolved dependency, build, API26/27/36, packaging, coverage and legal
+checks in [the gate ledger](M_PDFBOX_SECURITY_AND_PACKAGING_GATES.md) are open.
+The dedicated memory/performance/physical profiling campaign remains omitted by
+owner decision, not an unexecuted acceptance requirement or a PASS.

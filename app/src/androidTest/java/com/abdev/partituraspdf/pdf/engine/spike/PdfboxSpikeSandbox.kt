@@ -31,8 +31,8 @@ internal class SpikeOutputLimit : IOException("Disposable output limit exceeded"
 internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val testContext = instrumentation.context
-    // Test-only asset adapter: ContextWrapper delegates assets to the instrumentation APK.
-    private val pdfboxAssetContext: Context = object : ContextWrapper(testContext) {
+    // Candidate now belongs to main APK; fixtures still belong to test APK.
+    private val pdfboxAssetContext: Context = object : ContextWrapper(instrumentation.targetContext.applicationContext) {
         override fun getApplicationContext(): Context = this
     }
     private val targetContext = instrumentation.targetContext.applicationContext
@@ -64,8 +64,8 @@ internal class PdfboxSpikeSandbox(private val case: String) : AutoCloseable {
                 }
             } catch (failure: IOException) {
                 throw IOException(
-                    "Required PDFBox asset $path unavailable or empty via instrumentation package " +
-                        testContext.packageName,
+                    "Required PDFBox asset $path unavailable or empty via target package " +
+                        targetContext.packageName,
                     failure,
                 )
             }

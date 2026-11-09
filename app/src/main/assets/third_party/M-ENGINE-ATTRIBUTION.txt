@@ -1,0 +1,15 @@
+PartiturasPDF Block A third-party attribution (2026-11-09)
+
+PDFBox-Android 2.0.27.0 (Tom Roush Android port of Apache PDFBox)
+https://github.com/TomRoush/PdfBox-Android/tree/v2.0.27.0
+Apache License 2.0: see PDFBOX-LICENSE.txt and PDFBOX-NOTICE.txt.
+Local engine/qualification/validation adapters are PartiturasPDF code, not changes
+represented as upstream PDFBox endorsement.
+
+Bouncy Castle bcprov-jdk15to18, bcpkix-jdk15to18, bcutil-jdk15to18: selected 1.86.
+https://github.com/bcgit/bc-java/tree/r1rv86
+See BOUNCY-CASTLE-LICENSE.html (copyright and permission text retained).
+
+These notices do not relicense the PartiturasPDF repository or its synthetic CC0
+fixtures. Exact resolved archives/bundled component notices and redistribution
+obligations must be reviewed before distribution. No legal clearance is claimed.

@@ -48,6 +48,14 @@ internal class MTransactionCoordinator(
     private val publisher: NewDocumentPublisher = NewDocumentPublisher(),
     private val copier: MLeaseCopier = NativeMLeaseCopier,
 ) {
+    companion object {
+        /** Explicit Block A construction boundary. Host/picker must not select until owner gates close. */
+        fun production(context: android.content.Context, gate: WriteAdmissionGate, capturer: MSourceCapturer,
+                       store: PrivateSnapshotStore, journal: MPublicationJournal): MTransactionCoordinator {
+            val adapters = ProductionPdfAdapters(context)
+            return MTransactionCoordinator(gate, capturer, store, journal, adapters, adapters)
+        }
+    }
     suspend fun prepare(source: SnapshotSource, plan: OrderedPagePlan): MPreparation {
         val admission = gate.tryAcquire()
         if (admission !is WriteAdmissionGate.Admission.Acquired) return MPreparation.Busy

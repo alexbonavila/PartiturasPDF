@@ -75,7 +75,19 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    androidTestImplementation(libs.pdfbox.android)
+    // Block A: concrete engine is constructed explicitly; host/picker activation remains gated.
+    implementation(libs.pdfbox.android)
+    implementation(libs.bouncycastle.provider)
+    implementation(libs.bouncycastle.pkix)
+    implementation(libs.bouncycastle.util)
+    constraints {
+        for (module in listOf("bcprov-jdk15to18", "bcpkix-jdk15to18", "bcutil-jdk15to18")) {
+            implementation("org.bouncycastle:$module") {
+                version { strictly(libs.versions.bouncyCastle.get()) }
+                because("Block A remediation of the pinned candidate's affected BC 1.72 transitives")
+            }
+        }
+    }
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))

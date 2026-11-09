@@ -18,7 +18,7 @@ import java.io.*
 import java.util.UUID
 
 /** Direct provider invocation, NOT resolver grants/picker acceptance. All files synthetic/owned. */
-internal class MPdfboxIntegrationRig(fixtureId: String = "02") {
+internal class MPdfboxIntegrationRig(fixtureId: String = "02", useProduction: Boolean = false) {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
     val directory = File(context.noBackupFilesDir, "m-pdfbox-integration-${UUID.randomUUID()}").apply { check(mkdir()) }
@@ -49,13 +49,13 @@ internal class MPdfboxIntegrationRig(fixtureId: String = "02") {
     val store: PrivateSnapshotStore
     val gate = WriteAdmissionGate()
     val journal: MPublicationJournal
-    val adapters: TestPdfboxModificationAdapters
+    val adapters: PdfModificationAdapters
     val source = SnapshotSource(StorageDocumentRef("test", "immutable-synthetic-source"))
     val plan = OrderedPagePlan(listOf(PageSelection(1, 1), PageSelection(0, 3)))
     val provider = MNewDocumentProvider()
     init {
         try {
-        adapters = TestPdfboxModificationAdapters()
+        adapters = if (useProduction) ProductionPdfAdapters(context) else TestPdfboxModificationAdapters()
         val manifest = JSONObject(instrumentation.context.assets.open("manifest.json").bufferedReader().use { it.readText() })
         fixture = (0 until manifest.getJSONArray("files").length()).map { manifest.getJSONArray("files").getJSONObject(it) }
             .single { it.getString("id") == fixtureId }

@@ -23,8 +23,9 @@ sealed interface PdfValidationReport {
     data object Unsupported : PdfValidationReport
     data object Inconclusive : PdfValidationReport
 }
-/** Only an approved semantic validator may construct this. Tests are explicit privileged seams.
- * No production validator minting site exists before engine approval.
+/** Only a qualified semantic validator may construct this. Tests are explicit privileged seams.
+ * Block A's feature-private production validator is selected by an explicit coordinator factory;
+ * default/host activation remains unavailable pending the recorded owner acceptance gates.
  */
 class ValidatedPdfArtifact internal constructor(
     internal val output: WorkingSnapshot,

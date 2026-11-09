@@ -209,3 +209,94 @@ source hashes, with a 2 MiB experimental parser-input bound. Production defaults
 still require engine approval. Security/advisory/JPX, packaging and legal decisions
 above remain open. See [vertical-slice source evidence](M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md#real-pdf--safe-save-as-test-confined-vertical-slice--2026-11-09).
 No builds/tests/measurements/resolution/CI executed by Codex.
+
+## Block A current gates — 2026-11-09
+
+This section supersedes earlier current-state test-only/absence-from-main and
+prospective production-installation statements. Historical tables/results above
+remain at their original sources. Production engine and BC are now deliberately
+main `implementation` dependencies; experimental code, provider and fixture assets
+must remain test-only. No main host activation. See [implementation decision](M_ENGINE_EVALUATION.md#block-a-production-implementation--2026-11-09).
+
+### Refreshed advisory dispositions
+
+Vendor/GHSA sources below were re-read on 2026-11-09 (public source/metadata only;
+no binary resolution, scanner or dependency installation). Selected BC 1.86 is
+outside these **documented** affected ranges; actual selected/packaged version
+and compatibility are NOT RUN. This is not an exhaustive current CVE all-clear.
+
+| Finding | Authoritative version evidence | Pipeline and remediation | Remaining gate |
+| --- | --- | --- | --- |
+| CVE-2023-33202 | [Vendor wiki](https://github.com/bcgit/bc-java/wiki/CVE%E2%80%902023%E2%80%9033202): BC Java <=1.72, fixed1.73; ASN.1 SET/PEMParser OOM | All three requested BC modules now1.86 with strict constraints. No PEM import API; PDF parsing can reach crypto before our encrypted-input rejection. Exclusion alone is not the mitigation. | Verify actual graph/classes, fixed-version compatibility, current inventory; no hostile OOM execution authorized. |
+| CVE-2026-5598 | [GHSA-p93r-85wp-75v3](https://github.com/advisories/GHSA-p93r-85wp-75v3): >=1.71,<1.80.2; fixed1.80.2 | Selected1.86; no FrodoKEM operation in our workflow source. Packaged/reachable bytecode not traced here. | Resolution, current advisory and bytecode disposition required. |
+| CVE-2024-34447 | [GHSA-4h8f-2wvx-gg5w](https://github.com/advisories/GHSA-4h8f-2wvx-gg5w): >=1.61,<1.78; fixed1.78 | Selected1.86; no BCJSSE/TLS/network API introduced. This alone is not a reachability proof. | Graph/class inclusion and compatibility remain unverified. |
+| Apache/fork advisories | Apache security URL still returned403; current complete inventory UNVERIFIED | Strict parser, restricted object/feature policy and JPX/inline-image rejection reduce exposed features; no unverified backport claimed. | **BLOCKED** until authoritative current inventory, fork patch correspondence and actual bytecode analysis are obtained. |
+| Parser/resource exhaustion | Upstream allocation behavior not fully bounded by file/scratch quotas | Existing64MiB input/128MiB output/aggregate accounting retained. Positional lease access,32MiB scratch cap,8MiB decoded/read cap, graph/token/page/image/raster bounds, cooperative cancellation. No temp spill or automatic retries. | Not immunity to hostile graph/decode/native allocation. Owner risk disposition/current advisory review required before host activation. No dedicated benchmark is required. |
+| Stock import annotation `/P` | Historical fixture12 unsafe result preserved | Production uses working-copy tree selection; verifies annotation graph and association plus structure/text/native pixels. | Production corpus tests must actually execute. |
+
+### Declared graph and ownership
+
+- PDFBox AAR2.0.27.0 declares BC provider/PKIX/util1.72 in published POM;
+  source now requests all three1.86 and constrains each strictly1.86.
+- Inspected metadata includes1.86; its POM describes Java1.5–1.8 artifact.
+  This is not the complete resolved runtime graph or API26 linkage proof.
+- PDFBox resource loader now uses the target application's AssetManager.
+  Test fixture loading still uses the instrumentation APK AssetManager; old test
+  loader wrappers were adjusted accordingly without removing test assertions.
+- No main/test manifest, permission, native build or repository changes.
+  Actual merged manifest/native entries still need inspection.
+
+### Distribution obligations implemented, legal disposition open
+
+Main packaged `assets/third_party/` now contains the tagged upstream
+`PDFBOX-LICENSE.txt`, `PDFBOX-NOTICE.txt`, BC r1rv86
+`BOUNCY-CASTLE-LICENSE.html`, and `M-ENGINE-ATTRIBUTION.txt`.
+PDFBox Apache2.0 requires license/NOTICE preservation; BC's permissive license
+requires its copyright/permission notice. Upstream NOTICE includes FontBox,
+PaDaF, Adobe glyph-list and Unicode notices; retained in full (trailing whitespace normalized), not summarized
+away. Source/tag license evidence is not an inspection of every resolved AAR/JAR
+or bundled font/resource. Owner verifies exact archives/additional obligations
+and compatibility of redistribution with the unchanged project license.
+**OWNER DECISION REQUIRED**; no relicensing of the repository or CC0 fixtures.
+
+### Current owner-run acceptance gates
+
+| Gate | Status now | Required evidence |
+| --- | --- | --- |
+| Real engine, strict support policy, semantic/native validator and explicit factory | IMPLEMENTED — NOT EXECUTED | Build and exact production tests on API26/27/36; intentional mutations rejected; no source write. |
+| BC remediation declaration | IMPLEMENTED — NOT EXECUTED | All relevant debug/release/test graphs actually select1.86, no conflicting BC family/version; linkage succeeds on API26. |
+| Complete current security clearance | BLOCKED | Current authoritative inventory, affected component/backport/reachability disposition; no unresolved critical/high finding. |
+| ZIP/DEX assertions | IMPLEMENTED — NOT EXECUTED | New owner-run script/tests below; not a version/manifest/security attestation. |
+| Real main/test packaging, native and manifest inspection | NOT RUN | Production candidate/BC present in main; test provider/spike/fixtures absent; no new unexpected permissions/native libraries or private transaction outputs. Compare to approved baseline. |
+| License/NOTICE distribution | IMPLEMENTED — NOT EXECUTED; OWNER DECISION REQUIRED | Actual selected archive notices, packaged assets and distribution review. |
+| New business-logic coverage | NOT RUN | Existing >=90% lines/>=80% branches, no denominator/threshold changes. |
+| Host Save As activation | BLOCKED / Block B | Close mandatory engine/security gates first; no current host/picker call. |
+| Dedicated memory/performance/physical profiling | NOT APPLICABLE — OMITTED BY OWNER | No campaign, budget, stress suite or false PASS. General functional policy remains separate. |
+
+### Windows 10 / PowerShell packaging commands — OWNER ONLY, not run
+
+From the exact new source revision, using the existing JDK/SDK/toolchain:
+
+```powershell
+New-Item -ItemType Directory -Force build\m-block-a | Out-Null
+.\gradlew.bat :app:dependencies --configuration debugRuntimeClasspath > build\m-block-a\debug-dependencies.txt
+.\gradlew.bat :app:dependencies --configuration releaseRuntimeClasspath > build\m-block-a\release-dependencies.txt
+.\gradlew.bat :app:dependencies --configuration debugAndroidTestRuntimeClasspath > build\m-block-a\test-dependencies.txt
+.\gradlew.bat :app:dependencyInsight --configuration debugRuntimeClasspath --dependency org.bouncycastle > build\m-block-a\bc-debug.txt
+.\gradlew.bat :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest
+python scripts\verify_m_engine_packaging.py --debug app\build\outputs\apk\debug\app-debug.apk --release app\build\outputs\apk\release\app-release-unsigned.apk --test app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
+```
+
+Use the actual release output name if the existing signing configuration changes
+it. The script rejects duplicate ZIP entries, missing DEX/candidate/BC/adapter
+markers, missing notice assets, main spike/provider markers and known canonical
+asset locations. It hashes archives with bounded reads and reports native entry
+names. It cannot identify exact library versions, obfuscated class equivalence,
+all arbitrary fixture renames, merged manifest permissions, unexpected native
+payloads or legal/security clearance. An inconclusive marker result is BLOCKED,
+not permission to disable the assertion. Owner additionally uses Android Studio
+APK Analyzer on all three APKs: inspect merged manifest, DEX classes/version
+provenance, third-party resources/notices, no test/provider/fixture/private outputs,
+permissions and native inventory against the baseline. Keep APK hashes, resolved
+reports and inspection evidence private unless explicitly approved for publication.
+No APKs, dependency archives or raw owner logs are committed by this assignment.

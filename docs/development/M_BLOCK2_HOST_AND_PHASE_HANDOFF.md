@@ -33,3 +33,19 @@ backup/restore or D2D work. No claim of cross-phase runtime compatibility.
 Engine and coverage gates remain separate owner decisions; physical API27 tablet,
 real picker/grant transitions and accepted dependency/semantic proof remain
 prerequisites to actual production host integration.
+
+## Block A progress — 2026-11-09
+
+Production transformation/validation source is now available through the explicit
+`MTransactionCoordinator.production(...)` factory, using PDFBox2.0.27.0 and BC1.86
+main dependencies, no synthetic fixture access. Default coordinator construction
+still returns unsupported. See [engine decision](M_ENGINE_EVALUATION.md#block-a-production-implementation--2026-11-09)
+and [current gate ledger](M_PDFBOX_SECURITY_AND_PACKAGING_GATES.md#block-a-current-gates--2026-11-09).
+
+**IMPLEMENTED — NOT EXECUTED; mandatory security/runtime/packaging gates remain
+open, so Block A is not accepted and the host must not activate this factory.**
+Block B must close those gates before host binding, implement the approved real
+Save As picker/result capability and preserve existing independence proof, receipt,
+callback, recovery and metadata boundaries above. No host or K/L changes here.
+No benchmark or physical memory campaign is scheduled; owner explicitly omitted
+it. This is not leak-free, hostile-parser safety, legal or physical acceptance.

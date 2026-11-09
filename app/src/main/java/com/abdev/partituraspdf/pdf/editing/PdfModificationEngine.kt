@@ -19,6 +19,8 @@ internal sealed interface ValidationResult {
 internal interface PdfOperationValidator {
     suspend fun validate(source: WorkingSnapshot, output: WorkingSnapshot, plan: OrderedPagePlan): ValidationResult
 }
+internal interface PdfModificationAdapters : PdfModificationEngine, PdfOperationValidator
+
 /** Explicit unavailable adapters: no copy fallback and no renderer/hash-based semantic claim. */
 internal object EngineApprovalRequired : PdfModificationEngine, PdfOperationValidator {
     override suspend fun transform(source: WorkingSnapshot, plan: OrderedPagePlan, transaction: TransactionId,

@@ -135,3 +135,37 @@ See [implementation and fault evidence](M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md
 All new code is source-only / NOT RUN. Dedicated physical performance campaign is
 omitted by owner scope decision, not technically passed. All security/production
 gates remain open.
+
+## Block A production boundary — 2026-11-09
+
+Supersedes the opening historical claims of no native adapter/dependency/minting
+site. `ProductionPdfAdapters` now implements the existing engine and validator
+interfaces via their shared internal `PdfModificationAdapters` type. The explicit
+`MTransactionCoordinator.production(context, gate, capturer, store, journal)` factory
+constructs both. Ordinary default construction remains fail-closed; no host selects
+the factory pending [security/packaging gates](M_PDFBOX_SECURITY_AND_PACKAGING_GATES.md#block-a-current-gates--2026-11-09).
+
+Source-only implementation, NOT EXECUTED: strict parser reads only immutable,
+SHA/length-verified leased snapshots via positional descriptor input. Working-copy
+selection preserves page objects and materializes inherited boxes/resources before
+changing the page tree. Output bytes go only through the existing store writer;
+parser/stream/lease closure occurs before sealing and handoff. No caller-side
+post-handoff dispatcher cancellation boundary. Existing stage cleanup, suppressed
+failures and cleanup debt contracts remain unchanged; no alternate owner/journal.
+
+Validator independently reopens source/output, qualifies both, compares exact plan,
+page semantics, resource/annotation graphs, metadata/text and bounded native
+rasters, then rehashes before minting the restricted artifact. Coordinator still
+requires exact Produced(transaction), artifact.output identity and artifact.plan
+object identity before preparation checkpoints. Standalone validator has no source
+transaction field in the frozen interface; transaction matching belongs to that
+existing coordinator check, not an invented provenance field. Produced alone is
+never validated. Any mismatch/unknown/unsupported result refuses authority.
+
+Journal schema, publication/recovery rules, primary exception preservation,
+verified-publication-versus-cleanup distinction and admission ownership are intact.
+The existing single-source/no-duplicates plan is unchanged. Reorder/rotation/subset
+and removal by omission are implemented; no merge or editing of annotations.
+Support policy and residual parser limits are in [engine evaluation](M_ENGINE_EVALUATION.md#block-a-production-implementation--2026-11-09).
+Block B still owns real picker/host/result proof; no Save As UI, overwrite, automatic
+registration/favorite/position transfer or new provider permission is implemented.

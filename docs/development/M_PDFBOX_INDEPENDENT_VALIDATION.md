@@ -1,5 +1,7 @@
 # Phase M — Independent synthetic PDFBox output evaluation
 
+> Current evidence update (2026-11-09): [owner-completed scoped campaign](#completed-owner-campaign--2026-11-09). The original source-delivery and NOT RUN statements below describe November 3.
+
 2026-11-03. **SOURCE ONLY / OWNER EXECUTION REQUIRED.** Baseline
 `3a0f4067ec671d640bf7ced9d026dec9146e9911`. Owner reports CI #132 attempt 2
 [41687967334](https://github.com/alexbonavila/PartiturasPDF/actions/runs/41687967334)
@@ -179,3 +181,89 @@ No Python syntax checker, validator, oracle or collector was executed. Actual ru
 correctness, independent fidelity, full resource/JPX support, security review,
 physical resource acceptance, test-APK isolation and production approval remain
 owner gates. No production engine approval or Phase M/Block 2 completion is claimed.
+
+## Completed owner campaign — 2026-11-09
+
+**PASS within the specified synthetic positive-transformation scope.** Supersedes
+pending independent positive/rotated visual evidence above only for this campaign;
+no historical NOT RUN/FAIL result is rewritten. Exact executed source:
+`134fd0f8d0599c70a4e1de5a06b83478b49c422d`. Previously verified full CI #135:
+https://github.com/alexbonavila/PartiturasPDF/actions/runs/41720613841
+(owner-provided attribution; not fetched or executed by Codex).
+
+Owner executed on Windows 10 / dedicated API26 `emulator-5554`, manually installed
+debug app and test APKs, confirmed the app remained installed and run-as worked,
+and ran the following successful procedure (recorded, NOT executed by Codex):
+
+```powershell
+adb -s emulator-5554 shell am instrument -w `
+  -e class com.abdev.partituraspdf.pdf.engine.spike.PdfboxAndroidSpikeTest `
+  -e retainPdfboxSpike true `
+  com.abdev.partituraspdf.test/androidx.test.runner.AndroidJUnitRunner
+# Owner observed: OK (21 tests)
+```
+
+The owner then ran the existing collector and independent verifier: COLLECTED,
+verifier exit 0, Overall PASS, Missing scenarios 0. Application/install persistence
+was observed by the owner, not a new host-cleanup or APK-attestation campaign.
+
+| Measure | Owner-verified result |
+| --- | --- |
+| Positive recipes / verified outputs | 27 / 27; 22 WORKING_COPY, 5 STOCK_IMPORT |
+| Structural pages | 345 PASS |
+| Visual comparisons | 57 at 144 DPI; 57 exact pixel matches, zero differing pixels |
+| Pages not individually raster-compared | 288 |
+| Sampled long-document outputs | 4: two each of 04 and 05 |
+| Missing / unexpected / duplicate positive scenarios | 0 / 0 / 0 |
+| Empty negative-case namespaces without standalone oracle proof | 11 |
+
+For EACH 50-page output, indices 0/25/49 were rendered; for EACH 100-page output,
+0/50/99. All pages received structural checks. The remaining 288 pages have no
+individual visual acceptance. Additional 90/180/270-degree reference comparisons
+and the relevant complex-content positive cases are complete within the 57
+comparisons; no arbitrary-PDF visual equivalence is implied.
+
+Environment: Python 3.15.0, PyMuPDF 1.28.2, pypdf 6.20.1, PDFBox-Android 2.0.27.0.
+Pillow's exact execution version was not supplied. Report timestamp:
+`2026-11-09T18:13:08.859917+00:00` (19:13:08.859917 Europe/Madrid).
+
+### Immutable owner report identifiers
+
+Raw reports and PDFs remain with the owner; they are **not available in this
+workspace**. The following are owner-supplied identities, not hashes recomputed
+from report files by Codex:
+
+| File / recorded input | SHA-256 |
+| --- | --- |
+| validation-report.json | `0a48688e1fd0dd3e9ab34e11079d6c0696ef4e709e7346b6ca6b3ec9e581683f` |
+| validation-report.md | `b0e92f65979eb15aa1ac1000f9bc90f8ae859c2bb430309617e148f9841d522b` |
+| Recorded verifier source | `b1bf2a06448e570fd4a3cebe7a202bc07192e8f86ab5fb2cb2585e1683451b8d` |
+| Recorded collector schema | `2144e11bfccccfb0b9a5d3672830d49cca71bf22c2caa93b6cf2ae5429e146c4` |
+| Fixture manifest | `38790287ad8fa59eb247bb7f1e69273d347e88f8fc28bdeb1532a292a4228896` |
+
+Read-only source-byte inspection by Codex established that the two recorded tool
+hashes exactly equal the CRLF representation of current committed LF files. LF
+verifier hash is `14ff3729ce193786c9daf9f0f0aee81d9f07a00b9013d757f12fa45741707580`;
+LF collector hash is `4acc7078d7161cbad8b722b862efc02ee85307a0b3db6cffaaba25e60627a85a`.
+The canonical manifest hash matches directly. This explains the Windows byte-
+representation difference; it is NOT attestation of installed APKs, executed code,
+or uninspected report content. The Git SHA remains owner-declared provenance.
+
+### Acceptance disposition
+
+Completed: collection of all expected positive recipes, independent implemented
+structural checks for 345 pages, all required scoped rotated/complex visual
+comparisons, documented first/middle/last sampling, and zero missing scenarios.
+
+Unchanged: stock import of fixture 12 is **KNOWN_UNSAFE** (external annotation /P);
+working-copy fixture 12 passed. Five positive stock-import outputs exclude 12.
+The 11 empty negative namespaces do not independently prove expected negative
+behavior; owner JUnit evidence is a different evidence source. No repair or
+unrestricted stock-import acceptance. No proof for arbitrary user PDFs, complete
+JPX/JPEG2000, all long-document pixels, unusual forms/inherited resources/filters,
+malformed-input safety, security, memory budgets or production readiness.
+
+Next gate: [security, packaging, licensing and hardware plan](M_PDFBOX_SECURITY_AND_PACKAGING_GATES.md).
+**Production approval OPEN / NOT GRANTED; Block 2 not complete.** All builds,
+tests, validators, ADB/device actions, dependency installs/resolution, scanners and
+CI remain NOT RUN by Codex for this documentation increment.

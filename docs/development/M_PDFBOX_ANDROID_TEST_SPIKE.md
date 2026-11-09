@@ -1,5 +1,7 @@
 # Phase M — PDFBox-Android instrumentation-only candidate spike
 
+> Current evidence update (2026-11-09): [scoped fidelity PASS and open security gates](M_PDFBOX_INDEPENDENT_VALIDATION.md#completed-owner-campaign--2026-11-09). Earlier dated records below remain historical.
+
 2026-11-03. **SOURCE READY FOR OWNER VALIDATION; PRODUCTION NOT APPROVED.**
 Starting revision: `32ad93fdcffc2273bc76617bc6880e0f9a5dbe6b` (documentation).
 CI #128 tested `edd372aaf6ecc73d78e67655cf8996a2569f0fdf`, not this spike or
@@ -448,3 +450,44 @@ Android code/evidence schema, dependencies, CI and immutable fixtures unchanged.
 Source/full diff review and git diff --check only. BUILDS / JVM / ANDROID / PYTHON
 TESTS / LINT / COVERAGE / DEPENDENCY INSTALLATION / ADB / DEVICE / CI: **NOT RUN**.
 No compatibility/fidelity/security/production approval or Phase M completion claim.
+
+
+## Independent positive fidelity acceptance — 2026-11-09
+
+**PASS / COMPLETE within the specified synthetic positive-transformation scope**,
+owner-verified at `134fd0f8d0599c70a4e1de5a06b83478b49c422d` on Windows 10,
+dedicated API26 emulator-5554. Full CI #135 was previously verified by the owner:
+https://github.com/alexbonavila/PartiturasPDF/actions/runs/41720613841.
+No CI/log access, build, test or device execution by Codex for this documentation.
+
+Owner manual debug/test APK install and `am instrument -w` of the focused class
+with retainPdfboxSpike=true produced OK (21 tests), with app installed and run-as
+available. Collector COLLECTED; independent verifier exit 0, Overall PASS,
+Missing scenarios 0. Positive results: 27/27 recipes (22 WORKING_COPY, five
+STOCK_IMPORT), 345 structural pages PASS, 57 visual comparisons at 144 DPI with
+exact pixel equality and zero different pixels. Four long outputs sampled first/
+middle/last: 04 indices 0/25/49 and 05 indices 0/50/99, each repeated twice.
+The 288 other pages were structurally verified, NOT individually raster-compared.
+Additional rotated-page positive comparisons are complete within that scoped
+campaign, not independent visual acceptance of arbitrary PDFs.
+
+Python 3.15.0 / PyMuPDF 1.28.2 / pypdf 6.20.1 / candidate 2.0.27.0;
+report timestamp 2026-11-09T18:13:08.859917+00:00. Raw reports remain with the
+owner and are unavailable in this workspace. Their supplied hashes, exact tool/
+manifest identities, successful Windows ADB command and source CRLF/LF byte
+comparison are registered in the [canonical campaign addendum](M_PDFBOX_INDEPENDENT_VALIDATION.md#completed-owner-campaign--2026-11-09).
+No claim that Codex independently rehashed those unavailable reports or attested
+installed APK identity; the tested Git SHA is owner-supplied provenance.
+
+Stock import fixture 12 remains **KNOWN_UNSAFE** (external annotation /P), while
+its WORKING_COPY case passed. Eleven empty negative namespaces still lack
+standalone independent oracle proof; absence of output is not negative acceptance.
+No complete JPX/JPEG2000, full long-document raster coverage, unusual forms/
+inherited resources/filters, malformed-input safety or unrestricted PDF equivalence.
+
+Next owner gate: [security/dependency/packaging/licensing audit and hardware handoff](M_PDFBOX_SECURITY_AND_PACKAGING_GATES.md).
+Security and production packaging remain OPEN; candidate production approval is
+NOT GRANTED and Phase M Block 2 is not complete. Prior dated FAIL/NOT RUN evidence
+remains unchanged; this scoped PASS supersedes only the matching pending positive
+fidelity/rotated visual evidence. Builds/tests/validators/resolution/install/ADB/
+devices/scanners/CI: **NOT RUN by Codex** for this documentation increment.

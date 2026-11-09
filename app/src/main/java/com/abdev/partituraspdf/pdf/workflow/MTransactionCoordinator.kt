@@ -64,7 +64,7 @@ internal class MTransactionCoordinator(
             val capturedInput = (captured as SnapshotCaptureResult.Captured).snapshot.also { input = it }
             if (!checkpoint(MState.PRIVATE_INPUT_SEALED)) return MPreparation.Rejected(PdfOperationFailure.ResourceUnavailable)
             val produced = engine.transform(capturedInput, plan, id, store)
-            if (produced is EngineResult.Rejected) return MPreparation.Rejected(produced.reason)
+            if (produced is EngineResult.Rejected) return MPreparation.Rejected(produced.reason, produced.cleanup)
             val producedOutput = (produced as EngineResult.Produced).output.also { output = it }
             if (producedOutput.origin != SnapshotOrigin.Produced(id) || !checkpoint(MState.PRIVATE_OUTPUT_SEALED)) return MPreparation.Rejected(PdfOperationFailure.TransformationFailure)
             val validated = validator.validate(capturedInput, producedOutput, plan)

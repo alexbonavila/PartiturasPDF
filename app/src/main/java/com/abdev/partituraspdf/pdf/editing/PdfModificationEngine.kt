@@ -6,7 +6,7 @@ import com.abdev.partituraspdf.storage.transaction.PrivateSnapshotStore
 
 internal sealed interface EngineResult {
     data class Produced(val output: WorkingSnapshot) : EngineResult
-    data class Rejected(val reason: PdfOperationFailure) : EngineResult
+    data class Rejected(val reason: PdfOperationFailure, val cleanup: SnapshotCleanupStatus = SnapshotCleanupStatus.COMPLETE) : EngineResult
 }
 internal interface PdfModificationEngine {
     suspend fun transform(source: WorkingSnapshot, plan: OrderedPagePlan, transaction: TransactionId,

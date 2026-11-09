@@ -1056,3 +1056,93 @@ ACCEPTED** while mandatory gates remain open. Physical functional requirements
 remain distinct; dedicated performance/memory/physical profiling is **NOT
 APPLICABLE — OMITTED BY OWNER**, no new benchmark suite or made-up budget.
 Block B real host/picker integration is not started and must not bypass these gates.
+
+## Windows 11 Python harness and CSV corrections — 2026-11-09
+
+Starting source `5fb19925a4ffede70025419f0f5b41f8ebdd80fe`, clean Phase M branch.
+Owner reports Windows11/PowerShell, Python3.15 traceback paths: Debug/Release and
+instrumentation compilation succeeded, JVM succeeded after symbolic-link permission
+setup, localization PASS and15 fixtures PASS. Python:520 executed,5 failures and5
+errors. These are owner-reported results on that revision, not a new Codex run or
+Android production-engine acceptance. Individual retained traceback/process evidence
+was not supplied with this correction assignment; do not claim each WinError32/5
+or exit127 was independently reproduced or has the same cause.
+
+Source-confirmed shell harness portability issues: unqualified `bash` can select
+Windows' WSL launcher, native PATH concatenation is not an explicit POSIX search
+path, and default `write_text` translates synthetic shell files to CRLF on Windows.
+The former subprocess harness did not own a Windows descendant tree through cwd
+cleanup. These explain concrete failure mechanisms, not an attribution of every
+reported process lock. Existing seven methods still execute the unchanged real
+`run_pdfium_ci.sh`, copied with LF into an isolated directory containing spaces.
+No CI script/workflow, Gradle, manifest, PDF engine, fixtures or device behavior
+was changed. Direct Bash tests were not replaced with mock-only assertions.
+
+Current test harness selects an existing native Git/MSYS Bash/runtime on Windows,
+refuses WSL/incomplete runtimes, allows explicit absolute `PDFIUM_TEST_BASH`,
+and keeps POSIX Bash execution. LF/UTF-8 stubs, fixed POSIX PATH and explicit fake
+ADB/Python bindings cannot fall through to real installed device commands. User
+shell startup/exports are removed from the child environment; the selected Bash
+executes the actual script by relative path. Gradle is a temporary shell stub.
+Binary subprocess pipes avoid Windows stdin newline translation. Exit status,
+stdout/stderr and selected interpreter are retained in assertion diagnostics.
+
+Windows ownership uses standard-library ctypes Job Object APIs, with the Bash
+child held at an stdin gate until assignment. Completion-port notification plus
+active-process accounting confirms tree exit before temporary-directory removal.
+Timeout/error cleanup terminates only that job (or the still-gated owned process),
+joins with bounded waits and closes pipes/handles. POSIX uses an owned session and
+EXIT wait; failure cleanup targets only its process group. No taskkill scan,
+unrelated process termination, sleeps, cleanup retries or ignored PermissionError.
+Capability/assignment/cleanup failures remain explicit test errors, never skips or
+PASS. No mandatory WSL, admin privileges or new external dependencies.
+
+**CSV source discrepancy corrected:** at the approved SHA the partial row already
+had12 columns, including an empty epoch. The existing regression supplied no
+partial samples. The confirmed Windows formatting defect is default CRLF from
+`csv.writer` followed by atomic text-output newline translation, producing CR-CR-LF
+and blank records. A narrow keyword-only `newline` option was added to existing
+`j_atomic`; only M4 CSV requests `newline=''`. All other callers retain their
+previous default; atomic path validation, exclusive temporary creation, fsync,
+replace and cleanup are unchanged. CSV schema remains12 columns. Explicit partial
+`worker_epoch` is retained when supplied, otherwise empty; value/unit remain
+indices10/11. No epoch is inferred from another iteration. JSON/Markdown behavior
+and rejection of incomplete PASS reports remain intact. Historical reports are
+not rewritten and no benchmark/performance campaign is reactivated.
+
+Regressions: all seven original real-shell methods/assertions retained; diagnostics
+include exit127. Three new real-shell methods exercise standard127, failed final
+verification and missing/multiple/offline/physical CI discovery. Six new harness
+methods cover LF/UTF-8/space paths, Windows runtime selection versus WSL, explicit
+missing-capability error, gated assignment/join/closure, timeout failure and visible
+cleanup PermissionError. M4 regression now checks the exact header and every field,
+normal/partial rows, missing/supplied epochs, comma/quote/embedded CRLF round-trip,
+Windows text-translation simulation and no successful incomplete finalization.
+The existing Markdown-write fault mock forwards the new optional keyword without
+changing its assertion. Helper mocks test ownership orchestration, not Win32 or
+Bash runtime correctness; those require the real owner executions below.
+
+**IMPLEMENTED — NOT EXECUTED.** Codex performed source/Git review and whitespace
+checks only. No tests, builds, syntax/compiler checks, ADB, dependency installation,
+benchmark, Lint, coverage or CI were executed. Windows11/Python3.15 and Linux/CI
+runtime compatibility remain NOT RUN on this increment. If native Git/MSYS Bash
+or job ownership is unavailable, record the explicit error and resolve the
+capability; do not skip tests or claim the suite passed. Current CI Python3.12
+and owner Python3.15 support the standard-library exception-group diagnostics.
+Production engine/security/runtime acceptance remains at its earlier open gates.
+
+Owner-only Windows11 PowerShell commands, repository root at publication revision:
+
+```powershell
+# Only if automatic discovery cannot locate the existing Git Bash installation:
+$env:PDFIUM_TEST_BASH = 'C:\Program Files\Git\usr\bin\bash.exe'
+py -3 -m unittest discover -s scripts/tests -p "test_pdfium_ci_shell.py" -v
+py -3 -m unittest discover -s scripts/tests -p "test_j_m4_benchmark.py" -v
+py -3 -m unittest discover -s scripts/tests -v
+```
+
+Use the actual existing Bash location, not the example if absent; no installation
+or privilege escalation is implied. Record Python version, selected Bash path,
+source SHA, real counts and all failure output. The same unittest commands with
+`python3` apply to Linux/CI; no workflow change/dispatch is made here. Expected
+result is zero failures/errors, subject to actual owner execution, not a claim.

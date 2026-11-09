@@ -365,8 +365,9 @@ def finalize(out, report):
                 writer.writerow([i['iteration'],i['warmup'],'pss','',s['begin_ns'],s['end_ns'],p['pid'],p['name'],p['start_ticks'],'',p['pss_kb'],'KiB'])
     for sample in report.get('partial_samples',[]):
         for process_row in sample['processes']:
-            writer.writerow(['partial','unknown','unattributed_pss','',sample['begin_ns'],sample['end_ns'],process_row['pid'],process_row['name'],process_row['start_ticks'],'',process_row['pss_kb'],'KiB'])
-    ev.j_atomic(out,'samples.csv',rows.getvalue())
+            writer.writerow(['partial','unknown','unattributed_pss','',sample['begin_ns'],sample['end_ns'],process_row['pid'],process_row['name'],process_row['start_ticks'],process_row.get('worker_epoch',''),process_row['pss_kb'],'KiB'])
+    # csv.writer owns CRLF and quoted newlines; never translate them again on Windows.
+    ev.j_atomic(out,'samples.csv',rows.getvalue(),newline='')
     lines=['# Phase J M4 benchmark', '', '**Status: '+report['status']+'** — execution completeness, not performance acceptance.',
            '', 'Source: `'+report.get('commit','UNKNOWN')+'`; clean: '+str(report.get('clean',False)),
            '', 'Measured iterations: '+str(sum(not i['warmup'] for i in report['iterations']))+'; one warm-up excluded.',

@@ -242,14 +242,15 @@ def j_path(root, relative):
     return target
 
 
-def j_atomic(root, relative, data):
+def j_atomic(root, relative, data, *, newline=None):
+    """Atomic UTF-8 artifact; newline='' preserves formats that own their line endings."""
     import os
     import uuid
     target = j_path(root, relative)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = j_path(root, relative + '.' + uuid.uuid4().hex + '.tmp')
     try:
-        with temporary.open('x', encoding='utf-8') as stream:
+        with temporary.open('x', encoding='utf-8', newline=newline) as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())

@@ -385,12 +385,46 @@ class M4Tests(unittest.TestCase):
 
     def test_partial_finalization_never_writes_pass_and_csv_columns_are_consistent(self):
         import csv
+        import io
         with tempfile.TemporaryDirectory() as tmp:
             out=Path(tmp);(out/'execution.log').write_text('synthetic')
-            report=dict(status='BLOCKED',iterations=[self.iteration(True)],complete=False)
+            epoch='aaaaaaaa-1111-1111-1111-111111111111'
+            unusual_name='worker,"quoted"\r\ncontinued'
+            partial=dict(begin_ns=100,end_ns=200,processes=[
+                dict(pid=201,name=unusual_name,start_ticks=42,pss_kb=123),
+                dict(pid=202,name='worker',start_ticks=43,worker_epoch=epoch,pss_kb=456)])
+            report=dict(status='BLOCKED',iterations=[self.iteration(True)],complete=False,
+                        partial_samples=[partial])
             m4.finalize(out,report)
-            records=list(csv.reader((out/'samples.csv').read_text().splitlines()))
-            self.assertTrue(all(len(r)==len(records[0]) for r in records))
+            # Read through the CSV API with newline='' to preserve embedded CR/LF.
+            with (out/'samples.csv').open(encoding='utf-8',newline='') as source:
+                records=list(csv.reader(source))
+            expected=['iteration','warmup','kind','fixture','begin_ns','end_ns',
+                      'pid','name','kernel_start_ticks','worker_epoch','value','unit']
+            self.assertEqual(expected,records[0])
+            self.assertTrue(all(len(row)==12 for row in records))
+            self.assertEqual(['partial','unknown','unattributed_pss','','100','200',
+                              '201',unusual_name,'42','','123','KiB'],records[-2])
+            self.assertEqual(['partial','unknown','unattributed_pss','','100','200',
+                              '202','worker','43',epoch,'456','KiB'],records[-1])
+            normal_pss=next(row for row in records[1:] if row[2]=='pss')
+            self.assertEqual(['44','','150','KiB'],normal_pss[8:])
+            self.assertNotIn(b'\r\r\n',(out/'samples.csv').read_bytes())
+            # Model Windows default text translation even on a POSIX test host.
+            actual_atomic=m4.ev.j_atomic
+            csv_writes=[]
+            def windows_atomic(root,name,value,**options):
+                if name=='samples.csv':
+                    csv_writes.append(options)
+                    translated=io.BytesIO()
+                    with io.TextIOWrapper(translated,encoding='utf-8',newline='\r\n' if options.get('newline') is None else options['newline']) as stream:
+                        stream.write(value);stream.flush();data=translated.getvalue()
+                    self.assertNotIn(b'\r\r\n',data)
+                    self.assertEqual(records,list(csv.reader(io.StringIO(data.decode('utf-8'),newline=''))))
+                return actual_atomic(root,name,value,**options)
+            with patch.object(m4.ev,'j_atomic',side_effect=windows_atomic):
+                m4.finalize(out,report)
+            self.assertEqual([dict(newline='')],csv_writes)
             report['status']='PASS'
             with self.assertRaisesRegex(ValueError,'incomplete'):m4.finalize(out,report)
             self.assertEqual('BLOCKED',json.loads((out/'summary.json').read_text())['status'])
@@ -401,9 +435,9 @@ class M4Tests(unittest.TestCase):
             report=dict(status='BLOCKED',iterations=[],complete=False)
             m4.finalize(out,report)
             original=m4.ev.j_atomic
-            def failing(root,name,value):
+            def failing(root,name,value,**options):
                 if name=='summary.md':raise OSError('Synthetic disk error')
-                return original(root,name,value)
+                return original(root,name,value,**options)
             with patch.object(m4.ev,'j_atomic',side_effect=failing),self.assertRaises(OSError):m4.finalize(out,report)
             self.assertFalse(json.loads((out/'summary.json').read_text())['complete'])
 

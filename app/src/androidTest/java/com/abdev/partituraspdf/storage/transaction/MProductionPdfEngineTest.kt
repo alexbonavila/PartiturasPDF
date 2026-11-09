@@ -14,6 +14,9 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
+import java.nio.file.Files
 import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
@@ -22,6 +25,87 @@ class MProductionPdfEngineTest {
         val rig=MPdfboxIntegrationRig(fixture,useProduction=true);var primary:Throwable?=null
         try{body(rig)}catch(t:Throwable){primary=t;throw t}
         finally{withContext(NonCancellable){try{rig.close()}catch(t:Throwable){if(primary!=null)primary.addSuppressed(t)else throw t}}}
+    }
+    @Test fun canonicalFrameworkBaseInitializesConfinedRootAndCleanup() { runBlocking {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        var disposable:File?=null
+        sandbox { r ->
+            disposable=r.directory
+            val base=context.noBackupFilesDir.canonicalFile
+            assertEquals(base,r.directory.parentFile)
+            assertEquals(r.directory.canonicalFile,r.directory)
+            assertEquals(File(r.directory,"transactions"),r.root.directory)
+            assertEquals(r.root.directory.canonicalFile,r.root.directory)
+            assertNotEquals(File(base,"pdf-transactions"),r.root.directory)
+            val transaction=r.root.newTransaction()
+            val artifact=File(transaction,"probe")
+            r.root.create(artifact)
+            assertEquals(artifact,r.root.check(artifact))
+            assertTrue(artifact.isFile)
+            // These are rejected lexically; no unrelated/external file is accessed.
+            for(outside in listOf(File(context.filesDir,"unrelated"),
+                    File(r.directory,"outside-transactions"),File("/sdcard/unrelated.pdf"))) {
+                assertThrows(IOException::class.java) { r.root.check(outside) }
+                assertThrows(IOException::class.java) { r.root.create(outside) }
+            }
+            r.unchanged()
+        }
+        assertFalse(requireNotNull(disposable).exists())
+    } }
+    @Test fun explicitSymlinkAncestorsAndArtifactsRemainRejected() { runBlocking {
+        sandbox { r ->
+            val target=File(r.directory,"link-target").apply { check(mkdir()) }
+            val sentinel=File(target,"keep").apply { writeBytes(byteArrayOf(9,8,7)) }
+            val ancestor=File(r.directory,"linked-ancestor")
+            val artifact=File(r.root.directory,"linked-artifact")
+            var primary:Throwable?=null
+            try {
+                Files.createSymbolicLink(ancestor.toPath(),target.toPath())
+                val failure=assertThrows(IOException::class.java) {
+                    PrivateRoot(File(ancestor,"must-not-create"),r.io)
+                }
+                assertEquals("Untrusted private root",failure.message)
+                assertFalse(File(target,"must-not-create").exists())
+                Files.createSymbolicLink(artifact.toPath(),sentinel.toPath())
+                assertThrows(IOException::class.java) { r.root.check(artifact) }
+                assertThrows(IOException::class.java) { r.root.create(artifact) }
+                assertThrows(IOException::class.java) {
+                    r.root.check(File(r.root.directory,"../link-target/keep"))
+                }
+                assertArrayEquals(byteArrayOf(9,8,7),sentinel.readBytes())
+            } catch(failure:Throwable) { primary=failure;throw failure }
+            finally {
+                // Remove test links themselves before the normal owned-tree teardown.
+                var cleanup:Throwable?=null
+                for(link in listOf(artifact,ancestor)) {
+                    try { Files.deleteIfExists(link.toPath()) }
+                    catch(failure:Throwable) { if(cleanup==null)cleanup=failure else cleanup.addSuppressed(failure) }
+                }
+                cleanup?.let { if(primary!=null)primary.addSuppressed(it)else throw it }
+            }
+        }
+    } }
+    @Test fun failedRigConstructorRemovesOnlyItsOwnDisposableDirectory() {
+        val base=InstrumentationRegistry.getInstrumentation().targetContext.noBackupFilesDir.canonicalFile
+        val guard=File(base,"m-root-guard-${UUID.randomUUID()}").apply { check(mkdir()) }
+        var primary:Throwable?=null
+        try {
+            val sentinel=File(guard,"keep").apply { writeBytes(byteArrayOf(4,5,6)) }
+            fun rigDirectories()=checkNotNull(base.listFiles()).filter {
+                it.name.startsWith("m-pdfbox-integration-")
+            }.map { it.name }.toSet()
+            val before=rigDirectories()
+            assertThrows(NoSuchElementException::class.java) {
+                MPdfboxIntegrationRig("missing-${UUID.randomUUID()}",useProduction=true)
+            }
+            assertEquals(before,rigDirectories())
+            assertTrue(guard.isDirectory)
+            assertArrayEquals(byteArrayOf(4,5,6),sentinel.readBytes())
+        } catch(failure:Throwable) { primary=failure;throw failure }
+        finally {
+            try { check(guard.deleteRecursively()) { "Owned sentinel cleanup pending" } }
+            catch(cleanup:Throwable) { if(primary!=null)primary.addSuppressed(cleanup)else throw cleanup }
+        }
     }
     @Test fun productionFactoryReordersRotatesPublishesAndCleans() { runBlocking {
         sandbox { r ->

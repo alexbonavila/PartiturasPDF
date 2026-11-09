@@ -21,7 +21,10 @@ import java.util.UUID
 internal class MPdfboxIntegrationRig(fixtureId: String = "02", useProduction: Boolean = false) {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    val directory = File(context.noBackupFilesDir, "m-pdfbox-integration-${UUID.randomUUID()}").apply { check(mkdir()) }
+    // Resolve only the trusted framework base, as PrivateRoot.forContext does.
+    // PrivateRoot must still reject links in arbitrary caller-supplied paths.
+    private val trustedBase = context.noBackupFilesDir.canonicalFile
+    val directory = File(trustedBase, "m-pdfbox-integration-${UUID.randomUUID()}").apply { check(mkdir()) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val original = File(directory, "input.pdf")
     val fixture: JSONObject

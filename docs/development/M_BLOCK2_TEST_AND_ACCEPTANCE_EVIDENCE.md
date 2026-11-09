@@ -1146,3 +1146,82 @@ or privilege escalation is implied. Record Python version, selected Bash path,
 source SHA, real counts and all failure output. The same unittest commands with
 `python3` apply to Linux/CI; no workflow change/dispatch is made here. Expected
 result is zero failures/errors, subject to actual owner execution, not a claim.
+
+## API26 PDF integration private-root initialization correction — 2026-11-09
+
+Starting source `d1f0e6bc48a41f03d62015b516b325d2fa205b74`, clean Phase M branch.
+Owner reports Windows11, Android8.0/API26, `emulator-5554`: both APK installations
+and instrumentation startup succeeded, existing PDFBox spike had no reported
+failures, and20 integration failures (11 Save As,9 production) shared
+`IOException: Untrusted private root` during `MPdfboxIntegrationRig` construction.
+These are owner-reported initialization failures, not20 demonstrated PDF-operation
+defects or production-engine acceptance. No raw XML/APK identities were supplied
+with this assignment. Source at the required baseline actually contains11
+production methods, not9: preserve this inventory discrepancy pending owner
+verification of rebuilt APKs and raw test identities. Do not infer which two
+methods were absent, stale binaries or a successful test from that count alone.
+
+The reported exception corresponds to the unique ancestor-symlink guard in
+`PrivateRoot`, before transaction parsing/transformation/publication. Source
+confirms the rig passed `context.noBackupFilesDir` directly, whereas production
+`PrivateRoot.forContext()` uses `context.noBackupFilesDir.canonicalFile`. A trusted
+Android framework path exposed through a system-managed alias therefore reaches
+that guard in the old rig. The exact offending ancestor was not independently
+observed on the owner's emulator; no specific Android path alias is invented.
+
+Correction: resolve **only the trusted framework base** to its canonical location
+before creating the rig's UUID-named `m-pdfbox-integration-*` child. Its private
+`transactions` root remains beneath that owned disposable child, separate from
+production `pdf-transactions`. No caller-provided root or context injection, external
+storage, generic canonicalization in `PrivateRoot`, symlink allowlist or test-only
+production bypass. `PrivateFiles.kt` and every production storage/security/engine
+implementation are unchanged, including `PrivateRoot.check()`, no-follow checks,
+journal/durability/recovery behavior and artifact ownership. Provider lifecycle,
+constructor primary/suppressed cleanup, coroutine cancellation/join and existing
+fault injection/teardown are unchanged.
+
+Three new API26-capable methods in the existing
+`com.abdev.partituraspdf.storage.transaction.MProductionPdfEngineTest`:
+
+- `canonicalFrameworkBaseInitializesConfinedRootAndCleanup`: actual rig/root
+  construction, canonical framework parent, distinct production root, successful
+  real transaction/artifact creation, rejection of unrelated/internal/external
+  artifact paths, immutable fixture and removal of the disposable rig directory.
+  External candidates are lexical checks only; no external file is accessed.
+- `explicitSymlinkAncestorsAndArtifactsRemainRejected`: actual Android NIO symlinks
+  inside test-owned storage, `PrivateRoot` ancestor rejection before directory
+  creation, artifact/check/create and traversal rejection, intact sentinel bytes.
+  Test links themselves are removed before normal teardown; cleanup failures stay
+  visible without replacing the primary failure.
+- `failedRigConstructorRemovesOnlyItsOwnDisposableDirectory`: force a missing
+  fixture lookup failure during real construction, require the original exception,
+  no residual new rig directory and preservation of a separately owned sibling
+  directory/sentinel. Its sentinel cleanup remains checked, with secondary errors
+  suppressed on the original failure.
+
+Existing JVM `PrivateJournalTest.symbolicLinksAndEscapesNeverAuthorizeReadOrCleanup`
+and Android `Block1PrivateStorageTest` real canonical-root/FD/durability coverage
+remain intact. The new tests exercise the actual shared rig and Android security
+checks, not merely `File.canonicalFile` or mocked policy. All prior11 production,
+11 Save As and21 spike source methods remain enabled/unchanged. Current static
+inventory is14 production +11 Save As +21 spike =46 selected methods, **not an
+executed count**. No new class/runner is needed for the owner's selection below.
+
+Status: **IMPLEMENTED — NOT EXECUTED**. Source/scope/diff inspection and Git
+whitespace checks only; no Gradle, JVM, Python, Android instrumentation, ADB, CI,
+Lint, coverage or measurements executed by Codex. Rebuild/install the publication
+revision and retain exact JUnit identities, final completion and APK/source/device
+attribution. Initialization success and substantive PDF/Save As outcomes remain
+unverified; report any subsequently exposed failures faithfully. Production engine,
+security/packaging/compatibility acceptance gates remain open. No dedicated
+performance/memory campaign is reinstated and no historical result is rewritten.
+
+Owner-only Windows PowerShell verification, at the publication revision and the
+explicitly identified disposable API26 emulator:
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5554 shell am instrument -w -e class "com.abdev.partituraspdf.storage.transaction.MProductionPdfEngineTest,com.abdev.partituraspdf.storage.transaction.MPdfboxSaveAsIntegrationTest,com.abdev.partituraspdf.pdf.engine.spike.PdfboxAndroidSpikeTest" com.abdev.partituraspdf.test/androidx.test.runner.AndroidJUnitRunner
+```

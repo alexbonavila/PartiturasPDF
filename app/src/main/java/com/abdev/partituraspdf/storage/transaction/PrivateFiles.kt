@@ -64,11 +64,11 @@ internal class AndroidPrivateIo : PrivateIo {
 }
 
 /** Sole private root; caller injects ONE shared instance into capture, staging and recovery. */
-internal class PrivateRoot(val directory: File, val io: PrivateIo) {
+internal class PrivateRoot(val directory: File, val io: PrivateIo, createIfMissing: Boolean = true) {
     val mutations = kotlinx.coroutines.sync.Mutex()
     companion object {
-        fun forContext(context: Context): PrivateRoot =
-            PrivateRoot(File(context.noBackupFilesDir.canonicalFile, "pdf-transactions"), AndroidPrivateIo())
+        fun forContext(context: Context, createIfMissing: Boolean = true): PrivateRoot =
+            PrivateRoot(File(context.noBackupFilesDir.canonicalFile, "pdf-transactions"), AndroidPrivateIo(), createIfMissing)
     }
     init {
         require(directory.isAbsolute)
@@ -79,6 +79,7 @@ internal class PrivateRoot(val directory: File, val io: PrivateIo) {
             ancestor = ancestor.parentFile
         }
         if (!directory.exists()) {
+            if (!createIfMissing) throw IOException("Private root unavailable")
             if (!directory.mkdir()) throw IOException("Private root unavailable")
             io.syncDirectory(directory)
             io.syncDirectory(requireNotNull(directory.parentFile))

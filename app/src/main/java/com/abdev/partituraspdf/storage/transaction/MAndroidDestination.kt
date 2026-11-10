@@ -22,8 +22,10 @@ internal fun interface NewDocumentProvenance {
 internal class MAndroidDestination(private val context: Context, private val proof: NewDocumentProvenance) {
     suspend fun bind(id: TransactionId, uri: Uri, flags: Int, sources: List<StorageDocumentRef>): WriteDestinationCapability? = withContext(Dispatchers.IO) {
         val frozenSources = sources.toList()
-        if (uri.scheme != "content" || !DocumentsContract.isDocumentUri(context, uri) ||
-            flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0 || frozenSources.any { it.value == uri.toString() } ||
+        val rights = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        if (flags and rights != rights || uri.scheme != "content" || !DocumentsContract.isDocumentUri(context, uri) ||
+            context.checkUriPermission(uri, Process.myPid(), Process.myUid(), rights) != PackageManager.PERMISSION_GRANTED ||
+            frozenSources.any { it.value == uri.toString() } ||
             !proof.provesNewIndependent(id, uri, frozenSources)) return@withContext null
         val attempted = AtomicBoolean(false)
         WriteDestinationCapability(object : NewDestinationPort {
@@ -31,7 +33,7 @@ internal class MAndroidDestination(private val context: Context, private val pro
             override val destination = StorageDocumentRef("saf", uri.toString())
             override val observedFlags = flags and 67
             private fun has(mode: Int) = context.checkUriPermission(uri, Process.myPid(), Process.myUid(), mode) == PackageManager.PERMISSION_GRANTED
-            override suspend fun revalidate() = has(Intent.FLAG_GRANT_WRITE_URI_PERMISSION) && proof.provesNewIndependent(id, uri, frozenSources)
+            override suspend fun revalidate() = has(rights) && proof.provesNewIndependent(id, uri, frozenSources)
             override suspend fun writeOnce(copy: suspend (java.io.OutputStream) -> Unit) {
                 check(attempted.compareAndSet(false, true))
                 if (!revalidate()) throw SecurityException("Destination unavailable")

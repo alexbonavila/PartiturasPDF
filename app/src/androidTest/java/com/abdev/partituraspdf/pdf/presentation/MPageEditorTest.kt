@@ -78,4 +78,15 @@ class MPageEditorTest {
         compose.onNodeWithText(compose.activity.getString(R.string.m_saved_cleanup)).assertIsDisplayed()
         compose.onNodeWithText(compose.activity.getString(R.string.m_saved)).assertDoesNotExist()
     }
+    @Test fun unresolvedOutcomeNeverEnablesSaveOrClaimsVerifiedSuccess() {
+        compose.runOnUiThread { compose.activity.setContent { PartiturasPDFTheme {
+            MPageEditor(MEditState(source=MEditSource(route,1),draft=MEditDraft.initial(1),
+                availability=MEditAvailability.AVAILABLE,publication=PublicationResult.UncertainPublication,
+                recoveryRequired=false),{},{},{})
+        } } }
+        compose.onNodeWithTag("m_save_as").assertIsNotEnabled()
+        compose.onNodeWithText(compose.activity.getString(R.string.m_uncertain)).assertIsDisplayed()
+        compose.onNodeWithText(compose.activity.getString(R.string.m_saved)).assertDoesNotExist()
+        compose.onNodeWithText(compose.activity.getString(R.string.m_saved_cleanup)).assertDoesNotExist()
+    }
 }

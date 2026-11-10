@@ -12,6 +12,25 @@ import org.junit.runner.RunWith
 /** Direct provider contract checks. Does NOT claim system-picker/grant or resolver acceptance. */
 @RunWith(AndroidJUnit4::class)
 class MDocumentsProviderTest {
+    @Test fun destinationRequiresObservedAndLiveReadWriteBeforeProvenanceOrWriter() { kotlinx.coroutines.runBlocking {
+        val target=InstrumentationRegistry.getInstrumentation().targetContext
+        var rightsChecks=0;var proofCalls=0
+        val denied=object:android.content.ContextWrapper(target) {
+            override fun checkUriPermission(uri:android.net.Uri,pid:Int,uid:Int,modeFlags:Int):Int {
+                rightsChecks++
+                assertEquals(3,modeFlags)
+                return android.content.pm.PackageManager.PERMISSION_DENIED
+            }
+        }
+        val boundary=MAndroidDestination(denied,NewDocumentProvenance { _,_,_ -> proofCalls++;false })
+        val id=com.abdev.partituraspdf.storage.api.TransactionId(java.util.UUID.randomUUID().toString())
+        val uri=android.provider.DocumentsContract.buildDocumentUri(MNewDocumentProvider.AUTHORITY,"root")
+        for (flags in listOf(0,1,2)) assertNull(boundary.bind(id,uri,flags,emptyList()))
+        assertEquals(0,rightsChecks);assertEquals(0,proofCalls)
+        assertNull(boundary.bind(id,uri,3,emptyList()))
+        assertEquals(1,rightsChecks);assertEquals(0,proofCalls)
+        // No permission adoption, provider capability, writer or real-grant claim.
+    } }
     @Test fun newIdsSameNameNeverOverwriteAndWriteIsOneShot() {
         val provider = MNewDocumentProvider()
         provider.attachInfo(InstrumentationRegistry.getInstrumentation().targetContext,

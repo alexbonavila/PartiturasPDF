@@ -1,5 +1,6 @@
 package com.abdev.partituraspdf.storage.transaction
 
+import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.abdev.partituraspdf.pdf.api.*
@@ -111,14 +112,71 @@ class MProductionPdfEngineTest {
         sandbox { r ->
             val coordinator=MTransactionCoordinator.production(InstrumentationRegistry.getInstrumentation().targetContext,r.gate,
                 TransactionSnapshotCapturer(r.access,r.store),r.store,r.journal)
-            val ready=coordinator.prepare(r.source,r.plan) as MPreparation.Ready
+            val ready=coordinator.prepare(r.source,r.plan).requireReady()
             val destination=r.Destination(ready.request.operation)
-            val result=ready.session.complete(ready.request.token,destination.capability()) as PublicationResult.VerifiedNewDocument
+            val result=ready.session.complete(ready.request.token,destination.capability()).requireVerified()
             assertEquals(result.evidence,destination.evidence());assertEquals(1,destination.writes)
             assertEquals(SnapshotCleanupStatus.COMPLETE,result.cleanup)
             assertEquals(MState.CLEANED,r.journal.read(ready.request.operation).last().state)
             assertSame(PublicationResult.NeedsOwnerResolution,ready.session.complete(ready.request.token,destination.capability()))
             assertEquals(1,destination.writes);r.unchanged()
+        }
+    } }
+    @Test fun canonicalEmptyTransitionIsQualifiedAndPreservedRatherThanSilentlyDropped() { runBlocking {
+        sandbox { r ->
+            PDDocument.load(r.original).use { pdf ->
+                for (page in pdf.pages) {
+                    val transition=page.cosObject.getDictionaryObject(COSName.TRANS) as COSDictionary
+                    assertTrue("Canonical page has an empty default transition",transition.keySet().isEmpty())
+                }
+                ProductionPdfPolicy.requireSupported(pdf)
+            }
+            val ready=r.coordinator().prepare(r.source,r.plan).requireReady()
+            val destination=r.Destination(ready.request.operation)
+            val verified=ready.session.complete(ready.request.token,destination.capability()).requireVerified()
+            assertEquals(verified.evidence,destination.evidence())
+            ParcelFileDescriptor.AutoCloseInputStream(r.provider.openDocument(destination.id,"r",null)).use { input ->
+                PDDocument.load(input).use { pdf ->
+                    for (page in pdf.pages) {
+                        val transition=page.cosObject.getDictionaryObject(COSName.TRANS) as COSDictionary
+                        assertTrue(transition.keySet().isEmpty())
+                    }
+                }
+            }
+            r.unchanged()
+        }
+    } }
+    @Test fun nonemptyMalformedAndStreamTransitionsRemainUnsupported() {
+        ProductionPdfAdapters(InstrumentationRegistry.getInstrumentation().targetContext)
+        PDDocument().use { pdf ->
+            val page=PDPage();pdf.addPage(page);page.resources=PDResources()
+            page.cosObject.setItem(COSName.TRANS,COSDictionary())
+            ProductionPdfPolicy.requireSupported(pdf)
+            val representations=listOf<COSBase>(
+                COSDictionary().apply { setName(COSName.S,"Dissolve") },
+                COSDictionary().apply { setName(COSName.S,"R") },
+                COSName.getPDFName("Unknown"),pdf.document.createCOSStream())
+            for (transition in representations) {
+                page.cosObject.setItem(COSName.TRANS,transition)
+                val failure=assertThrows(UnsupportedPdf::class.java) { ProductionPdfPolicy.requireSupported(pdf) }
+                assertEquals("Unsupported page transition",failure.message)
+            }
+        }
+    }
+    @Test fun unsupportedQualificationPrecedesInvalidIndexWithoutRelaxingSecurityPolicy() { runBlocking {
+        sandbox("14") { r ->
+            val actual=r.coordinator().prepare(r.source,OrderedPagePlan(listOf(PageSelection(20,0))))
+            assertTrue("Expected protected rejection, actual ${actual.javaClass.simpleName}",actual is MPreparation.Rejected)
+            assertEquals(PdfOperationFailure.ProtectedDocument,(actual as MPreparation.Rejected).reason)
+            assertEquals(SnapshotCleanupStatus.COMPLETE,actual.cleanup)
+        }
+        sandbox { r ->
+            val actual=r.coordinator().prepare(r.source,OrderedPagePlan(listOf(PageSelection(20,0))))
+            assertTrue("Expected invalid plan, actual ${actual.javaClass.simpleName}",actual is MPreparation.Rejected)
+            assertEquals(PdfOperationFailure.InvalidPlan,(actual as MPreparation.Rejected).reason)
+            assertEquals(SnapshotCleanupStatus.COMPLETE,actual.cleanup)
+            assertTrue(r.root.directory.walkTopDown().none { it.name=="source.sealed" || it.name=="output.sealed" })
+            r.unchanged()
         }
     } }
     @Test fun supportedCorpusReorderExtractionGeometryAndAllQuarterTurns() { runBlocking {
@@ -127,7 +185,7 @@ class MProductionPdfEngineTest {
             for(turns in 0..3){
                 val selected=if(count==1)listOf(0)else listOf(count-1,0)
                 val plan=OrderedPagePlan(selected.map{PageSelection(it,turns)})
-                val ready=r.coordinator().prepare(r.source,plan) as MPreparation.Ready
+                val ready=r.coordinator().prepare(r.source,plan).requireReady()
                 val destination=r.Destination(ready.request.operation)
                 val result=ready.session.complete(ready.request.token,destination.capability())
                 assertTrue("Supported case $id/$turns",result is PublicationResult.VerifiedNewDocument)
@@ -152,7 +210,7 @@ class MProductionPdfEngineTest {
                 }
                 r.original.writeBytes(generated.toByteArray())
                 val plan=OrderedPagePlan(listOf(PageSelection(0,1)))
-                val ready=r.coordinator().prepare(r.source,plan) as MPreparation.Ready
+                val ready=r.coordinator().prepare(r.source,plan).requireReady()
                 assertTrue(ready.session.complete(ready.request.token,r.Destination(ready.request.operation).capability()) is PublicationResult.VerifiedNewDocument)
             } finally { r.original.writeBytes(original) }
         }
@@ -160,8 +218,8 @@ class MProductionPdfEngineTest {
     @Test fun productionValidatorRejectsWrongPlan() { runBlocking {
         sandbox { r ->
             val id=TransactionId(UUID.randomUUID().toString())
-            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id) as SnapshotCaptureResult.Captured).snapshot
-            val output=(r.adapters.transform(source,r.plan,id,r.store) as EngineResult.Produced).output
+            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id)).requireCaptured().snapshot
+            val output=r.adapters.transform(source,r.plan,id,r.store).requireProduced().output
             try {
                 val wrong=OrderedPagePlan(listOf(PageSelection(0,0),PageSelection(1,0)))
                 assertTrue(r.adapters.validate(source,output,wrong) is ValidationResult.Refused)
@@ -171,14 +229,14 @@ class MProductionPdfEngineTest {
     @Test fun malformedOutputAndCorruptedSnapshotCannotMintArtifacts() { runBlocking {
         sandbox { r ->
             val id=TransactionId(UUID.randomUUID().toString())
-            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id) as SnapshotCaptureResult.Captured).snapshot
-            val output=(r.store.stage(id){it.write(byteArrayOf(1,2,3))} as SnapshotCaptureResult.Captured).snapshot
+            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id)).requireCaptured().snapshot
+            val output=(r.store.stage(id){it.write(byteArrayOf(1,2,3))}).requireCaptured().snapshot
             try{assertTrue(r.adapters.validate(source,output,r.plan) is ValidationResult.Refused)}
             finally{for(s in listOf(output,source)){s.requestClose();assertSame(SnapshotReleaseResult.Released,s.awaitReleased())}}
         }
         sandbox { r ->
             val id=TransactionId(UUID.randomUUID().toString())
-            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id) as SnapshotCaptureResult.Captured).snapshot
+            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id)).requireCaptured().snapshot
             try {
                 val file=java.io.File(r.root.directory,"tx-${id.value}/source.sealed")
                 check(file.setWritable(true)) // Explicit corruption injection on private TEST bytes only.
@@ -260,8 +318,8 @@ class MProductionPdfEngineTest {
     @Test fun alteredResourceGraphCannotReceiveValidationAuthority() { runBlocking {
         sandbox { r ->
             val id=TransactionId(UUID.randomUUID().toString())
-            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id) as SnapshotCaptureResult.Captured).snapshot
-            val output=(r.adapters.transform(source,r.plan,id,r.store) as EngineResult.Produced).output
+            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id)).requireCaptured().snapshot
+            val output=r.adapters.transform(source,r.plan,id,r.store).requireProduced().output
             var changed:WorkingSnapshot?=null
             try {
                 val bytes=ByteArrayOutputStream()
@@ -272,7 +330,7 @@ class MProductionPdfEngineTest {
                         pdf.save(bytes)
                     }
                 } }
-                val changedOutput=(r.store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(bytes.toByteArray()) } as SnapshotCaptureResult.Captured).snapshot
+                val changedOutput=(r.store.stage(TransactionId(UUID.randomUUID().toString())) { it.write(bytes.toByteArray()) }).requireCaptured().snapshot
                 changed=changedOutput
                 assertTrue(r.adapters.validate(source,changedOutput,r.plan) is ValidationResult.Refused)
             } finally { for(owner in listOfNotNull(changed,output,source)) { owner.requestClose(); assertSame(SnapshotReleaseResult.Released,owner.awaitReleased()) } }
@@ -281,7 +339,7 @@ class MProductionPdfEngineTest {
     @Test fun cancellationDuringProductionSourceLeaseClosesPartialOutput() { runBlocking {
         sandbox { r ->
             val id=TransactionId(UUID.randomUUID().toString())
-            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id) as SnapshotCaptureResult.Captured).snapshot
+            val source=(TransactionSnapshotCapturer(r.access,r.store).captureForTransaction(r.source,SnapshotCaptureLimits(64L*1024*1024),id)).requireCaptured().snapshot
             val entered=CompletableDeferred<Unit>()
             val barrier=CompletableDeferred<Unit>()
             val gated=WorkingSnapshot(object:SnapshotOwnerPort {
@@ -309,7 +367,7 @@ class MProductionPdfEngineTest {
         sandbox{r->
             val ready=r.ready();val destination=r.Destination(ready.request.operation)
             r.cleanupFault=java.io.IOException("Injected cleanup debt")
-            val result=ready.session.complete(ready.request.token,destination.capability()) as PublicationResult.VerifiedNewDocument
+            val result=ready.session.complete(ready.request.token,destination.capability()).requireVerified()
             assertEquals(SnapshotCleanupStatus.PENDING,result.cleanup);assertEquals(result.evidence,destination.evidence())
             assertTrue(r.budget.used()>0)
         }

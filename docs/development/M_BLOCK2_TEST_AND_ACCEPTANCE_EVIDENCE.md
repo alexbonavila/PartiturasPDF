@@ -1347,3 +1347,100 @@ python test-fixtures\scripts\verify_fixtures.py
 Then execute the existing M/Reader/Library regression/compatibility and coverage
 campaigns under owner control, retaining original raw failures. Block B publication
 is not Block B/Phase M acceptance or authorization to activate writes or start Block C.
+
+## Block C integrated robustness — source delivery, 2026-11-10
+
+Starts at `4b62cd7c16b4cdfdc7665b66f27f5e913cf60797` on the assigned Phase M
+branch. **IMPLEMENTED — NOT RUNTIME VERIFIED.** Full current findings, open-issues
+ledger, M-T01–M-T20 mapping and the single owner-run PowerShell campaign are in
+[M_FINAL_VALIDATION_AND_ACCEPTANCE.md](M_FINAL_VALIDATION_AND_ACCEPTANCE.md).
+This new section supersedes the prospective Block C instructions, not historical
+results. Production Save As remains UNAPPROVED, unavailable-engine defaults remain,
+and the production provider proof still rejects ALL providers.
+
+### Six production failures: source cause versus execution
+
+Textual inspection of immutable fixture01/02 confirms an empty `/Trans <<>>`
+page dictionary. The old policy's page-key allowlist rejected this before either
+transformation or out-of-range index validation. Empty/default Replace transition
+is a no-effect structure: the correction accepts only an empty resolved dictionary,
+not a stream, malformed or nonempty transition. It preserves the dictionary and
+all existing security/geometry/resource/annotation/native/text validation rules.
+No fixture or expected positive result was altered to make a rejection acceptable.
+
+This explains a first source blocker in each of the six reported paths, including
+supportedCorpus's first01, the default02 production/validator/mutation/cleanup paths
+and the invalid-index02 subcase. It does NOT prove there are no later parser,
+policy, transformation or exact-raster issues. All six owner-reported FAILs remain
+OPEN / NOT RUN at this source. Qualification still precedes index validation for
+protected/unsupported documents; no security classification precedence was changed.
+
+`MPdfboxIntegrationRig` now has checked Ready/Produced/Captured/Verified helpers:
+unexpected results expose their type, typed reason and cleanup status rather than
+a secondary ClassCastException. Existing assertions and test methods remain.
+No private provider URI or document contents are deliberately added to diagnostics.
+
+### Focused test source additions (NOT RUN)
+
+Eight JVM methods:
+
+- `MEditCoordinatorTest.recoveryRefreshesAtEachEntryCoalescesConcurrentScansAndBlocksSaveUntilComplete`
+- `MEditCoordinatorTest.repeatedEntryKeepsEditedDraftAndNeverRestoresDefaultPageSelection`
+- `MEditCoordinatorTest.canceledDispatcherReturnRetainsReadyOwnerAndBlocksAnotherTransaction`
+- `MEditCoordinatorTest.verifiedCleanupDebtSurvivesCloseReopenAndFreshRecoveryWithoutBecomingFailure`
+- `MEditCoordinatorTest.dismissalRetainsExactUncertainOutcomeRatherThanConsumingCallbackAgain`
+- `MEditCoordinatorTest.canceledOrFailedRecoveryNeverTurnsAnUnknownScanIntoEmptySuccess`
+- `MEditCoordinatorTest.unexpectedCleanupDefectRemainsObservableAlongsideVerifiedPublication`
+- `PrivateJournalTest.recoveryRootOpeningNeverCreatesMissingDirectoryAndRetainsConfinement`
+
+Seven Android methods:
+
+- `MProductionPdfEngineTest.canonicalEmptyTransitionIsQualifiedAndPreservedRatherThanSilentlyDropped`
+- `MProductionPdfEngineTest.nonemptyMalformedAndStreamTransitionsRemainUnsupported`
+- `MProductionPdfEngineTest.unsupportedQualificationPrecedesInvalidIndexWithoutRelaxingSecurityPolicy`
+- `MDocumentsProviderTest.destinationRequiresObservedAndLiveReadWriteBeforeProvenanceOrWriter`
+- `MEditPickerBindingTest.changedReaderRejectsCallbackAndRetainsUncertainOriginalOperation`
+- `MEditPickerBindingTest.retiringPickerOwnerJoinsWithoutWriteOrAcceptingLateResult`
+- `MPageEditorTest.unresolvedOutcomeNeverEnablesSaveOrClaimsVerifiedSuccess`
+
+Current source method counts in these affected classes: MEditCoordinator24,
+PrivateJournal9, MProductionPdfEngine17, MDocumentsProvider10,
+MEditPickerBinding10, MPageEditor5. These are source inventories, not executed
+counts, test PASS or coverage. Existing fixture helper entry performs the required
+fresh recovery before calling save; no positive assertion is bypassed.
+
+### Ownership and retained evidence
+
+An unhanded Ready is retained as a Pending owner before conservative settlement;
+joined drain also sees ownership installed by preparation cancellation. Session
+outcomes are cached so later dismissal/retirement does not consume a callback again
+or replace precise uncertainty. Verified/PENDING remains visible across reopen and
+blocks another save; artifacts/charges are not silently released. Primary defects
+and cancellation remain distinct from secondary cleanup evidence.
+
+Explicit editing entry refreshes recovery instead of a lifetime one-shot; active
+scans coalesce, prepare/publish/drain exclude scans, new preparation marks freshness
+required. Failed/canceled scans cannot become an empty successful scan. Existing-only
+PrivateRoot opening prevents recovery from creating a root even in the preflight
+check/open race. Default capture behavior is unchanged. The saved pending Boolean
+also covers preparation/publication/uncertainty/cleanup debt, not just picker request.
+There are still no restored write capabilities, automatic grants, retries, public
+cleanup, metadata transfer or owner-resolution control.
+
+MAndroidDestination now requires both observed AND live READ+WRITE rights before
+binding/revalidation, in addition to proof. This is a stricter precondition; no
+production allowlist/fallback was introduced. Real external-provider acceptance is
+still BLOCKED. New registry/provider/context tests are controlled seams, not genuine
+picker/OS-grant, physical-device or process-death evidence.
+
+No new resource keys or translations: Block B's32 keys/187 expected strings remain.
+No Gradle/dependency/CI/core/Reader/Library/SAF/schema/fixture/threshold modification.
+No test disabled. Existing A1/B5/C05 gates are unchanged; none can substitute for
+missing M-specific >=90% line/>=80% branch coverage. The consolidated plan records
+that measurement/integration hold point explicitly. Dedicated physical profiling
+remains omitted by owner decision. No release or final Phase M acceptance.
+
+Codex execution: source/Git review and `git diff --check` only. Builds, compiler,
+JVM/Python/Android tests, validators, ADB/emulators, Lint, coverage, dependency
+installation/resolution, profiling and CI: **NOT RUN**. Owner must retain individual
+six-failure retest results, all new test evidence and original reports at exact SHAs.

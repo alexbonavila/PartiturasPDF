@@ -1,6 +1,7 @@
 # M Block 2 host integration and phase handoff
 
-Current source status: see [Block B implementation](#block-b-android-host-implementation--2026-11-10).
+Current source status: see [Block C robustness](#block-c-robustness-disposition--2026-11-10)
+and the [final validation plan](M_FINAL_VALIDATION_AND_ACCEPTANCE.md).
 The dated sections below preserve their historical authorization and evidence.
 
 2026-11-03. Host/MainActivity/DI, K/L, core/SAF/Reader/registry remain protected.
@@ -174,3 +175,42 @@ API26/27/36, accessibility/linguistic/physical functional acceptance where requi
 new-logic coverage and latest-revision CI remain pending. The separate memory/
 performance profiling campaign stays omitted by owner decision. No acceptance,
 merge, PR, release or permission to start Block C is inferred from this delivery.
+
+## Block C robustness disposition — 2026-11-10
+
+Current source supersedes Block B's initial one-shot recovery and picker-only
+restore marker descriptions. See the [consolidated final campaign and open ledger](M_FINAL_VALIDATION_AND_ACCEPTANCE.md).
+No production publication is activated; every provider still fails the production
+independence proof, and the host does not select the production engine factory.
+
+- Every explicit edit entry can refresh bounded read-only recovery; concurrent
+  scans coalesce. Save requires fresh successful observations, and preparation
+  dirties freshness. No scan during prepare/publish/drain, no polling or replay.
+- Recovery uses an existing-only root opening: even a disappearance between
+  preflight and open cannot create transaction storage. Confinement/symlink checks,
+  shared ledger, byte quotas and existing READ-only destination inspection remain.
+- Re-entering the same draft preserves modifications. Verified success with cleanup
+  PENDING is retained on reopen and is never described as failed/cleaned.
+- A Ready created before canceled IO return remains explicitly owned even if it
+  never reached the Activity. Draining joins preparation and observes any owner
+  installed by its finally. Admission/private evidence stay retained on uncertainty.
+- Terminal observations are cached, not reconstructed by invoking an already-used
+  token; session verified observation has precedence. No duplicate public writer,
+  retry, automatic owner acknowledgement or public deletion.
+- The saved Boolean marks preparation, publication and retained uncertainty/debt,
+  as well as pending picker. It remains only a recovery hint, never write authority.
+- Destination binding/revalidation now insists on observed/live READ+WRITE before
+  a writer, still requiring independent provider proof. No protected original,
+  transient/registered identity, favorite, checkpoint or root is substituted.
+
+The six Block A FAILs have a demonstrated initial empty-transition qualification
+blocker and source correction, but no owner retest result yet. Exact native raster
+and other supported-subset behavior may expose additional defects. No source-only
+acceptance or claim that all six runtime causes are fully known.
+
+Block C source/review is delivered for final owner validation. All builds/tests,
+real picker/grants/process interruption, API26/27/36, new M coverage, applicable
+manual/physical/accessibility and current security/packaging/legal evidence remain
+open. The new central plan is authoritative for current execution order; old dated
+plans/results stay historical. Phase M is not accepted or authorized to merge,
+release, activate writes or start another feature.

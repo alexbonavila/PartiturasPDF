@@ -88,7 +88,7 @@ internal class MPdfboxIntegrationRig(fixtureId: String = "02", useProduction: Bo
     }
     fun coordinator(validator: PdfOperationValidator = adapters, engine: PdfModificationEngine = adapters) =
         MTransactionCoordinator(gate, TransactionSnapshotCapturer(access, store), store, journal, engine, validator)
-    suspend fun ready(): MPreparation.Ready = coordinator().prepare(source, plan) as MPreparation.Ready
+    suspend fun ready(): MPreparation.Ready = coordinator().prepare(source, plan).requireReady()
     inner class Destination(override val operation: TransactionId) : NewDestinationPort {
         // Create happens explicitly in disposable provider, before injected capability binding.
         val id = provider.createDocument("root", "application/pdf", "score.pdf")
@@ -139,4 +139,23 @@ internal class MPdfboxIntegrationRig(fixtureId: String = "02", useProduction: Bo
         }
         failure?.let { throw it }
     }
+}
+
+/** Failure diagnostics contain types/cleanup only, never provider identity or private bytes. */
+internal fun MPreparation.requireReady(): MPreparation.Ready = when (this) {
+    is MPreparation.Ready -> this
+    is MPreparation.Rejected -> throw AssertionError("Expected Ready; actual Rejected(reason=$reason, cleanup=$cleanup)", cleanupFault)
+    MPreparation.Busy -> throw AssertionError("Expected Ready; actual Busy")
+}
+internal fun EngineResult.requireProduced(): EngineResult.Produced = when (this) {
+    is EngineResult.Produced -> this
+    is EngineResult.Rejected -> throw AssertionError("Expected Produced; actual Rejected(reason=$reason, cleanup=$cleanup)")
+}
+internal fun SnapshotCaptureResult.requireCaptured(): SnapshotCaptureResult.Captured = when (this) {
+    is SnapshotCaptureResult.Captured -> this
+    is SnapshotCaptureResult.Rejected -> throw AssertionError("Expected Captured; actual Rejected(reason=$reason, cleanup=$cleanup)")
+}
+internal fun PublicationResult.requireVerified(): PublicationResult.VerifiedNewDocument = when (this) {
+    is PublicationResult.VerifiedNewDocument -> this
+    else -> throw AssertionError("Expected VerifiedNewDocument; actual ${javaClass.simpleName}")
 }

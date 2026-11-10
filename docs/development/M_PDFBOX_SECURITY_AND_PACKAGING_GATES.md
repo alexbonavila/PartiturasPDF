@@ -300,3 +300,31 @@ provenance, third-party resources/notices, no test/provider/fixture/private outp
 permissions and native inventory against the baseline. Keep APK hashes, resolved
 reports and inspection evidence private unless explicitly approved for publication.
 No APKs, dependency archives or raw owner logs are committed by this assignment.
+
+## Block C current activation hold — 2026-11-10
+
+The [consolidated final validation plan](M_FINAL_VALIDATION_AND_ACCEPTANCE.md)
+is the current owner-run sequence at the reviewed Block C SHA. The older dated
+commands/results remain historical. Block B/C now wire a gated host/editor/picker;
+this supersedes the old "no host/picker call" description, NOT the activation hold.
+`MProductionWriteAuthorization` remains UNAPPROVED, host engine defaults unavailable,
+and production `NewDocumentProvenance` rejects every provider. Both current observed
+and live READ+WRITE are required by the Android destination bridge; no generic
+provider independence proof or reliable-pipe peer-ack guarantee was invented.
+
+The only qualification expansion accepts an empty/default no-effect page Trans
+dictionary and preserves it. Nonempty/malformed/stream transitions still reject.
+Actions, forms, unsupported filters, JPX, missing resources, annotations/geometry,
+strict parsing, independent validation/readback and all existing limits remain.
+The six production FAILs remain open pending owner execution, not security PASS.
+
+No dependency version/resolution, packaged binary, license/NOTICE content, manifest,
+permission, native payload, advisory clearance, resource budget or threshold changed
+in Block C. Actual selected PDFBox/BC archives, current full advisory inventory,
+fork patch reachability, distribution obligations and release/test isolation still
+require the recorded owner review and evidence. No current advisory research or
+scanner was executed for this source correction. Production activation requires
+explicit engine/security/legal/provider decisions plus final-source tests and
+M-scoped coverage; A1/B5/C05 do not establish coverage of all new M logic.
+Dedicated physical memory/performance profiling remains OMITTED BY OWNER, not PASS;
+applicable physical functional and accessibility acceptance remains pending.

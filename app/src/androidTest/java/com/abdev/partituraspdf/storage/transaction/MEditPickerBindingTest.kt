@@ -53,6 +53,7 @@ class MEditPickerBindingTest {
         val feature=MEditCoordinator(scope,backend).also { it.connect { current } }
         fun bind() { binding=scope.launch(start=CoroutineStart.UNDISPATCHED) { bindMDocumentPicker(registry,feature) { "synthetic.pdf" } } }
         suspend fun prepare() {
+            feature.refreshRecovery();feature.state.first { !it.recovering && !it.recoveryRequired }
             feature.open(MEditSource(route,2));feature.save(route)
             feature.state.first { it.phase==MEditPhase.PICKER }
             registry.started.await()
@@ -139,5 +140,24 @@ class MEditPickerBindingTest {
     @Test fun closedAuthorizationStillAllowsDraftButNeverLaunchesPicker() { exercise {
         enabled=false;bind();feature.open(MEditSource(route,2));feature.save(route)
         assertNotNull(feature.state.value.draft);assertEquals(0,registry.launches);assertNull(feature.request.value)
+    } }
+    @Test fun changedReaderRejectsCallbackAndRetainsUncertainOriginalOperation() { exercise {
+        bind();prepare();val handoff=feature.request.value!!.handoff
+        current=route.copy(intent=route.intent+1)
+        feature.result(handoff.operation,handoff.token,true,"content://disposable/new",3)
+        assertEquals(0,binds);assertNull(target)
+        feature.routeChanged();feature.state.first { it.phase==MEditPhase.RESULT }
+        assertSame(PublicationResult.UncertainPublication,feature.state.value.publication)
+        assertTrue(feature.requiresRecoveryOnRestore)
+        assertEquals(1,registry.launches);rig.unchanged()
+    } }
+    @Test fun retiringPickerOwnerJoinsWithoutWriteOrAcceptingLateResult() { exercise {
+        bind();prepare();val handoff=feature.request.value!!.handoff
+        feature.terminate()
+        feature.result(handoff.operation,handoff.token,true,"content://disposable/late",3)
+        assertEquals(0,binds);assertNull(target);assertNull(feature.request.value)
+        assertTrue(feature.requiresRecoveryOnRestore)
+        assertSame(com.abdev.partituraspdf.pdf.workflow.WriteAdmissionGate.Admission.Busy,rig.gate.tryAcquire())
+        assertEquals(1,registry.launches);rig.unchanged()
     } }
 }

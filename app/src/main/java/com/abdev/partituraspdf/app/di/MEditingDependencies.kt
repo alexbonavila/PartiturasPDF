@@ -35,8 +35,8 @@ internal class MEditingDependencies(private val application: Application, privat
         // alone do not prove source independence. Test providers are never an allowlist entry.
         private val destination = MAndroidDestination(application, NewDocumentProvenance { _, _, _ -> false })
         private var runtime: Runtime? = null // IO calls serialized by the feature; recovery precedes prepare.
-        private fun runtime(): Runtime = runtime ?: run {
-            val budget = MStorageBudget(PrivateRoot.forContext(application))
+        private fun runtime(createIfMissing: Boolean = true): Runtime = runtime ?: run {
+            val budget = MStorageBudget(PrivateRoot.forContext(application, createIfMissing))
             val store = PrivateSnapshotStore(budget, scope)
             val journal = MPublicationJournal(budget)
             // The default unavailable engine is intentional. Never select production() here.
@@ -63,7 +63,7 @@ internal class MEditingDependencies(private val application: Application, privat
             val location = java.io.File(application.noBackupFilesDir.canonicalFile, "pdf-transactions")
             if (java.nio.file.Files.notExists(location.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return emptyList()
             if (!java.nio.file.Files.isDirectory(location.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return listOf(MRecoveryStatus.BLOCKED)
-            val runtime = runtime()
+            val runtime = runtime(createIfMissing = false) // Even a disappearance race must never create a root.
             val root = runtime.budget.root
             val reader = object : KnownDestinationReader {
                 override suspend fun readIfAuthorized(opaque: String, consume: suspend (java.io.InputStream) -> Unit): Boolean {

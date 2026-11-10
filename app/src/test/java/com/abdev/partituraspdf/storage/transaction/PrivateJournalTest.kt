@@ -30,6 +30,20 @@ class PrivateJournalTest {
         val root = PrivateRoot(File(temporary.root.canonicalFile, UUID.randomUUID().toString()), io)
         return MStorageBudget(root) to io
     }
+    @Test fun recoveryRootOpeningNeverCreatesMissingDirectoryAndRetainsConfinement() {
+        val io=Files()
+        val absent=File(temporary.root.canonicalFile,"absent")
+        assertThrows(IOException::class.java) { PrivateRoot(absent,io,createIfMissing=false) }
+        assertFalse(absent.exists())
+        val root=PrivateRoot(absent,io)
+        assertEquals(root.directory,PrivateRoot(absent,io,createIfMissing=false).directory)
+        val link=File(temporary.root.canonicalFile,"linked")
+        java.nio.file.Files.createSymbolicLink(link.toPath(),absent.toPath())
+        try {
+            assertThrows(IOException::class.java) { PrivateRoot(link,io,createIfMissing=false) }
+            assertTrue(absent.isDirectory)
+        } finally { java.nio.file.Files.delete(link.toPath()) }
+    }
     @Test fun appendReopenAndRecoveryAreIdempotent() = runTest {
         val (budget, _) = setup()
         val id = TransactionId(UUID.randomUUID().toString())

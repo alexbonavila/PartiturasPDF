@@ -18,11 +18,17 @@ internal data class MEditState(
     val availability: MEditAvailability = MEditAvailability.UNAPPROVED,
     val phase: MEditPhase = MEditPhase.DRAFT, val rejection: MPreparation.Rejected? = null,
     val publication: PublicationResult? = null, val recovery: List<MRecoveryStatus> = emptyList(),
-    val recovering: Boolean = false, val preparationBusy: Boolean = false, val cancellation: MEditCancellation? = null,
+    val recovering: Boolean = false, val recoveryRequired: Boolean = true,
+    val preparationBusy: Boolean = false, val cancellation: MEditCancellation? = null,
 )
+private fun PublicationResult?.blocksNewSave(): Boolean = when (this) {
+    null, PublicationResult.RejectedBeforePublicEffect -> false
+    is PublicationResult.VerifiedNewDocument -> cleanup == SnapshotCleanupStatus.PENDING
+    else -> true
+}
 internal val MEditState.canSave: Boolean get() = draft?.pages?.any { it.included } == true && phase == MEditPhase.DRAFT &&
-    availability == MEditAvailability.AVAILABLE && !recovering && rejection?.cleanup != SnapshotCleanupStatus.PENDING &&
-    (publication == null || publication is PublicationResult.VerifiedNewDocument || publication == PublicationResult.RejectedBeforePublicEffect) && recovery.all {
+    availability == MEditAvailability.AVAILABLE && !recovering && !recoveryRequired && rejection?.cleanup != SnapshotCleanupStatus.PENDING &&
+    !publication.blocksNewSave() && recovery.all {
         it == MRecoveryStatus.OWNER_ACKNOWLEDGED || it == MRecoveryStatus.VERIFIED_RECORD_OBSERVED
     }
 
@@ -47,6 +53,7 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
                                 private val io: CoroutineDispatcher = Dispatchers.IO) {
     private data class Pending(val ready: MPreparation.Ready, val source: SnapshotSource,
                                val route: MEditRoute, var claimed: Boolean = false, var consuming: Boolean = false,
+                               var outcome: PublicationResult? = null,
                                val launch: CompletableDeferred<Unit> = CompletableDeferred())
     private val mutableState = MutableStateFlow(MEditState(availability = backend.availability))
     val state = mutableState.asStateFlow()
@@ -64,30 +71,40 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
     /** Raw callback observation, in memory only; never a permission or publication capability. */
     var observedResult: MPickerObservation? = null
         private set
+    /** Saved only as a Boolean; never serialize live authority or returned provider identities. */
+    val requiresRecoveryOnRestore: Boolean get() = pending != null || work?.isActive == true ||
+        draining?.isActive == true || state.value.publication.blocksNewSave() ||
+        state.value.rejection?.cleanup == SnapshotCleanupStatus.PENDING
 
     fun connect(source: () -> MEditRoute?) { current = source }
     fun refreshRecovery() {
-        if (closed || recovery != null || work?.isActive == true || pending != null) return
-        mutableState.value = state.value.copy(recovering = true)
-        recovery = scope.launch {
+        // Explicit entry refreshes completed scans. Concurrent entry is coalesced; no polling.
+        // Never inspect a journal while this owner is preparing/publishing/draining it.
+        if (closed || recovery?.isActive == true || work?.isActive == true || draining?.isActive == true) return
+        mutableState.value = state.value.copy(recovering = true, recoveryRequired = true)
+        recovery = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val statuses = withContext(io) { backend.recover() }
-                if (!closed) mutableState.value = state.value.copy(recovery = statuses.toList(), recovering = false)
+                if (!closed) mutableState.value = state.value.copy(recovery = statuses.toList(), recovering = false, recoveryRequired = false)
             } catch (cancel: CancellationException) { throw cancel }
+            catch (failure: Throwable) {
+                diagnostic = failure
+                if (!closed) mutableState.value = state.value.copy(recovery = listOf(MRecoveryStatus.BLOCKED))
+                throw failure
+            }
             finally { if (!closed) mutableState.value = state.value.copy(recovering = false) }
-        }
+        }.also { it.start() }
     }
     fun open(source: MEditSource) {
         if (closed || source.route != current() || work?.isActive == true || draining?.isActive == true || pending != null) return
+        if (state.value.source?.route == source.route && state.value.draft != null && state.value.phase == MEditPhase.DRAFT) return
         val draft = MEditDraft.initial(source.pageCount) ?: run {
             rejected(MPreparation.Rejected(PdfOperationFailure.InvalidPlan)); return
         }
         val before = state.value
-        val unresolved = before.publication != null && before.publication !is PublicationResult.VerifiedNewDocument &&
-            before.publication != PublicationResult.RejectedBeforePublicEffect
         mutableState.value = before.copy(source = source, draft = draft, phase = MEditPhase.DRAFT, availability = backend.availability,
             rejection = before.rejection?.takeIf { it.cleanup == SnapshotCleanupStatus.PENDING },
-            publication = before.publication.takeIf { unresolved }, preparationBusy = false, cancellation = null)
+            publication = before.publication.takeIf { it.blocksNewSave() }, preparationBusy = false, cancellation = null)
     }
     fun change(route: MEditRoute, action: MEditAction) {
         val state = state.value
@@ -100,15 +117,15 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
         val before = state.value
         if (closed || before.source?.route != route || current() != route || before.phase != MEditPhase.DRAFT ||
             work?.isActive == true || draining?.isActive == true || pending != null) return
-        if (before.publication != null && before.publication !is PublicationResult.VerifiedNewDocument &&
-            before.publication != PublicationResult.RejectedBeforePublicEffect) return
+        if (before.publication.blocksNewSave()) return
         if (before.rejection?.cleanup == SnapshotCleanupStatus.PENDING) return
         if (backend.availability != MEditAvailability.AVAILABLE) return // No resolve, capture or picker.
         val plan = before.draft?.freeze() ?: return
-        if (before.recovering || before.recovery.any { it != MRecoveryStatus.OWNER_ACKNOWLEDGED && it != MRecoveryStatus.VERIFIED_RECORD_OBSERVED }) return
-        mutableState.value = before.copy(phase = MEditPhase.PREPARING, rejection = null, publication = null)
+        if (before.recovering || before.recoveryRequired || before.recovery.any { it != MRecoveryStatus.OWNER_ACKNOWLEDGED && it != MRecoveryStatus.VERIFIED_RECORD_OBSERVED }) return
+        mutableState.value = before.copy(phase = MEditPhase.PREPARING, rejection = null, publication = null, recoveryRequired = true)
         work = scope.launch(start = CoroutineStart.LAZY) {
             var unhanded: MPreparation.Ready? = null
+            var orphanSource: SnapshotSource? = null
             var primary: Throwable? = null
             try {
                 val source = when (val resolved = withContext(io) { backend.resolve(route) }) {
@@ -116,6 +133,7 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
                     is Outcome.Success -> resolved.value
                 }
                 if (closed || current() != route) return@launch
+                orphanSource = source
                 // Capture inside IO: cancellation of dispatcher return must not lose a Ready owner.
                 val prepared = withContext(io) { backend.prepare(source, plan).also { unhanded = it as? MPreparation.Ready } }
                 when (prepared) {
@@ -137,7 +155,11 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
                 try {
                     val orphan = unhanded
                     if (orphan != null) {
-                        val outcome = withContext(NonCancellable + io) { orphan.session.complete(orphan.request.token, null) }
+                        // Keep the live session/admission owner even when dispatcher return or
+                        // source revalidation prevented the Ready from reaching the Activity.
+                        val retained = Pending(orphan, source = checkNotNull(orphanSource), route = route)
+                        pending = retained
+                        val outcome = settle(retained)
                         if (!closed) mutableState.value = state.value.copy(phase = MEditPhase.RESULT, publication = outcome)
                     } else if (!closed && state.value.phase == MEditPhase.PREPARING) {
                         mutableState.value = state.value.copy(phase = MEditPhase.RESULT, publication = PublicationResult.RejectedBeforePublicEffect)
@@ -145,6 +167,9 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
                     if (primary?.suppressed?.any { it is com.abdev.partituraspdf.storage.transaction.SnapshotCleanupPendingException } == true && !closed)
                         mutableState.value = state.value.copy(rejection = MPreparation.Rejected(PdfOperationFailure.Closing, SnapshotCleanupStatus.PENDING))
                 } catch (cleanup: Throwable) {
+                    diagnostic = primary ?: cleanup
+                    if (!closed && pending != null) mutableState.value = state.value.copy(phase = MEditPhase.RESULT,
+                        publication = state.value.publication ?: PublicationResult.NeedsOwnerResolution)
                     if (primary != null) { if (primary !== cleanup) primary.addSuppressed(cleanup) } else throw cleanup
                 } finally { if (work === currentCoroutineContext()[Job]) work = null }
             }
@@ -187,26 +212,33 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
                     else null
                 } else null
                 if (closed || current() != p.route) return@launch
-                outcome = withContext(io) { p.ready.session.complete(token, cap) }
-            } catch (failure: CancellationException) { primary = failure; throw failure }
-            catch (failure: java.io.IOException) { diagnostic = failure }
-            catch (failure: SecurityException) { diagnostic = failure }
-            catch (failure: Throwable) { primary = failure; throw failure }
+                outcome = withContext(io) { p.ready.session.complete(token, cap).also { p.outcome = it } }
+            } catch (failure: CancellationException) { primary = failure; diagnostic = failure; throw failure }
+            catch (failure: java.io.IOException) { primary = failure; diagnostic = failure }
+            catch (failure: SecurityException) { primary = failure; diagnostic = failure }
+            catch (failure: Throwable) { primary = failure; diagnostic = failure; throw failure }
             finally {
                 try {
                     if (outcome == null) outcome = settle(p)
-                    withContext(NonCancellable + io) { p.ready.session.cleanupFailure() }?.let { diagnostic = it }
+                    withContext(NonCancellable + io) { p.ready.session.cleanupFailure() }?.let { cleanup ->
+                        if (primary != null) { if (primary !== cleanup) primary.addSuppressed(cleanup); diagnostic = primary }
+                        else diagnostic = cleanup
+                    }
                     val final = outcome
                     if (!closed) mutableState.value = state.value.copy(phase = MEditPhase.RESULT, publication = final)
                     pending = if (final is PublicationResult.VerifiedNewDocument) null else p
                 } catch (cleanup: Throwable) {
+                    diagnostic = primary ?: cleanup
+                    if (!closed) mutableState.value = state.value.copy(phase = MEditPhase.RESULT,
+                        publication = outcome ?: state.value.publication ?: PublicationResult.NeedsOwnerResolution)
                     if (primary != null) { if (primary !== cleanup) primary.addSuppressed(cleanup) } else throw cleanup
                 } finally { if (work === currentCoroutineContext()[Job]) work = null }
             }
         }.also { it.start() }
     }
     private suspend fun settle(p: Pending): PublicationResult = withContext(NonCancellable + io) {
-        p.ready.session.verifiedPublication() ?: p.ready.session.complete(p.ready.request.token, null)
+        (p.ready.session.verifiedPublication() ?: p.outcome ?: p.ready.session.complete(p.ready.request.token, null))
+            .also { p.outcome = it }
     }
     /** Process-restored state has no live session; never reconstruct authority from saved IDs. */
     fun incomplete() {
@@ -232,12 +264,21 @@ internal class MEditCoordinator(private val scope: CoroutineScope, private val b
         val previous = work
         val retained = pending
         draining = scope.launch(start = CoroutineStart.LAZY) {
-            previous?.cancelAndJoin()
-            if (retained != null) {
-                val outcome = settle(retained)
-                if (outcome is PublicationResult.VerifiedNewDocument) pending = null
-                if (!closed) mutableState.value = state.value.copy(phase = MEditPhase.RESULT, publication = outcome)
-                // No automatic acknowledgement, cleanup, rollback or admission release of uncertainty.
+            try {
+                previous?.cancelAndJoin()
+                // Preparation may have installed an unhanded Ready in its cancellation finally.
+                val owned = pending ?: retained
+                if (owned != null) {
+                    val outcome = settle(owned)
+                    if (outcome is PublicationResult.VerifiedNewDocument) pending = null
+                    if (!closed) mutableState.value = state.value.copy(phase = MEditPhase.RESULT, publication = outcome)
+                    // No automatic acknowledgement, cleanup, rollback or admission release of uncertainty.
+                }
+            } catch (failure: Throwable) {
+                diagnostic = failure
+                if (!closed) mutableState.value = state.value.copy(phase = MEditPhase.RESULT,
+                    publication = state.value.publication ?: PublicationResult.NeedsOwnerResolution)
+                throw failure
             }
         }.also { it.start() }
     }

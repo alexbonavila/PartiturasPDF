@@ -19,7 +19,7 @@ import org.junit.rules.TemporaryFolder
 @OptIn(ExperimentalCoroutinesApi::class)
 class MEditCoordinatorTest {
     @get:Rule val temporary = TemporaryFolder()
-    private inner class Fixture(scope: TestScope) {
+    private inner class Fixture(private val scope: TestScope) {
         val rig = MTestRig(temporary.newFolder(), scope.backgroundScope)
         val route = MEditRoute(4, 8, DocumentOpenRequest.Transient(rig.source.storage))
         var active: MEditRoute? = route
@@ -31,6 +31,10 @@ class MEditCoordinatorTest {
         var deny = false
         var configure: (MTestRig.Destination) -> Unit = {}
         var recovered: List<MRecoveryStatus> = emptyList()
+        var scans = 0
+        var scanBarrier: CompletableDeferred<Unit>? = null
+        var scanFailure: Throwable? = null
+        var cancelPreparedReturn = false
         var lastFlags = 0; var lastUri: String? = null
         var destination: MTestRig.Destination? = null
         val backend = object : MEditingBackend {
@@ -42,17 +46,24 @@ class MEditCoordinatorTest {
             }
             override suspend fun prepare(source: SnapshotSource, plan: OrderedPagePlan): MPreparation {
                 prepares++;hold?.await()
-                return reject ?: rig.coordinator().prepare(source, plan)
+                val result = reject ?: rig.coordinator().prepare(source, plan)
+                if (cancelPreparedReturn) currentCoroutineContext().cancel(CancellationException("Injected canceled IO return"))
+                return result
             }
             override suspend fun destination(request: MPickerHandoff, source: SnapshotSource, uri: String, flags: Int): WriteDestinationCapability? {
                 bindings++;lastFlags=flags;lastUri=uri
                 if (deny) return null
                 return rig.destination(request.operation).also { configure(it);destination=it }.let { WriteDestinationCapability(it) }
             }
-            override suspend fun recover() = recovered
+            override suspend fun recover(): List<MRecoveryStatus> {
+                scans++;scanBarrier?.await();scanFailure?.let { throw it };return recovered
+            }
         }
         val feature = MEditCoordinator(scope, backend, StandardTestDispatcher(scope.testScheduler)).also { it.connect { active } }
-        fun open(route: MEditRoute = this.route) { feature.open(MEditSource(route, 3, "Observed.pdf")) }
+        fun open(route: MEditRoute = this.route) {
+            feature.refreshRecovery();scope.testScheduler.runCurrent()
+            feature.open(MEditSource(route, 3, "Observed.pdf"))
+        }
     }
     @Test fun draftReordersRotatesExtractsAndFreezesWithoutDuplicatesOrEmptyPlans() {
         val draft=MEditDraft.initial(3)!!
@@ -225,4 +236,92 @@ class MEditCoordinatorTest {
         assertFalse(suggestedPdfName("a/../../name.pdf","fallback.pdf","-edited").contains('/'))
         assertTrue(suggestedPdfName("a".repeat(1000),"fallback.pdf","-edited").length<=83)
     }
+    @Test fun recoveryRefreshesAtEachEntryCoalescesConcurrentScansAndBlocksSaveUntilComplete() = runTest {
+        val f=Fixture(this);f.open();assertEquals(1,f.scans)
+        f.scanBarrier=CompletableDeferred()
+        f.feature.refreshRecovery();f.feature.refreshRecovery();runCurrent()
+        assertEquals(2,f.scans);assertTrue(f.feature.state.value.recovering)
+        f.feature.save(f.route);assertEquals(0,f.prepares)
+        f.recovered=listOf(MRecoveryStatus.DESTINATION_UNKNOWN);f.scanBarrier!!.complete(Unit);runCurrent()
+        assertFalse(f.feature.state.value.recovering);assertFalse(f.feature.state.value.canSave)
+        f.feature.save(f.route);runCurrent();assertEquals(0,f.prepares)
+        f.feature.terminate()
+    }
+    @Test fun repeatedEntryKeepsEditedDraftAndNeverRestoresDefaultPageSelection() = runTest {
+        val f=Fixture(this);f.open();f.feature.change(f.route,MEditAction.Include(0,false))
+        val original=f.feature.state.value.draft
+        f.open();assertSame(original,f.feature.state.value.draft);assertEquals(2,f.scans)
+        assertEquals(listOf(1,2),original!!.freeze()!!.selections.map { it.sourcePageIndex })
+        f.feature.terminate()
+    }
+    @Test fun canceledDispatcherReturnRetainsReadyOwnerAndBlocksAnotherTransaction() = runTest {
+        val f=Fixture(this);f.cancelPreparedReturn=true;f.open();f.feature.save(f.route);runCurrent()
+        assertNull(f.feature.request.value)
+        assertSame(PublicationResult.UncertainPublication,f.feature.state.value.publication)
+        assertTrue(f.feature.requiresRecoveryOnRestore);assertTrue(f.rig.budget.used()>0)
+        assertSame(WriteAdmissionGate.Admission.Busy,f.rig.gate.tryAcquire())
+        f.feature.dismiss();runCurrent();f.open();f.feature.save(f.route);runCurrent()
+        assertEquals(1,f.prepares);assertEquals(0,f.bindings)
+        assertSame(PublicationResult.UncertainPublication,f.feature.state.value.publication)
+        f.feature.terminate()
+    }
+    @Test fun verifiedCleanupDebtSurvivesCloseReopenAndFreshRecoveryWithoutBecomingFailure() = runTest {
+        val f=Fixture(this);f.open();f.feature.save(f.route);runCurrent()
+        val request=f.feature.request.value!!.handoff
+        f.rig.fault={ if(it=="delete")throw java.io.IOException("Injected cleanup debt") }
+        f.feature.claim(request);f.feature.launched(request,true)
+        f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
+        val committed=f.feature.state.value.publication as PublicationResult.VerifiedNewDocument
+        assertEquals(SnapshotCleanupStatus.PENDING,committed.cleanup)
+        f.feature.dismiss();runCurrent();f.open()
+        assertEquals(committed,f.feature.state.value.publication)
+        assertFalse(f.feature.state.value.canSave);assertTrue(f.feature.requiresRecoveryOnRestore)
+        f.feature.save(f.route);runCurrent();assertEquals(1,f.prepares);assertTrue(f.rig.budget.used()>0)
+        f.feature.terminate()
+    }
+    @Test fun dismissalRetainsExactUncertainOutcomeRatherThanConsumingCallbackAgain() = runTest {
+        val f=Fixture(this);f.open();assertFalse(f.feature.requiresRecoveryOnRestore)
+        f.feature.save(f.route);assertTrue(f.feature.requiresRecoveryOnRestore);runCurrent()
+        val request=f.feature.request.value!!.handoff;f.feature.claim(request);f.feature.launched(request,true)
+        f.feature.result(request.operation,request.token,false,null,0);runCurrent()
+        assertSame(PublicationResult.UncertainPublication,f.feature.state.value.publication)
+        f.feature.dismiss();runCurrent()
+        assertSame(PublicationResult.UncertainPublication,f.feature.state.value.publication)
+        assertTrue(f.feature.requiresRecoveryOnRestore);assertEquals(0,f.bindings)
+        f.feature.result(request.operation,request.token,true,"late",3);runCurrent();assertEquals(0,f.bindings)
+        assertSame(WriteAdmissionGate.Admission.Busy,f.rig.gate.tryAcquire())
+        f.feature.terminate()
+    }
+    @Test fun unexpectedCleanupDefectRemainsObservableAlongsideVerifiedPublication() = runTest {
+        val f=Fixture(this);f.open();f.feature.save(f.route);runCurrent()
+        val request=f.feature.request.value!!.handoff
+        val defect=IllegalStateException("Injected cleanup defect")
+        f.rig.fault={ if(it=="delete")throw defect }
+        f.feature.claim(request);f.feature.launched(request,true)
+        f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
+        val committed=f.feature.state.value.publication as PublicationResult.VerifiedNewDocument
+        assertEquals(SnapshotCleanupStatus.PENDING,committed.cleanup)
+        assertSame(defect,f.feature.diagnostic);assertTrue(f.rig.budget.used()>0)
+        assertEquals(1,f.destination!!.writes)
+        val admission=f.rig.gate.tryAcquire() as WriteAdmissionGate.Admission.Acquired
+        admission.close()
+        f.feature.dismiss();runCurrent();f.open()
+        assertEquals(committed,f.feature.state.value.publication);assertSame(defect,f.feature.diagnostic)
+        assertFalse(f.feature.state.value.canSave);f.feature.terminate()
+    }
+    @Test fun canceledOrFailedRecoveryNeverTurnsAnUnknownScanIntoEmptySuccess() = runTest {
+        val f=Fixture(this);val errors=mutableListOf<Throwable>();val parent=SupervisorJob()
+        val isolated=CoroutineScope(parent+StandardTestDispatcher(testScheduler)+CoroutineExceptionHandler { _,error -> errors+=error })
+        val owner=MEditCoordinator(isolated,f.backend,StandardTestDispatcher(testScheduler))
+        owner.connect { f.active }
+        val defect=IllegalStateException("Injected scanner defect");f.scanFailure=defect
+        owner.refreshRecovery();runCurrent()
+        assertSame(defect,owner.diagnostic);assertEquals(listOf(defect),errors)
+        assertTrue(owner.state.value.recoveryRequired);assertEquals(listOf(MRecoveryStatus.BLOCKED),owner.state.value.recovery)
+        owner.open(MEditSource(f.route,1));owner.save(f.route);runCurrent();assertEquals(0,f.prepares)
+        f.scanFailure=null;f.scanBarrier=CompletableDeferred();owner.refreshRecovery();runCurrent()
+        owner.terminate();assertTrue(owner.state.value.recoveryRequired)
+        parent.cancelAndJoin();f.feature.terminate()
+    }
+
 }

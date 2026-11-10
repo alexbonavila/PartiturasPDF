@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         val pending = (host.state.value as? AppHostState.Ready)?.features?.picker?.request?.value
         outState.putString("app.saf.pending", pending)
-        outState.putBoolean("app.m.pending", (host.state.value as? AppHostState.Ready)?.features?.editing?.request?.value != null)
+        outState.putBoolean("app.m.pending", (host.state.value as? AppHostState.Ready)?.features?.editing?.requiresRecoveryOnRestore == true)
         outState.putString("app.host.lifetime", host.lifetimeId)
         outState.putString("app.navigation", host.saveNavigation())
         super.onSaveInstanceState(outState)

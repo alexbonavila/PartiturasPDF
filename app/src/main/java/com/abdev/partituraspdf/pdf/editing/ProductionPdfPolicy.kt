@@ -24,7 +24,7 @@ internal object ProductionPdfPolicy {
     private val dangerous = setOf("A", "AA", "JS", "JavaScript", "EmbeddedFiles", "EF", "AF", "XFA", "AcroForm", "Perms", "ByteRange", "Sig", "RichMediaContent")
     private val filters = setOf("FlateDecode", "DCTDecode", "ASCII85Decode")
     private val catalogKeys = setOf("Type", "Pages", "Metadata", "Lang", "Version", "PageMode", "PageLayout")
-    private val pageKeys = setOf("Type", "Parent", "Resources", "MediaBox", "CropBox", "BleedBox", "TrimBox", "ArtBox", "Rotate", "Contents", "Annots", "UserUnit")
+    private val pageKeys = setOf("Type", "Parent", "Resources", "MediaBox", "CropBox", "BleedBox", "TrimBox", "ArtBox", "Rotate", "Contents", "Annots", "UserUnit", "Trans")
     private val operators = ("q Q cm w J j M d ri i gs m l c v y h re S s f F f* B B* b b* n W W* " +
         "BT ET Tc Tw Tz TL Tf Tr Ts Td TD Tm T* Tj TJ ' \" d0 d1 CS cs SC SCN sc scn G g RG rg K k sh Do").split(' ').toSet()
     fun requireSupported(document: PDDocument, checkActive: () -> Unit = {}) {
@@ -118,6 +118,15 @@ internal object ProductionPdfPolicy {
             checkActive()
             val page = document.getPage(index)
             if(!pages.add(page.cosObject) || page.cosObject.keySet().any { it.name !in pageKeys }) throw UnsupportedPdf("Invalid/shared page or unsupported page structure")
+            // An empty transition dictionary has only PDF defaults (Replace/no effect).
+            // ReportLab emits it on ordinary pages. Do NOT accept a transition program,
+            // an unknown representation or even explicit nonempty transition options.
+            if (page.cosObject.containsKey(COSName.TRANS)) {
+                val transition = page.cosObject.getDictionaryObject(COSName.TRANS) as? COSDictionary
+                    ?: throw UnsupportedPdf("Unsupported page transition")
+                if (transition is COSStream || transition.keySet().isNotEmpty())
+                    throw UnsupportedPdf("Unsupported page transition")
+            }
             if(page.userUnit != 1f || page.rotation !in listOf(0,90,180,270)) throw UnsupportedPdf("Unsupported page units/rotation")
             for(box in listOf(page.mediaBox,page.cropBox,page.bleedBox,page.trimBox,page.artBox)) {
                 if(listOf(box.lowerLeftX,box.lowerLeftY,box.upperRightX,box.upperRightY).any { !it.isFinite() } || box.width <= 0 || box.height <= 0)

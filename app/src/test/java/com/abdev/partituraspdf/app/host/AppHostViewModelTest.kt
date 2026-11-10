@@ -30,6 +30,8 @@ class AppHostViewModelTest {
         var loadFailure: Throwable? = null
         var stopFailure: Throwable? = null
         var closeFailure: Throwable? = null
+        var duringEditRetire: suspend () -> Unit = {}
+        override suspend fun retireEditing() { duringEditRetire() }
         var duringLoad: () -> Unit = {}
         var duringStop: () -> Unit = {}
         var duringClose: () -> Unit = {}
@@ -57,6 +59,16 @@ class AppHostViewModelTest {
         create, StandardTestDispatcher(testScheduler), io, { it is IOException }, errors::add,
     )
 
+    @Test fun editingRetirementJoinsBeforeDependentsAndGraphAreClosed() = runTest {
+        val session=Session();val host=host(session);runCurrent()
+        val entered=CompletableDeferred<Unit>();val release=CompletableDeferred<Unit>()
+        session.duringEditRetire={ entered.complete(Unit);release.await() }
+        val finished=host.dispose();runCurrent()
+        assertTrue(entered.isCompleted);assertFalse(finished.isCompleted)
+        assertEquals(0,session.stops);assertEquals(0,session.closes)
+        release.complete(Unit);assertNull(finished.await())
+        assertEquals(1,session.stops);assertEquals(1,session.closes)
+    }
     @Test fun loadingReadySingleGraphAndControllerStartupSurviveRepeatedInitialization() = runTest {
         val session = Session(); var factories = 0
         val host = host(session) { factories++; session }

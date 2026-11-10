@@ -43,6 +43,7 @@ internal class AppGraphFactory internal constructor(
                 registry = registry, metadata = metadata, preferences = preferences,
                 pdfEngine = pdfEngine, treeGrants = treeGrants,
                 foundation = FoundationDependencies(application, registry, preferences, readAccess, pdfEngine, limits, catalog),
+                editing = MEditingDependencies(application, registry, readAccess),
             )
         }
     })

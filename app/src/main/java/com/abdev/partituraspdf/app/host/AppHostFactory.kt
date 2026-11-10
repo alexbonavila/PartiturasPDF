@@ -36,6 +36,7 @@ internal class AppHostFactory(private val application: Application, private val 
 
 private class ProductionHostSession(application: Application) : AppHostSession {
     private val factory = AppGraphFactory(application, AppRuntimeLimits.provisional())
+    private var editing: com.abdev.partituraspdf.pdf.presentation.MEditCoordinator? = null
     private var reader: ReaderHostLifetime? = null
     private var picker: RootPickerCoordinator? = null
     private var library: LibraryController? = null
@@ -66,10 +67,13 @@ private class ProductionHostSession(application: Application) : AppHostSession {
             open = { reading.accept(it) })
         val f = LibraryController(scope, graph.catalog, folders, host, graph.registry, graph.metadata,
             foundation.registration).also { library = it }
-        return AppHostFeatures(folders, f, h, selection, reading)
+        val modification = graph.editing?.create(scope).also { editing = it }
+        return AppHostFeatures(folders, f, h, selection, reading, modification)
     }
+    override suspend fun retireEditing() { editing?.terminate() }
     override suspend fun retireReader(): ReaderExitReport? = reader?.terminate()
     override fun stop() {
+        editing?.stopAccepting()
         picker?.close()
         try { library?.close() } finally { settings?.close() }
     }

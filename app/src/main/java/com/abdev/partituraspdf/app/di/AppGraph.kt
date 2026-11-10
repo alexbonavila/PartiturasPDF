@@ -26,4 +26,5 @@ internal class AppGraph(
     val treeGrants: SafTreeGrantAccess,
     /** Absent only for existing explicitly injected isolated contract graphs. Production always supplies it. */
     val foundation: FoundationDependencies? = null,
+    val editing: MEditingDependencies? = null,
 )

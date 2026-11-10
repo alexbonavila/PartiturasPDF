@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private val activityIdentity = java.util.UUID.randomUUID().toString()
     private lateinit var host: AppHostViewModel
     private var restoredPicker: String? = null
+    private var restoredModification = false
     private var localeRecreationRequested = false
 
     override fun attachBaseContext(newBase: Context) {
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         val pending = (host.state.value as? AppHostState.Ready)?.features?.picker?.request?.value
         outState.putString("app.saf.pending", pending)
+        outState.putBoolean("app.m.pending", (host.state.value as? AppHostState.Ready)?.features?.editing?.request?.value != null)
         outState.putString("app.host.lifetime", host.lifetimeId)
         outState.putString("app.navigation", host.saveNavigation())
         super.onSaveInstanceState(outState)
@@ -75,6 +77,8 @@ class MainActivity : ComponentActivity() {
         host.activityCreated(activityIdentity)
         restoredPicker = if (savedInstanceState?.getString("app.host.lifetime") != host.lifetimeId)
             savedInstanceState?.getString("app.saf.pending") else null
+        restoredModification = savedInstanceState?.getBoolean("app.m.pending") == true &&
+            savedInstanceState?.getString("app.host.lifetime") != host.lifetimeId
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 host.state.collectLatest { state ->
@@ -83,6 +87,18 @@ class MainActivity : ComponentActivity() {
                     restoredPicker = null
                     bindRootPicker(activityResultRegistry, picker) {
                         SafTreeGrantAccess(contentResolver).treePickerIntent()
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                host.state.collectLatest { state ->
+                    val editing = (state as? AppHostState.Ready)?.features?.editing ?: return@collectLatest
+                    if (restoredModification) { editing.incomplete(); restoredModification = false }
+                    com.abdev.partituraspdf.app.host.bindMDocumentPicker(activityResultRegistry, editing) { observed ->
+                        com.abdev.partituraspdf.pdf.presentation.suggestedPdfName(observed,
+                            getString(R.string.m_save_default_name), getString(R.string.m_save_suffix))
                     }
                 }
             }

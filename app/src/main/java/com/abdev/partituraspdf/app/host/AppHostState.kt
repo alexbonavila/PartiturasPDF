@@ -11,11 +11,13 @@ internal data class AppHostFeatures(
     val settings: SettingsController,
     val picker: RootPickerCoordinator? = null,
     val reader: ReaderHostLifetime? = null,
+    val editing: com.abdev.partituraspdf.pdf.presentation.MEditCoordinator? = null,
 )
 
 /** An attempt exists before blocking initialization, retaining ownership even on cancellation. */
 internal interface AppHostSession : AutoCloseable {
     fun load(scope: CoroutineScope): AppHostFeatures
+    suspend fun retireEditing() = Unit
     suspend fun retireReader(): ReaderExitReport? = null
     fun stop()
     override fun close()

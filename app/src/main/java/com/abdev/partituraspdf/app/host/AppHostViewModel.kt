@@ -18,6 +18,8 @@ import com.abdev.partituraspdf.library.LibraryContent
 import com.abdev.partituraspdf.library.LibraryRow
 import com.abdev.partituraspdf.core.foundation.DocumentOpenRequest
 import com.abdev.partituraspdf.reader.ReaderAction
+import com.abdev.partituraspdf.pdf.presentation.MEditRoute
+import com.abdev.partituraspdf.pdf.presentation.MEditSource
 import com.abdev.partituraspdf.app.navigation.AppDestination
 import com.abdev.partituraspdf.settings.SettingsAction
 import kotlinx.coroutines.*
@@ -127,6 +129,11 @@ internal class AppHostViewModel(
                         }
                     } },
                 )
+                features.editing?.connect { synchronized(lock) { editingRoute(features) } }
+                scope.launch(children) {
+                    combine(navigation, features.reader?.state ?: MutableStateFlow(ReaderHostState())) { _, _ -> Unit }
+                        .collect { features.editing?.routeChanged() }
+                }
                 features.reader?.foreground(foreground)
                 features.library.start()
                 if (closing) throw CancellationException("Host disposal")
@@ -164,6 +171,8 @@ internal class AppHostViewModel(
     private suspend fun release(attempt: Attempt, original: Throwable?): Release = withContext(NonCancellable) {
         var failure = original
         var clean = true
+        try { attempt.session?.retireEditing() }
+        catch (cleanup: Throwable) { clean = false; failure = combine(failure, cleanup) }
         try {
             attempt.session?.retireReader()?.failure()?.let { cleanup -> clean = false; failure = combine(failure, cleanup) }
         } catch (cleanup: Throwable) { clean = false; failure = combine(failure, cleanup) }
@@ -251,8 +260,10 @@ internal class AppHostViewModel(
     fun back(expectedRevision: Long) = synchronized(lock) {
         if (!closing && navigation.value.revision == expectedRevision) {
             cancelRestoration()
+            val features = (state.value as? AppHostState.Ready)?.features
+            if (features?.editing?.dismiss() == true) return@synchronized
             if (navigation.value.destination == AppDestination.READER)
-                (state.value as? AppHostState.Ready)?.features?.reader?.leave()
+                features?.reader?.leave()
             else mutableNavigation.value = navigation.value.back(expectedRevision)
         }
     }
@@ -311,6 +322,30 @@ internal class AppHostViewModel(
             (state.value as? AppHostState.Ready)?.features?.reader?.foreground(true)
     }
 
+    private fun editingRoute(features: AppHostFeatures): MEditRoute? {
+        if (closing || state.value !is AppHostState.Ready || navigation.value.destination != AppDestination.READER) return null
+        val reading = features.reader?.state?.value ?: return null
+        val entry = reading.entry ?: return null
+        if (reading.leaving) return null
+        return MEditRoute(navigation.value.revision, entry.intent.sequence, entry.intent.request)
+    }
+    fun editPages(sequence: Long, expectedRevision: Long) = synchronized(lock) {
+        val features = (state.value as? AppHostState.Ready)?.features ?: return@synchronized
+        val route = editingRoute(features) ?: return@synchronized
+        if (route.intent != sequence || route.revision != expectedRevision) return@synchronized
+        val pdf = features.reader?.state?.value?.entry?.controller?.state?.value ?: return@synchronized
+        val count = pdf.session?.pageCount ?: return@synchronized
+        val rows = (features.library.state.value.content as? LibraryContent.Ready)?.rows.orEmpty()
+        val name = rows.filterIsInstance<LibraryRow.Pdf>().singleOrNull { row -> when(val request = route.request) {
+            is DocumentOpenRequest.Transient -> row.entry.storage == request.storage
+            is DocumentOpenRequest.Registered -> (row.association as? LibraryAssociation.Registered)?.value?.document == request.document
+        } }?.entry?.info?.name
+        features.editing?.let { editing ->
+            editing.refreshRecovery() // One bounded read-only scan on feature entry, never Reader startup.
+            editing.open(MEditSource(route, count, name))
+        }
+    }
+
     fun reader(action: ReaderAction, sequence: Long, expectedRevision: Long) = synchronized(lock) {
         if (!closing && navigation.value.destination == AppDestination.READER && navigation.value.revision == expectedRevision)
             (state.value as? AppHostState.Ready)?.features?.reader?.dispatch(sequence, action)
@@ -330,7 +365,7 @@ internal class AppHostViewModel(
         }
         closing = true
         cancelRestoration()
-        (state.value as? AppHostState.Ready)?.features?.let { it.picker?.close(); it.reader?.stopAccepting() }
+        (state.value as? AppHostState.Ready)?.features?.let { it.editing?.stopAccepting(); it.picker?.close(); it.reader?.stopAccepting() }
         terminalFailure = combine(terminalFailure, cause)
         mutableState.value = AppHostState.Closing
         val boot = startup

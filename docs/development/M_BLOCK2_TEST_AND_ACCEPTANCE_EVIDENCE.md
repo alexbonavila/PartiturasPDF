@@ -1225,3 +1225,125 @@ adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s emulator-5554 install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb -s emulator-5554 shell am instrument -w -e class "com.abdev.partituraspdf.storage.transaction.MProductionPdfEngineTest,com.abdev.partituraspdf.storage.transaction.MPdfboxSaveAsIntegrationTest,com.abdev.partituraspdf.pdf.engine.spike.PdfboxAndroidSpikeTest" com.abdev.partituraspdf.test/androidx.test.runner.AndroidJUnitRunner
 ```
+
+## Block B editing and Android Save As integration — source delivery, 2026-11-10
+
+Baseline `1e24c95c1d694123e4f76a6f254d736c15838ac7`, clean assigned Phase M branch.
+Owner reports46 selected API26 methods: spike21 PASS, test-adapter Save As11 PASS,
+production8 PASS/6 FAIL. Six failures involve expected Ready/Produced receiving
+Rejected and InvalidPlan versus UnsupportedDocument; underlying reasons are not
+established. This is owner-provided execution evidence, not independently reparsed
+raw artifacts. It supersedes the earlier reported9-versus11 inventory uncertainty
+for that new campaign only; all previous failures/NOT RUN entries remain historical.
+These six failures remain **FAIL / DEFERRED TO FINAL STABILIZATION**, not supported
+behavior or engine approval. Block B does not change the production engine/policy.
+
+Owner authorized host/UI/picker implementation with production publication gated,
+and deferred builds/tests/troubleshooting to the final Phase M campaign. New source
+status: **IMPLEMENTED — NOT RUNTIME VERIFIED**. No build, compiler/syntax checker,
+Gradle, JVM/Python/Android test, validator, ADB, emulator, Lint, coverage, dependency
+installation, measurement or CI execution by Codex. Static source/Git scope and
+whitespace review only. See [current host handoff](M_BLOCK2_HOST_AND_PHASE_HANDOFF.md#block-b-android-host-implementation--2026-11-10)
+for complete ownership, activation, provider and recovery restrictions.
+
+### Added test source (all NOT RUN)
+
+`com.abdev.partituraspdf.pdf.presentation.MEditCoordinatorTest` —17 JVM methods:
+
+- Draft reorder/rotation/subset/removal, immutable frozen plans, invalid/empty/
+  duplicate/bounds rejection and bounded sanitized suggested names.
+- Closed production gate before resolve/prepare/picker; stale route/actions,
+  concurrency, exact handoff claim, operation/token matching and duplicate results.
+- Missing URI, non-OK result, insufficient flags, unsupported proof/source alias,
+  one public write and readback mismatch using the existing privileged JVM
+  `MTestRig`. This is byte plumbing, not PDF fidelity or Android-grant evidence.
+- Typed preparation rejection and cleanup debt; preparation/publication cancellation,
+  retirement/launch failure, no automatic replay or owner acknowledgement.
+- Process-restored owner-resolution marker, every existing recovery classification,
+  registered/transient original-request independence and a route replacement after
+  Ready without exposing a picker. Verified public result and cleanup PENDING stay
+  distinct with retained accounting.
+
+`AppHostViewModelTest.editingRetirementJoinsBeforeDependentsAndGraphAreClosed` —
+new JVM host ownership regression. Existing tests keep their behavior; only a
+no-op test-session retirement hook was added for the controlled barrier.
+
+`com.abdev.partituraspdf.storage.transaction.MEditPickerBindingTest` —8 Android
+methods using a real AndroidX ActivityResultRegistry, simulated results and the
+existing disposable `MPdfboxIntegrationRig` with its TEST adapter (not the failing
+production engine):
+
+- ACTION_CREATE_DOCUMENT/MIME/category/name and exact observed URI/flags; one write,
+  actual test-provider readback and original bytes unchanged.
+- Registry save/restore and buffered callback without relaunch; missing URI,
+  cancellation despite URI, insufficient flags and unsupported provenance.
+- Fresh process-owner marker rejects stale result; closed gate allows draft only.
+
+Registry reconstruction is not authentic system picker/grant or OS process-death
+acceptance. Provider alias/readback/cancellation/cleanup mechanics additionally
+reuse existing M transaction/provider regression suites; no assertions disabled.
+
+`com.abdev.partituraspdf.pdf.presentation.MPageEditorTest` —4 Android Compose/scoped
+resource methods: localized draft interactions with saving disabled, >=48dp controls,
+actual narrow dialog constraint/dark/large-font layout, es/ca/en/unsupported-language
+resource fallback and verified-success-with-cleanup-pending wording. No device
+language setting, TalkBack, physical display or real PDF write is exercised by
+these synthetic tests.
+
+`AppHostActivityTest.recreationRetainsClosedPdfEditingOwnerWithoutLaunchingOrEnablingWrites`
+— actual Activity recreation/retained production host, Library usability and closed
+feature gate. Pending picker reconstruction is tested separately at registry level;
+no claim of a real external picker campaign. Static total additions:18 JVM and13
+Android methods; no executed total or coverage percentage claimed.
+
+### Localization and unchanged boundaries
+
+Added32 resource keys in `values/strings.xml`, `values-es/strings.xml`,
+`values-ca/strings.xml` and `values-en/strings.xml`; default and es match. All visible
+labels, hints, operation/cancellation/outcome/availability text and accessibility
+page-action descriptions are resource-backed. The existing complete-localization
+inventory expectation changes155→187; parity/placeholder checks remain intact.
+This count is source inventory, not validator or human linguistic PASS.
+
+No Gradle, dependency, manifest, database, backup policy, SAF root-picker, journal
+schema, production PDF engine, Reader native/frame/controller or Library behavior
+change. New host presentation does not create another Reader. Metadata contracts
+are read-only dependencies; generated output remains unregistered and never replaces
+current Reader/source/favorite/position/root. No benchmark was added or reopened.
+
+### Current gates and remaining validation
+
+| Gate | Disposition |
+| --- | --- |
+| Draft/UI/host/picker/callback/recovery source | IMPLEMENTED — NOT RUNTIME VERIFIED |
+| Production save authorization | BLOCKED — hard-coded UNAPPROVED, no runtime bypass |
+| Generic provider creation/empty/nonaliasing proof | BLOCKED — production proof rejects every provider; no approved allowlist |
+| Known production engine regressions | FAIL — six owner-reported API26 failures, deferred, unchanged |
+| New and existing test suites, compilation, Lint, localization/fixtures, coverage, packaging/CI | NOT RUN on Block B revision |
+| Authentic picker grants, process death, supported-provider acceptance | NOT RUN / OWNER DECISION REQUIRED |
+| Security/advisory/legal/packaging and final production activation | OWNER DECISION REQUIRED; existing blockers preserved |
+| Dedicated memory/performance profiling | NOT APPLICABLE — omitted by owner, not PASS |
+
+Final owner campaign must include the exact new source SHA, complete inventories,
+zero unexplained skips, >=90% line/>=80% branch coverage for new testable logic,
+existing host/Reader/Library/storage regressions, new controller/UI/registry tests,
+API26/27/36 and applicable manual/physical/linguistic/accessibility obligations.
+No synthetic registry test is equivalent to a real ACTION_CREATE_DOCUMENT grant.
+An untrusted returned URI is retained only in memory without minting authority;
+the existing null-capability journal path stays DESTINATION_UNKNOWN. Durable
+rejected-candidate attribution/user resolution needs a separately reviewed contract.
+
+Suggested owner-only Windows PowerShell commands for final stabilization (not run):
+
+```powershell
+.\gradlew.bat :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug :app:testDebugUnitTest
+python -m unittest discover -s scripts/tests -v
+python scripts\validate_localization.py
+python test-fixtures\scripts\verify_fixtures.py
+# On an explicitly owner-verified disposable API26 emulator:
+.\gradlew.bat :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.abdev.partituraspdf.storage.transaction.MEditPickerBindingTest,com.abdev.partituraspdf.pdf.presentation.MPageEditorTest,com.abdev.partituraspdf.app.integration.AppHostActivityTest'
+```
+
+Then execute the existing M/Reader/Library regression/compatibility and coverage
+campaigns under owner control, retaining original raw failures. Block B publication
+is not Block B/Phase M acceptance or authorization to activate writes or start Block C.

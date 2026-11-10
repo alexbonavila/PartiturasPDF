@@ -6,6 +6,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import com.abdev.partituraspdf.pdf.presentation.MPageEditor
+import com.abdev.partituraspdf.pdf.presentation.MEditOutcome
 import com.abdev.partituraspdf.reader.ReaderScreen
 import com.abdev.partituraspdf.reader.ReaderPhase
 import androidx.compose.ui.Modifier
@@ -105,7 +107,20 @@ internal fun AppHost(owner: AppHostViewModel) {
                                     // Keep the mounted screen and local zoom while temporary suspension removes its frame.
                                     // This delivery must outlive STOPPED, independently of ordinary lifecycle collectors.
                                     val pdf by entry.controller.state.collectAsState()
+                                    val editing = current.features.editing
+                                    val editState = editing?.state?.collectAsState()?.value
                                     Column {
+                                        if (editing != null && editState != null) {
+                                            TextButton(onClick = { owner.editPages(entry.intent.sequence, revision) },
+                                                enabled = !reading.suspended && pdf.session != null,
+                                                modifier = Modifier.heightIn(min = 48.dp).testTag("m_edit_entry")) {
+                                                Text(stringResource(R.string.m_edit_pages))
+                                            }
+                                            if (editState.draft == null) MEditOutcome(editState)
+                                            MPageEditor(editState,
+                                                { action -> editState.source?.route?.let { editing.change(it, action) } },
+                                                { editState.source?.route?.let { editing.save(it) } }, { editing.dismiss() })
+                                        }
                                         if (reading.suspended) {
                                             reading.report.failures.forEach { failure -> Text(stringResource(if (failure.stage == ReaderCleanupStage.CHECKPOINT)
                                                 R.string.reader_checkpoint_failure else R.string.library_action_error)) }

@@ -32,6 +32,18 @@ class AppHostActivityTest {
         compose.waitForIdle()
         return host
     }
+    @Test fun recreationRetainsClosedPdfEditingOwnerWithoutLaunchingOrEnablingWrites() {
+        val host=ready()
+        val editing=checkNotNull((host.state.value as AppHostState.Ready).features.editing)
+        assertEquals(com.abdev.partituraspdf.pdf.presentation.MEditAvailability.UNAPPROVED,editing.state.value.availability)
+        assertNull(editing.request.value)
+        compose.activityRule.scenario.recreate();compose.waitForIdle()
+        assertSame(host,owner())
+        assertSame(editing,(host.state.value as AppHostState.Ready).features.editing)
+        assertNull(editing.request.value)
+        compose.onNodeWithTag("app_shell").assertIsDisplayed()
+        assertEquals(AppDestination.LIBRARY,host.navigation.value.destination)
+    }
     @Test fun launcherShowsLibraryInsteadOfStarterGreeting() {
         val host = ready()
         compose.onNodeWithTag("app_shell").assertIsDisplayed()

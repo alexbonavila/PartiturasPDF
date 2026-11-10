@@ -1444,3 +1444,105 @@ Codex execution: source/Git review and `git diff --check` only. Builds, compiler
 JVM/Python/Android tests, validators, ADB/emulators, Lint, coverage, dependency
 installation/resolution, profiling and CI: **NOT RUN**. Owner must retain individual
 six-failure retest results, all new test evidence and original reports at exact SHAs.
+
+## Targeted JVM synchronization and diagnostic correction — 2026-11-10
+
+Starting source `d59806044aff095454dde9f59e55558d9537e380`, clean
+`feat/pdf-safe-write-m`. This is focused stabilization of the existing test class,
+not a new block or production behavior change. **IMPLEMENTED — NOT RUNTIME VERIFIED.**
+
+### Owner-executed evidence at the starting SHA
+
+Owner environment: Windows 11 / PowerShell 5.1. Reported command
+`.\gradlew.bat :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest --stacktrace`
+returned BUILD SUCCESSFUL. This establishes owner-reported compilation/build at
+that SHA, not Android runtime, installed APK attribution or acceptance at a later
+revision. No original build logs/JUnit XML were supplied for independent parsing.
+
+Owner then ran `.\gradlew.bat :app:testDebugUnitTest --stacktrace`: **741 executed,
+736 PASS, 5 FAIL**, all five in `MEditCoordinatorTest`. These results are retained;
+source corrections below do not convert them to PASS.
+
+| Method / original source line | Owner-observed failure | Source-established issue / correction |
+| --- | --- | --- |
+| verifiedCleanupDebtSurvivesCloseReopenAndFreshRecoveryWithoutBecomingFailure /274 | NPE casting null to VerifiedNewDocument | Premature result read after runCurrent; await terminal RESULT, require exact VerifiedNewDocument, retain PENDING/re-entry/accounting assertions |
+| verifiedPublicationWithCleanupDebtStaysVerifiedAndAccounted /206 | NPE casting null to VerifiedNewDocument | Same unjoined session lease-close IO boundary; bounded state observation before typed checks |
+| concurrentSaveAndRepeatedClaimsRemainOneShot /116 | assertTrue expecting VerifiedNewDocument | Same boundary; await verified terminal publication while retaining one-write, claim/token/duplicate assertions |
+| unexpectedCleanupDefectRemainsObservableAlongsideVerifiedPublication /302 | NPE casting null to VerifiedNewDocument | Same boundary before cleanup diagnostic checks; additionally make diagnostic assertions recovery-aware without losing original cause |
+| canceledOrFailedRecoveryNeverTurnsAnUnknownScanIntoEmptySuccess /319 | assertSame failure: equal IllegalStateException messages, different objects | Coroutine exception copying across withContext can change the outer object's identity; assert exact type/message and original injected object in causal chain for both diagnostic and handler |
+
+### Actual asynchronous boundary
+
+Even with `MEditCoordinator`'s IO dispatcher injected as StandardTestDispatcher,
+`MTransactionSession.complete()` closes the output lease in
+`withContext(NonCancellable + Dispatchers.IO)`. This happens after publisher
+write/readback but before publication checkpoints/result return. `MTestRig` makes
+its store/journal/publisher unconfined, but does not replace this session dispatcher.
+`runCurrent()` drains ready test-scheduler work, not real IO or its continuation.
+The tests could therefore inspect phase PUBLISHING/publication null and even call
+terminate before the intended publication completes. That synchronization defect
+is established from source; no new runtime trace proves it is the sole cause of
+every owner's failure. A genuine rejection, stuck operation or cancellation must
+still fail the corrected tests.
+
+A small class-private helper now uses StateFlow.first to await RESULT (or an
+unexpected typed preparation rejection), then requires a non-null terminal result.
+Positive tests additionally require **VerifiedNewDocument**, never just any result.
+The timeout is a 10-second real-clock hang watchdog on Dispatchers.Default; it does
+not use virtual test time, sleep, polling, retries or a production performance
+budget. Timeout/wrong-result diagnostics show last phase, publication type/cleanup,
+rejection reason/cleanup and diagnostic type, excluding source/destination identities.
+The state observation can suspend while runTest schedules the completion of real IO.
+
+The same source defect also affected the registered/transient completion test and
+the readback-mismatch/alias test. Both now await terminal publication; the former
+requires verified success before original-route assertions, and the latter requires
+exact UnverifiedDestination/NeedsOwnerResolution rather than allowing null to satisfy
+"not verified". Added one-read assertions retain independent readback coverage.
+The deliberately blocked-publication cancellation test remains barrier-driven;
+it must not wait for completion before issuing cancellation.
+
+### Exception provenance and contract preservation
+
+Coroutine stack-trace recovery can copy IllegalStateException at withContext or
+Deferred.await boundaries and retain the injected exception as its cause. The
+reported same-message/different-reference failure is consistent with that mechanism;
+its original runtime cause chain was not supplied. No global recovery/debug switch
+is disabled. The existing snapshot tests already allow recovered wrappers while
+checking their original cause.
+
+The contract preserves primary exceptions against replacement by cleanup; it does
+not specify that the outer object stored in MEditCoordinator.diagnostic after an
+asynchronous boundary must have the same reference. The focused assertion requires
+exact exception class/message AND the identical injected original in a cycle-safe,
+identity-visited causal chain bounded to 16 nodes. Both the diagnostic channel and
+exactly one exception-handler delivery must satisfy it. The original object cannot
+be replaced with an unrelated same-message exception. The same check is used for
+the unexpected cleanup diagnostic before/after reopen. Exact handoff/reference,
+callback-token and cancellation assertions elsewhere are unchanged.
+
+All 24 existing methods remain; no test is added, removed, disabled or skipped.
+No production Kotlin, fixture helper outside this class, dependency, Gradle, CI,
+policy, PDF qualification, snapshot accounting, permission, journal, readback,
+provider proof or authorization gate changes. Production Save As remains disabled.
+No demonstrated production defect requires a correction in this assignment.
+
+### Required owner re-execution (NOT RUN by Codex)
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest --tests "com.abdev.partituraspdf.pdf.presentation.MEditCoordinatorTest" --stacktrace
+.\gradlew.bat :app:testDebugUnitTest --stacktrace
+```
+
+Run the second command only after the affected class passes. Retain exact SHA,
+command/exits, JUnit XML, HTML and coverage-finalizer output. The existing A1
+finalizer still runs on a filtered command and may fail independently of JUnit
+because its broader contract suite was not selected; classify test results and
+coverage separately, do not skip/disable or change the gate. Full-suite evidence
+is still required. No claim that all 5 failures are resolved until owner execution.
+
+Codex performed source/diff review and `git diff --check` only. Builds, JVM/Python/
+Android tests, ADB/emulators, Lint, validators, coverage and CI: **NOT RUN**.
+Security, six historical production Android FAILs, real provider/compatibility/
+manual obligations and Phase M acceptance remain open as recorded in the
+[consolidated plan](M_FINAL_VALIDATION_AND_ACCEPTANCE.md).

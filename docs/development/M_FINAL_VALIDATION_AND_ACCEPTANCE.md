@@ -411,3 +411,23 @@ requirements. Only then may the owner separately approve a narrowly reviewed sou
 activation (qualified factory AND approved destination proof), final acceptance,
 PR/integration and merge. None is implied by publishing Block C. No tag, APK upload
 or release is authorized. Phase M remains open until these decisions are recorded.
+
+## Owner campaign follow-up: targeted JVM correction — 2026-11-10
+
+At Block C SHA `d59806044aff095454dde9f59e55558d9537e380`, the owner reports debug,
+release and instrumentation APK builds PASS and JVM 741 executed / 736 PASS / 5 FAIL,
+all in MEditCoordinatorTest. This updates execution provenance only for that SHA;
+Block C's original NOT RUN entries remain historical, and Android runtime/security/
+coverage acceptance does not follow from successful compilation.
+
+The subsequent focused correction changes only that test class and evidence docs.
+It waits for terminal publication across the session's real IO lease-close boundary,
+asserts exact verified/unverified outcomes, and checks diagnostic type/message plus
+original causal identity while permitting coroutine stack-trace wrappers. All 24
+methods remain; no production or safety change. See the
+[detailed five-failure record](M_BLOCK2_TEST_AND_ACCEPTANCE_EVIDENCE.md#targeted-jvm-synchronization-and-diagnostic-correction--2026-11-10).
+The corrected revision is IMPLEMENTED — NOT RUNTIME VERIFIED; the five failures
+stay open until owner re-execution. Run the class-filtered JVM command there first,
+then the full suite; preserve existing coverage-finalizer failures separately from
+JUnit outcomes without weakening gates. All other acceptance/activation holds and
+the dedicated-profiling omission remain unchanged.

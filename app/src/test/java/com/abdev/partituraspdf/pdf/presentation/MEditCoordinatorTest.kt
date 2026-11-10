@@ -9,6 +9,7 @@ import com.abdev.partituraspdf.pdf.workflow.*
 import com.abdev.partituraspdf.storage.api.*
 import com.abdev.partituraspdf.storage.transaction.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -19,6 +20,51 @@ import org.junit.rules.TemporaryFolder
 @OptIn(ExperimentalCoroutinesApi::class)
 class MEditCoordinatorTest {
     @get:Rule val temporary = TemporaryFolder()
+    /** Exclude source/destination identities from assertion diagnostics. */
+    private fun MEditCoordinator.publicationDetails(): String {
+        val observed=state.value
+        return "phase=${observed.phase}, publication=${observed.publication?.javaClass?.simpleName}, " +
+            "publicationCleanup=${(observed.publication as? PublicationResult.VerifiedNewDocument)?.cleanup}, " +
+            "rejection=${observed.rejection?.reason}, rejectionCleanup=${observed.rejection?.cleanup}, " +
+            "diagnostic=${diagnostic?.javaClass?.simpleName}"
+    }
+    private suspend fun MEditCoordinator.awaitTerminalPublication(): PublicationResult {
+        // Session lease closure deliberately uses real IO. TestScheduler.runCurrent()
+        // is not a join of that work. Default supplies a real-clock watchdog rather
+        // than a virtual timeout that could expire while the IO dispatcher is busy.
+        val terminal=try {
+            withContext(Dispatchers.Default) {
+                withTimeout(10_000) {
+                    state.first { it.phase==MEditPhase.RESULT || (it.phase==MEditPhase.DRAFT && it.rejection!=null) }
+                }
+            }
+        } catch (timeout: TimeoutCancellationException) {
+            throw AssertionError("Timed out awaiting terminal publication: ${publicationDetails()}",timeout)
+        }
+        return terminal.publication
+            ?: throw AssertionError("Expected terminal publication: ${publicationDetails()}")
+    }
+    private suspend fun MEditCoordinator.awaitVerifiedPublication(): PublicationResult.VerifiedNewDocument {
+        val actual=awaitTerminalPublication()
+        return actual as? PublicationResult.VerifiedNewDocument
+            ?: throw AssertionError("Expected VerifiedNewDocument: ${publicationDetails()}")
+    }
+    private fun assertObservedFailure(expected: Throwable, actual: Throwable?) {
+        assertNotNull("Injected failure must reach the diagnostic channel",actual)
+        val observed=checkNotNull(actual)
+        assertEquals(expected.javaClass,observed.javaClass)
+        assertEquals(expected.message,observed.message)
+        // Coroutine stack-trace recovery may copy an exception and retain its
+        // original as the cause. Preserve that exact provenance, not just a message.
+        val seen=java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable,Boolean>())
+        var cause:Throwable?=observed
+        var originalFound=false
+        while(cause!=null && seen.size<16 && seen.add(cause)) {
+            if(cause===expected) { originalFound=true;break }
+            cause=cause.cause
+        }
+        assertTrue("Original injected failure must remain in the bounded causal chain",originalFound)
+    }
     private inner class Fixture(private val scope: TestScope) {
         val rig = MTestRig(temporary.newFolder(), scope.backgroundScope)
         val route = MEditRoute(4, 8, DocumentOpenRequest.Transient(rig.source.storage))
@@ -112,7 +158,9 @@ class MEditCoordinatorTest {
         f.feature.result(request.operation,"wrong",true,"candidate",3);runCurrent();assertEquals(0,f.bindings)
         f.feature.result(request.operation,request.token,true,"candidate",3)
         f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
+        f.feature.awaitVerifiedPublication()
         assertEquals(1,f.bindings);assertEquals(1,f.destination!!.writes)
+        assertEquals(1,f.destination!!.reads)
         assertTrue(f.feature.state.value.publication is PublicationResult.VerifiedNewDocument)
         f.feature.terminate()
     }
@@ -182,8 +230,9 @@ class MEditCoordinatorTest {
             f.active=original;f.open(original);f.feature.save(original);runCurrent()
             val request=f.feature.request.value!!.handoff;f.feature.claim(request);f.feature.launched(request,true)
             f.feature.result(request.operation,request.token,true,"new-document",3);runCurrent()
+            f.feature.awaitVerifiedPublication()
             assertEquals(original,f.active);assertEquals(original,f.feature.state.value.source!!.route)
-            assertEquals(1,f.destination!!.writes);f.feature.terminate()
+            assertEquals(1,f.destination!!.writes);assertEquals(1,f.destination!!.reads);f.feature.terminate()
         }
     }
     @Test fun readbackMismatchAndSourceAliasCannotBecomeVerified() = runTest {
@@ -193,7 +242,9 @@ class MEditCoordinatorTest {
             f.open();f.feature.save(f.route);runCurrent()
             val request=f.feature.request.value!!.handoff;f.feature.claim(request);f.feature.launched(request,true)
             f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
+            val actual=f.feature.awaitTerminalPublication()
             assertFalse(f.feature.state.value.publication is PublicationResult.VerifiedNewDocument)
+            assertSame(if(alias)PublicationResult.NeedsOwnerResolution else PublicationResult.UnverifiedDestination,actual)
             assertEquals(if(alias)0 else 1,f.destination!!.writes)
             f.feature.terminate()
         }
@@ -203,9 +254,9 @@ class MEditCoordinatorTest {
         f.rig.fault={ if(it=="delete")throw java.io.IOException("Injected private cleanup fault") }
         val request=f.feature.request.value!!.handoff;f.feature.claim(request);f.feature.launched(request,true)
         f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
-        val result=f.feature.state.value.publication as PublicationResult.VerifiedNewDocument
+        val result=f.feature.awaitVerifiedPublication()
         assertEquals(SnapshotCleanupStatus.PENDING,result.cleanup)
-        assertEquals(1,f.destination!!.writes);assertTrue(f.rig.budget.used()>0)
+        assertEquals(1,f.destination!!.writes);assertEquals(1,f.destination!!.reads);assertTrue(f.rig.budget.used()>0)
         f.feature.terminate()
     }
     @Test fun cancellationDuringPublicationNeverReportsRollbackOrAllowsRetry() = runTest {
@@ -271,8 +322,9 @@ class MEditCoordinatorTest {
         f.rig.fault={ if(it=="delete")throw java.io.IOException("Injected cleanup debt") }
         f.feature.claim(request);f.feature.launched(request,true)
         f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
-        val committed=f.feature.state.value.publication as PublicationResult.VerifiedNewDocument
+        val committed=f.feature.awaitVerifiedPublication()
         assertEquals(SnapshotCleanupStatus.PENDING,committed.cleanup)
+        assertEquals(1,f.destination!!.reads)
         f.feature.dismiss();runCurrent();f.open()
         assertEquals(committed,f.feature.state.value.publication)
         assertFalse(f.feature.state.value.canSave);assertTrue(f.feature.requiresRecoveryOnRestore)
@@ -299,14 +351,14 @@ class MEditCoordinatorTest {
         f.rig.fault={ if(it=="delete")throw defect }
         f.feature.claim(request);f.feature.launched(request,true)
         f.feature.result(request.operation,request.token,true,"candidate",3);runCurrent()
-        val committed=f.feature.state.value.publication as PublicationResult.VerifiedNewDocument
+        val committed=f.feature.awaitVerifiedPublication()
         assertEquals(SnapshotCleanupStatus.PENDING,committed.cleanup)
-        assertSame(defect,f.feature.diagnostic);assertTrue(f.rig.budget.used()>0)
-        assertEquals(1,f.destination!!.writes)
+        assertObservedFailure(defect,f.feature.diagnostic);assertTrue(f.rig.budget.used()>0)
+        assertEquals(1,f.destination!!.writes);assertEquals(1,f.destination!!.reads)
         val admission=f.rig.gate.tryAcquire() as WriteAdmissionGate.Admission.Acquired
         admission.close()
         f.feature.dismiss();runCurrent();f.open()
-        assertEquals(committed,f.feature.state.value.publication);assertSame(defect,f.feature.diagnostic)
+        assertEquals(committed,f.feature.state.value.publication);assertObservedFailure(defect,f.feature.diagnostic)
         assertFalse(f.feature.state.value.canSave);f.feature.terminate()
     }
     @Test fun canceledOrFailedRecoveryNeverTurnsAnUnknownScanIntoEmptySuccess() = runTest {
@@ -316,7 +368,9 @@ class MEditCoordinatorTest {
         owner.connect { f.active }
         val defect=IllegalStateException("Injected scanner defect");f.scanFailure=defect
         owner.refreshRecovery();runCurrent()
-        assertSame(defect,owner.diagnostic);assertEquals(listOf(defect),errors)
+        assertObservedFailure(defect,owner.diagnostic)
+        assertEquals("Exactly one scanner defect must reach the exception handler",1,errors.size)
+        assertObservedFailure(defect,errors.single())
         assertTrue(owner.state.value.recoveryRequired);assertEquals(listOf(MRecoveryStatus.BLOCKED),owner.state.value.recovery)
         owner.open(MEditSource(f.route,1));owner.save(f.route);runCurrent();assertEquals(0,f.prepares)
         f.scanFailure=null;f.scanBarrier=CompletableDeferred();owner.refreshRecovery();runCurrent()
